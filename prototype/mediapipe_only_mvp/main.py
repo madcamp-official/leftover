@@ -60,6 +60,8 @@ _L_SHOULDER, _R_SHOULDER = 11, 12
 _L_ELBOW, _R_ELBOW = 13, 14
 _L_WRIST, _R_WRIST = 15, 16
 _L_HIP, _R_HIP = 23, 24
+_L_KNEE, _R_KNEE = 25, 26
+_L_ANKLE, _R_ANKLE = 27, 28
 
 # 실측 결과 미러(flip) 때문에 raw 라벨이 실제 좌우와 반대였다. PHYS_*가 "사용자 실제 기준"
 # 좌/우를 가리키도록 여기서 한 번에 뒤집어 보정 — 아래부터는 전부 PHYS_*만 쓴다.
@@ -67,6 +69,8 @@ PHYS_R_SHOULDER, PHYS_L_SHOULDER = _L_SHOULDER, _R_SHOULDER
 PHYS_R_ELBOW, PHYS_L_ELBOW = _L_ELBOW, _R_ELBOW
 PHYS_R_WRIST, PHYS_L_WRIST = _L_WRIST, _R_WRIST
 PHYS_R_HIP, PHYS_L_HIP = _L_HIP, _R_HIP
+PHYS_R_KNEE, PHYS_L_KNEE = _L_KNEE, _R_KNEE
+PHYS_R_ANKLE, PHYS_L_ANKLE = _L_ANKLE, _R_ANKLE
 
 SWORD_WRIST = PHYS_R_WRIST    # 검 = 오른손 (기획서: "오른손에 스마트폰(검)")
 SHIELD_WRIST = PHYS_L_WRIST   # 방패 = 왼손
@@ -102,6 +106,11 @@ PARRY_COOLDOWN_SEC = 0.5
 CALIB_CAPTURE_SEC = 1.2       # 't' 누른 뒤 이 시간 동안의 최대값을 샘플 하나로 기록
 CALIB_SAMPLES_NEEDED = 3
 CALIB_MARGIN = 0.55           # 실측 평균의 이 비율을 최종 임계값으로 사용 (실측치보다 낮게 잡아 여유를 둠)
+
+# --- 발차기: 무릎 각도(엉덩이-무릎-발목)가 급격히 펴짐. 좌/우 다리 구분 없이 kick 하나로 판정 ---
+KICK_WINDOW_SEC = 0.30
+KICK_ANGLE_DELTA = 25.0       # 도. 이 이상 무릎이 급하게 펴지면 발차기 (실측 후 조정)
+KICK_COOLDOWN_SEC = 0.5
 
 EVENT_DISPLAY_SEC = 0.4       # 순간 이벤트를 화면에 이만큼 켜둠
 
@@ -139,11 +148,13 @@ class MotionRecognizer:
         self.shield_hist = collections.deque()        # (t, x, y)
         self.thrust_hist = collections.deque()        # (t, elbow_angle, rel_x, rel_y)
         self.parry_swing_hist = collections.deque()   # (t, rel_x, rel_y) - _sword_swing과 동일 방식
+        self.kick_hist = {"L": collections.deque(), "R": collections.deque()}  # (t, knee_angle)
 
         self.guard_held_since = None
         self.last_sword_event_t = -999.0
         self.last_thrust_event_t = -999.0
         self.last_parry_event_t = -999.0
+        self.last_kick_event_t = -999.0
 
         # 찌르기 전용 캘리브레이션 상태 (현재 _thrust 비활성화라 미사용, 재활성화 대비 보존)
         self.thrust_samples = []
@@ -366,6 +377,31 @@ class MotionRecognizer:
         self.last_parry_event_t = t
         self._fire("패링", t)
 
+    def _kick(self, landmarks, t):
+        """발차기: 무릎 각도(엉덩이-무릎-발목)가 급격히 펴짐. 좌/우 다리 구분 없이 kick 하나로 판정."""
+        _, _, torso_len = self._torso(landmarks)
+        if not torso_len:
+            return
+        if t - self.last_kick_event_t < KICK_COOLDOWN_SEC:
+            return
+
+        legs = {
+            "L": (landmarks[PHYS_L_HIP], landmarks[PHYS_L_KNEE], landmarks[PHYS_L_ANKLE]),
+            "R": (landmarks[PHYS_R_HIP], landmarks[PHYS_R_KNEE], landmarks[PHYS_R_ANKLE]),
+        }
+        for side, (hip, knee, ankle) in legs.items():
+            angle = angle_deg(hip, knee, ankle)
+            hist = self.kick_hist[side]
+            hist.append((t, angle))
+            self._prune(hist, t, KICK_WINDOW_SEC)
+            if len(hist) < 3:
+                continue
+            t0, angle0 = hist[0]
+            if angle - angle0 > KICK_ANGLE_DELTA:
+                self.last_kick_event_t = t
+                self._fire("발차기", t)
+                return  # 한 프레임에 양다리 중복 판정 방지
+
     def update(self, landmarks, t):
         """한 프레임 처리. 화면에 그릴 상태 dict를 리턴."""
         squat, lateral = self._dodge(landmarks, t)
@@ -374,6 +410,7 @@ class MotionRecognizer:
         # 찌르기(_thrust)는 스윙과 자꾸 섞여 잡혀서 일단 비활성화. 재활성화하려면 아래 한 줄만 살리면 됨.
         # self._thrust(landmarks, t)
         self._shield_parry(landmarks, t)
+        self._kick(landmarks, t)
 
         # 만료된 순간 이벤트 정리
         self.active_events = {name: until for name, until in self.active_events.items() if until > t}
@@ -421,6 +458,7 @@ def main():
     start_time = time.time()
     print("화면 보고 똑바로 선 뒤 's' 키로 캘리브레이션 하세요. 종료는 'q'.")
     print("패링은 캘리브레이션 없이 스윙과 같은 방식으로 자동 판정됩니다. (찌르기는 일단 비활성화)")
+    print("발차기는 무릎 각도로 즉시 판정됩니다 (좌/우 구분 없음, 캘리브레이션 불필요).")
     print("검=오른손(빨강)  방패=왼손(파랑)")
 
     while True:
@@ -455,6 +493,8 @@ def main():
             marker_color = {
                 SWORD_WRIST: (0, 0, 255),      # 검 손목: 빨강
                 SHIELD_WRIST: (255, 0, 0),     # 방패 손목: 파랑
+                PHYS_L_KNEE: (0, 165, 255),    # 무릎: 주황
+                PHYS_R_KNEE: (0, 165, 255),
             }
             for i, lm in enumerate(landmarks):
                 color = marker_color.get(i, (0, 255, 0))
