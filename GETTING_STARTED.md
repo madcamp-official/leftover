@@ -12,7 +12,7 @@
 - **게임 (Unity)** — `pc-game/`: 게이지/판정/데미지 로직, 3D 캐릭터·보스 AI, UI, 이펙트.
   `CombatInputHub`(`pc-game/Assets/Scripts/Combat/`)만 보고 개발하면 되고, 입력이
   키보드에서 오는지 MediaPipe에서 오는지는 몰라도 된다.
-- **인식 (MediaPipe)** — `vision-server/`: 웹캠으로 7동작(가로/세로 베기, 찌르기, 방어,
+- **인식 (MediaPipe)** — `vision-server/`: 웹캠으로 7동작(가로/세로 베기, 발차기, 방어,
   패링, 앉기, 좌우 움직이기)을 인식해서 `shared/PROTOCOL.md` Phase 1 포맷으로 UDP 전송.
 
 두 역할이 공유하는 건 `shared/PROTOCOL.md`의 이벤트 계약 하나뿐이라, 이것만 먼저 맞춰두면
@@ -22,7 +22,7 @@
 
 - `pc-game/`: Unity 프로젝트 생성 완료 (URP). `Assets/Scripts/Combat/`에 이미 있는 것:
   - `CombatInputHub.cs` — 게임 로직이 참조하는 단일 입력 창구 (트리거 이벤트 4종 + 상태 3종)
-  - `KeyboardInputProvider.cs` — 임시 입력 소스. J/K/L=가로·세로 베기·찌르기, Space=방어,
+  - `KeyboardInputProvider.cs` — 임시 입력 소스. J/K/L=가로·세로 베기·발차기, Space=방어,
     F=패링, S=앉기, A/D=좌우 이동. 씬에 붙이면 바로 키보드로 테스트 가능
   - `NetworkInputProvider.cs` — MediaPipe 연동용. UDP 9002로 오는 이벤트를 Hub에 꽂아줌
     (아직 vision-server가 이 포맷을 안 보내므로 지금은 안 써도 됨)
@@ -50,8 +50,8 @@
    (오른쪽/왼쪽 손목 landmark 속도·위치, 어깨/골반 landmark로 앉기·좌우)
 3. 분류 결과를 프로토콜 포맷 그대로 UDP 9002로 전송 (지금 `main.py`는 이전 버전 포맷
    `guard_up`/`crouch`를 보내고 있어서 갱신 필요)
-4. **찌르기부터 먼저 실측**: 카메라 앞에서 실제로 찔러보고 안정적으로 잡히는지 확인. 잘
-   안 되면 일단 6동작으로 넘기고 찌르기는 뒤로 미뤄도 됨 (PROTOCOL.md "결정 필요" 참고)
+4. **발차기부터 먼저 실측**: 무릎 들기와 전방 신전이 앉기·좌우 이동과 안정적으로
+   구분되는지 확인하고, 지지발 이동량과 발목 높이 임계값을 조정
 
 ## 두 역할 합치기
 
