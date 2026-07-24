@@ -40,7 +40,7 @@ Python 쪽에서 끝내고 Unity는 "무슨 동작이 인식됐다"만 받는다
 ```json
 {"action": "swing_horizontal"}
 {"action": "swing_vertical"}
-{"action": "thrust"}
+{"action": "kick"}
 {"action": "parry"}
 ```
 
@@ -57,23 +57,22 @@ Python 쪽에서 끝내고 Unity는 "무슨 동작이 인식됐다"만 받는다
 |---|---|---|
 | 가로 베기 | `swing_horizontal` | 오른쪽 손목 속도벡터, 수평 성분 우세 |
 | 세로 베기 | `swing_vertical` | 오른쪽 손목 속도벡터, 수직 성분 우세 |
-| 찌르기 | `thrust` | 팔꿈치-손목 거리 축소 / 손 크기 증가(카메라 방향 접근) — 정확도 낮을 수 있는 축, 아래 참고 |
+| 발차기 | `kick` | 한쪽 무릎을 들고 발목을 전방으로 뻗는 동작 |
 | 기본 방어 | `guard` (active) | 왼쪽 손목이 가슴 근처에서 정지 |
 | 패링 | `parry` | 왼쪽 손목이 가슴 근처 → 몸 바깥으로 급가속 |
 | 앉기 | `crouch` (active) | 어깨/골반 랜드마크 y좌표 하강 |
 | 좌우 움직이기 | `lateral` | 어깨 랜드마크 x좌표 이동 (발 고정, 상체만) |
 
-**찌르기 인식은 리스크가 가장 큰 항목이다.** 단안 웹캠은 카메라를 향해 다가오는 깊이(Z)
-방향 움직임을 X/Y만큼 정확히 못 잡는다. Day 1~2에 실측해보고, 신뢰도가 너무 낮으면
-**Phase 1에서는 찌르기를 잠깐 빼고 6동작으로 먼저 완성 → Phase 2에서 폰 가속도계로 복귀**
-하는 것도 백업 플랜으로 남겨둔다 (가속도계 전방축 감지가 이 동작엔 원래 더 적합, 기획서 2장).
+발차기는 MediaPipe의 무릎·발목 랜드마크로 무릎 들기와 전방 신전을 함께
+확인한다. 상체 동작과 혼동하지 않도록 지지발 이동량이 임계값보다 작을 때만
+단발 이벤트를 발생시킨다.
 
 ### Unity 쪽 수신부
 
 `pc-game/Assets/Scripts/Combat/NetworkInputProvider.cs`가 이 포맷을 그대로 파싱해서
 `CombatInputHub`에 꽂아준다. 게임 로직 개발 중에는 `NetworkInputProvider` 대신
 `KeyboardInputProvider`를 씬에 켜두면 같은 이벤트를 키보드로 흉내 낼 수 있다
-(J/K/L=베기·찌르기, Space=방어, F=패링, S=앉기, A/D=좌우). 두 Provider는 동시에 켜두지
+(J/K/L=가로베기·세로베기·발차기, Space=방어, F=패링, S=앉기, A/D=좌우). 두 Provider는 동시에 켜두지
 말 것 — MediaPipe 연동 시점에 Provider 컴포넌트만 교체하면 게임 로직은 그대로 재사용된다.
 
 ---
@@ -81,7 +80,8 @@ Python 쪽에서 끝내고 Unity는 "무슨 동작이 인식됐다"만 받는다
 ## Phase 2: 폰 2대 원시 센서 스트리밍 (나중, 인식 정확도/반응속도 개선용)
 
 Phase 1으로 게임 로직/밸런스가 검증되고, MediaPipe만으로는 인식 정확도나 반응속도가
-아쉬운 동작(특히 찌르기, 방어/패링 타이밍)이 확인되면 그 동작들을 폰 IMU로 옮긴다.
+아쉬운 동작(특히 발차기, 방어/패링 타이밍)이 확인되면 해당 동작의 임계값을
+조정하거나 폰 IMU를 보조 입력으로 사용한다.
 이때도 Unity 게임 로직은 그대로 두고, `CombatInputHub`에 이벤트를 꽂아주는 새 Provider
 (`PhoneInputProvider` 같은 이름)만 하나 추가하면 된다 — 굳이 UDP 자체 루프를 안 거치고
 `SensorReceiver`가 분류한 결과를 Hub에 바로 호출해도 됨 (같은 Unity 프로세스 안이므로).
@@ -153,7 +153,8 @@ Clock Offset = ((t2 - t1) + (t3 - t4)) / 2      # phone_clock = pc_clock + offse
 | `gx, gy, gz` | 자이로 3축 각속도 (deg/s 또는 rad/s — 팀에서 단위 통일, 아래 "결정 필요" 참고) |
 
 PC 수신 측은 `device`별로 `seq` 역전/누락을 따로 감지하고, 오래된 패킷은 버린다.
-분류기도 `device`로 분기: `sword` 스트림은 가로/세로/찌르기 3분류, `shield` 스트림은
+분류기도 `device`로 분기: `sword` 스트림은 가로/세로 2분류, 전신 스트림은
+발차기, `shield` 스트림은
 방어/패링 상태머신으로 보낸다 (기획서 3-4). 분류 결과는 Phase 1과 동일한 이벤트 이름
 (`swing_horizontal` 등)으로 `CombatInputHub`에 넘겨서 게임 로직과의 계약을 유지한다.
 
@@ -161,18 +162,17 @@ PC 수신 측은 `device`별로 `seq` 역전/누락을 따로 감지하고, 오�
 
 ## 4. 모션 분류 결과 이벤트 이름 (표준화)
 
-기획서 2장 "동작 목록(8종)"에 대응하는 코드/로그/UI 상의 이름을 통일한다. Unity
+기획서 2장 "동작 목록(7종)"에 대응하는 코드/로그/UI 상의 이름을 통일한다. Unity
 분류기(최종), `prototype/mediapipe_only_mvp`, `prototype/pc_server`의 폰 센서 분류
 실험이 전부 이 이름을 따른다 — 실험마다 이름이 달라서 로그/문서를 서로 못 알아보는
 일이 없도록.
 
 | 이름 (코드/JSON) | 한국어 | 종류 | 담당 (최종 아키텍처 기준) |
 |---|---|---|---|
-| `swing_horizontal` | 가로 베기 | event (순간) | 검 폰(폰1) IMU |
-| `swing_vertical` | 세로 베기 | event (순간) | 검 폰(폰1) IMU |
-| `thrust` | 찌르기 | event (순간) | 검 폰(폰1) IMU |
-| `guard_up` | 기본 방어 | level (지속 상태) | 방패 폰(폰2) IMU |
-| `parry` | 패링 | event (순간) | 방패 폰(폰2) IMU |
+| `swing_horizontal` | 가로 베기 | event (순간) | 웹캠(vision-server) |
+| `swing_vertical` | 세로 베기 | event (순간) | 웹캠(vision-server) |
+| `guard_up` | 기본 방어 | level (지속 상태) | 웹캠(vision-server) |
+| `parry` | 패링 | event (순간) | 웹캠(vision-server) |
 | `crouch` | 앉기 | level (지속 상태) | 웹캠(vision-server) |
 | `side_step` | 좌우 움직이기 | level (지속 상태, `"left"`/`"right"`/`"none"`) | 웹캠(vision-server) |
 | `kick` | 발차기 | event (순간) | 웹캠(vision-server) — 좌/우발 구분 없이 하나로 판정 |
@@ -182,16 +182,14 @@ PC 수신 측은 `device`별로 `seq` 역전/누락을 따로 감지하고, 오�
 - **level(지속 상태)**: 조건이 유지되는 동안 계속 True/값을 유지하는 것. 콜다운 대신
   "일정 시간 이상 유지돼야 인정"하는 홀드 타임을 둬서 순간적인 오탐을 거른다.
 - 웹캠 쪽 `crouch`/`side_step`은 이미 `vision-server`가 이 이름 그대로 쓰고 있음 (3장 참고).
-- 검/방패 IMU 쪽 5개는 아직 Unity 구현 전이라 `prototype/pc_server`의 Python 실험에서
-  먼저 이 이름으로 검증한다 (아래 "결정 필요" 참고 — 폰 IMU 분류는 아직 실험 단계).
-- `kick`은 기획서 원안(7종)엔 없던 추가 동작. 게임 내 역할(공격/카운터 등)이 아직
-  미정이라 3번 섹션의 JSON 페이로드 필드에는 아직 안 넣었음 — 역할이 정해지면
-  `vision-server`의 `{"t":..,"crouch":..,"side_step":..}` 페이로드에 `"kick": true/false`
-  필드로 추가하면 된다.
+- 모든 최종 동작은 웹캠 기반 `vision-server`에서 분류한다. 폰 IMU 섹션은 과거 실험 및
+  향후 보조 입력 검토를 위한 참고 자료다.
+- `kick`은 `vision-server`의 단발 이벤트로 전송하며 Unity에서는 다른 공격과 동일하게
+  `CombatInputHub`를 통해 처리한다.
 
 ## 결정 필요 (팀 회의에서 확정할 것)
 
-- [ ] (Phase 1) 찌르기 인식이 실측에서 충분히 안정적인지 — 불안정하면 6동작으로 축소할지
+- [ ] (Phase 1) 발차기 인식이 앉기·좌우이동과 안정적으로 구분되는지
 - [ ] (Phase 1) 판정 윈도우 값 (기획서 추천 ±250~300ms을 시작점으로, 실측 후 조정)
 - [ ] (Phase 2) 자이로 단위: deg/s vs rad/s (Unity `Gyroscope.rotationRate`는 rad/s 기준)
 - [ ] (Phase 2) 센서 전송 주기: 60Hz vs 100Hz (폰 발열/배터리 트레이드오프)
