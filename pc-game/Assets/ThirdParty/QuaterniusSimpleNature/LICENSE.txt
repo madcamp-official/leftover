@@ -1,0 +1,8 @@
+Simple Nature Pack
+Copyright: Quaternius
+Source: https://quaternius.com/packs/simplenature.html
+
+License: Creative Commons Zero v1.0 Universal (CC0 1.0)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The source page describes the included trees, grass, rocks, and bushes.

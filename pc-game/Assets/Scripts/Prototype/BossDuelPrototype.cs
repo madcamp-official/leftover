@@ -138,11 +138,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private AudioSource _audioSource;
     private AudioSource _audioLayerA;
     private AudioSource _audioLayerB;
-    private AudioClip _slashSound;
-    private AudioClip _guardSound;
-    private AudioClip _parrySound;
-    private AudioClip _dodgeSound;
-    private AudioClip _hitSound;
     private BossDuelAssetLibrary _assetLibrary;
     private int _playerHorizontalUses;
     private int _playerVerticalUses;
@@ -467,7 +462,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _detail = dodge == Motion.DodgeCrouch
             ? "Avoid horizontal attacks during the low stance."
             : "Sidestep vertical slashes and kicks.";
-        PlaySound(_dodgeSound, 0.72f);
+        PlayDodgeSound(0.86f);
     }
 
     private void PlayerParry()
@@ -593,7 +588,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     defender.motion == Motion.DodgeCrouch
                         ? EffectKind.DodgeCrouch
                         : EffectKind.DodgeSide, 1.15f);
-                PlaySound(_dodgeSound, 1.05f);
+                PlayDodgeSound(1f);
                 return;
             }
 
@@ -1078,7 +1073,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         fighter.root = root;
 
         GameObject model = Instantiate(_assetLibrary.fighterPrefab, root);
-        model.name = fighterName + " Model (EEJANAI)";
+        model.name = fighterName + " Model (Quaternius Knight)";
         model.transform.localPosition = Vector3.zero;
         model.transform.localRotation = Quaternion.identity;
         model.transform.localScale = Vector3.one;
@@ -1112,10 +1107,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
         Transform rightHand = fighter.animator.isHuman
             ? fighter.animator.GetBoneTransform(HumanBodyBones.RightHand)
             : FindTransformContaining(model.transform, "RightHand");
-        Transform originalSword = FindTransformContaining(model.transform, "Sword");
-        if (originalSword != null)
+        foreach (Transform candidate in model.GetComponentsInChildren<Transform>(true))
         {
-            foreach (Renderer swordPart in originalSword.GetComponentsInChildren<Renderer>(true))
+            if (candidate.name.IndexOf("Sword", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            foreach (Renderer swordPart in candidate.GetComponentsInChildren<Renderer>(true))
                 swordPart.enabled = false;
         }
         CreateAssetShield(fighter, leftHand, root, teamMaterial);
@@ -1134,7 +1130,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 : shared != null && shared.HasProperty("_Color")
                     ? shared.color
                     : Color.white;
-            fighter.rendererBaseColors[i] = Color.Lerp(original, teamColor, 0.28f);
+            fighter.rendererBaseColors[i] = Color.Lerp(original, teamColor, 0.12f);
         }
         fighter.bodyRenderer = fighter.renderers.Length > 0 ? fighter.renderers[0] : null;
         RestoreFighterAppearance(fighter);
@@ -1150,32 +1146,44 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (leftHand == null)
             return;
 
-        var mount = new GameObject("Left Hand Shield");
-        mount.transform.SetParent(fighterRoot);
-        AssetShieldFollower follower = mount.AddComponent<AssetShieldFollower>();
+        // The IK target moves the arm, while the visible shield is mounted to
+        // the real hand bone. This keeps the shield physically attached to the
+        // back of the hand instead of floating independently through the torso.
+        var target = new GameObject("Left Hand Shield IK Target");
+        target.transform.SetParent(fighterRoot);
+        target.transform.position = leftHand.position;
+        target.transform.rotation = leftHand.rotation;
+        AssetShieldFollower follower = target.AddComponent<AssetShieldFollower>();
         follower.Configure(leftHand, fighterRoot);
         fighter.shieldFollower = follower;
+        fighter.shieldPivot = target.transform;
 
-        fighter.shieldPivot = mount.transform;
+        Transform socket = new GameObject("Shield Backhand Socket").transform;
+        socket.SetParent(leftHand, false);
+        socket.localPosition = new Vector3(-0.025f, 0.015f, 0.035f);
+        socket.localRotation = Quaternion.identity;
         if (_assetLibrary != null && _assetLibrary.kevinShieldPrefab != null)
         {
-            GameObject shield = Instantiate(_assetLibrary.kevinShieldPrefab, mount.transform);
-            shield.name = "Kevin Iglesias Shield";
+            GameObject shield = Instantiate(_assetLibrary.kevinShieldPrefab, socket);
+            shield.name = "Backhand Knight Shield";
             shield.transform.localPosition = Vector3.zero;
+            // Kevin's shield face is authored on local X; rotate it so the
+            // face sits across the back of the humanoid hand.
             shield.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            shield.transform.localScale = Vector3.one * 1.12f;
+            shield.transform.localScale = Vector3.one * 1.05f;
+            FitRenderedSize(shield, 0.90f);
             Renderer[] renderers = shield.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers, teamMaterial.color);
             fighter.shieldRenderer = renderers.Length > 0 ? renderers[0] : null;
         }
         else
         {
-            Transform shield = CreatePrimitive(PrimitiveType.Cylinder, "Shield Face", mount.transform,
+            Transform shield = CreatePrimitive(PrimitiveType.Cylinder, "Shield Face", socket,
                 Vector3.zero, new Vector3(0.43f, 0.065f, 0.43f), teamMaterial);
             shield.localRotation = Quaternion.identity;
             fighter.shieldRenderer = shield.GetComponent<Renderer>();
 
-            Transform rim = CreatePrimitive(PrimitiveType.Cylinder, "Shield Rim", mount.transform,
+            Transform rim = CreatePrimitive(PrimitiveType.Cylinder, "Shield Rim", socket,
                 new Vector3(0f, 0.012f, 0f), new Vector3(0.49f, 0.045f, 0.49f), _goldMaterial);
             rim.SetSiblingIndex(0);
             CreatePrimitive(PrimitiveType.Cylinder, "Shield Boss", shield,
@@ -1195,15 +1203,23 @@ public sealed class BossDuelPrototype : MonoBehaviour
         fighter.swordFollower = follower;
         fighter.swordPivot = mount;
 
-        if (_assetLibrary != null && _assetLibrary.kevinSwordPrefab != null)
+        // Mix the Quaternius knight with Kevin Iglesias' clearly readable
+        // weapon mesh. The latter has a stronger crossguard/blade silhouette
+        // in the over-the-shoulder camera.
+        bool useKevinSword = _assetLibrary != null && _assetLibrary.kevinSwordPrefab != null;
+        GameObject swordPrefab = useKevinSword
+            ? _assetLibrary.kevinSwordPrefab
+            : _assetLibrary != null ? _assetLibrary.knightSwordPrefab : null;
+        if (swordPrefab != null)
         {
-            GameObject sword = Instantiate(_assetLibrary.kevinSwordPrefab, mount);
-            sword.name = "Kevin Iglesias Sword";
+            GameObject sword = Instantiate(swordPrefab, mount);
+            sword.name = "Knight Steel Sword";
             sword.transform.localPosition = new Vector3(0f, 0.10f, 0f);
-            // Kevin's sword mesh is authored along local X, while the constrained
-            // combat rig treats local Y as the blade axis.
-            sword.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            sword.transform.localScale = Vector3.one * 1.18f;
+            sword.transform.localRotation = useKevinSword
+                ? Quaternion.Euler(0f, 0f, 90f)
+                : Quaternion.identity;
+            sword.transform.localScale = Vector3.one;
+            FitRenderedSize(sword, 1.38f);
             Renderer[] renderers = sword.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers,
                 fighter.facesRight ? new Color(0.18f, 0.62f, 1f) :
@@ -1224,6 +1240,20 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 new Vector3(0f, 0.98f, -0.03f), new Vector3(0.026f, 1.25f, 0.018f),
                 _stoneLight);
         }
+    }
+
+    private static void FitRenderedSize(GameObject instance, float targetLargestDimension)
+    {
+        Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0)
+            return;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+        float largest = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
+        if (largest > 0.001f)
+            instance.transform.localScale *= targetLargestDimension / largest;
     }
 
     private void CreateSwordTrail(Transform model, bool playerSide)
@@ -1297,7 +1327,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     Color sourceColor = source.HasProperty("_BaseColor")
                         ? source.GetColor("_BaseColor")
                         : source.HasProperty("_Color") ? source.color : Color.white;
-                    Color finalColor = Color.Lerp(sourceColor, teamColor, 0.32f);
+                    Color finalColor = Color.Lerp(sourceColor, teamColor, 0.10f);
                     if (replacement.HasProperty("_BaseColor"))
                         replacement.SetColor("_BaseColor", finalColor);
                     if (replacement.HasProperty("_Color"))
@@ -1540,13 +1570,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
             cameraObject.AddComponent<AudioListener>();
         }
 
-        // Player-side over-the-shoulder view: the blue fighter stays in the
-        // foreground while the rival and its attack telegraphs remain readable.
-        camera.transform.position = new Vector3(-6.4f, 3.15f, -3.25f);
-        camera.transform.LookAt(new Vector3(1.15f, 1.28f, 0f));
-        camera.fieldOfView = 58f;
-        camera.backgroundColor = new Color(0.025f, 0.035f, 0.06f);
-        camera.clearFlags = CameraClearFlags.SolidColor;
+        // Outdoor, player-side over-the-shoulder view. The rival remains large
+        // enough to read while the village horizon establishes an open world.
+        camera.transform.position = new Vector3(-8.45f, 3.65f, 4.7f);
+        camera.transform.LookAt(new Vector3(1.65f, 1.18f, -0.25f));
+        camera.fieldOfView = 57f;
+        camera.backgroundColor = new Color(0.42f, 0.64f, 0.82f);
+        camera.clearFlags = CameraClearFlags.Skybox;
         _mainCamera = camera;
         _cameraRestPosition = camera.transform.position;
 
@@ -1556,15 +1586,25 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         var keyLightObject = new GameObject("Arena Key Light");
         keyLightObject.transform.SetParent(transform);
-        keyLightObject.transform.rotation = Quaternion.Euler(48f, -28f, 0f);
+        keyLightObject.transform.rotation = Quaternion.Euler(42f, -34f, 0f);
         Light keyLight = keyLightObject.AddComponent<Light>();
         keyLight.type = LightType.Directional;
-        keyLight.color = new Color(0.72f, 0.82f, 1f);
-        keyLight.intensity = 1.65f;
+        keyLight.color = new Color(1f, 0.91f, 0.76f);
+        keyLight.intensity = 1.32f;
         keyLight.shadows = LightShadows.Soft;
 
-        CreatePointLight(new Vector3(-4.5f, 3.2f, 1.4f), new Color(0.1f, 0.45f, 1f), 8f, 5f);
-        CreatePointLight(new Vector3(4.5f, 3.2f, 1.4f), new Color(1f, 0.14f, 0.05f), 8f, 5f);
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.46f, 0.61f, 0.76f);
+        RenderSettings.ambientEquatorColor = new Color(0.42f, 0.43f, 0.36f);
+        RenderSettings.ambientGroundColor = new Color(0.15f, 0.18f, 0.13f);
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Linear;
+        RenderSettings.fogColor = new Color(0.55f, 0.67f, 0.69f);
+        RenderSettings.fogStartDistance = 22f;
+        RenderSettings.fogEndDistance = 58f;
+
+        CreatePointLight(new Vector3(5.4f, 2.2f, 4.5f),
+            new Color(1f, 0.48f, 0.16f), 7f, 2.2f);
     }
 
     private void CreateArena()
@@ -1572,49 +1612,132 @@ public sealed class BossDuelPrototype : MonoBehaviour
         var arena = new GameObject("Arena").transform;
         arena.SetParent(transform);
 
-        if (_assetLibrary != null && _assetLibrary.dungeonGate != null)
-        {
-            GameObject gate = Instantiate(_assetLibrary.dungeonGate, arena);
-            gate.name = "Kenney CC0 Dungeon Gate";
-            gate.transform.localPosition = new Vector3(2.25f, 0f, 4.05f);
-            gate.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            gate.transform.localScale = Vector3.one * 1.08f;
-            ConvertDungeonMaterials(gate.GetComponentsInChildren<Renderer>(true));
-        }
+        Material meadow = CreateMaterial(new Color(0.20f, 0.34f, 0.14f), 0f, 0.16f);
+        Material earth = CreateMaterial(new Color(0.30f, 0.235f, 0.15f), 0f, 0.22f);
+        Material path = CreateMaterial(new Color(0.41f, 0.40f, 0.35f), 0f, 0.30f);
 
-        CreatePrimitive(PrimitiveType.Cylinder, "Duel Platform", arena,
-            new Vector3(0f, -0.15f, 0f), new Vector3(5.6f, 0.28f, 5.6f), _stoneDark);
-        CreatePrimitive(PrimitiveType.Cylinder, "Platform Inlay", arena,
-            new Vector3(0f, 0.03f, 0f), new Vector3(4.75f, 0.06f, 4.75f), _stoneLight);
+        // A broad village green replaces the old raised circular platform and
+        // the black/gold arena bars. The combat surface is flat and rectangular.
+        CreatePrimitive(PrimitiveType.Cube, "Open Meadow", arena,
+            new Vector3(2f, -0.20f, 0f), new Vector3(36f, 0.30f, 28f), meadow);
+        CreatePrimitive(PrimitiveType.Cube, "Packed Earth Duel Ground", arena,
+            new Vector3(0.4f, -0.025f, 0f), new Vector3(13.5f, 0.055f, 6.4f), earth);
+        CreatePrimitive(PrimitiveType.Cube, "Village Road", arena,
+            new Vector3(7.3f, -0.010f, 0.1f), new Vector3(15f, 0.035f, 2.15f), path);
 
-        for (int i = 0; i < 12; i++)
-        {
-            float angle = i * Mathf.PI * 2f / 12f;
-            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.2f, 0.08f, Mathf.Sin(angle) * 4.2f);
-            Transform tile = CreatePrimitive(PrimitiveType.Cube, "Ring Tile", arena, point,
-                new Vector3(1.15f, 0.08f, 0.38f), i % 2 == 0 ? _goldMaterial : _stoneDark);
-            tile.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
-        }
+        if (_assetLibrary == null)
+            return;
 
-        for (int i = -1; i <= 1; i += 2)
-        {
-            CreatePrimitive(PrimitiveType.Cylinder, "Pillar", arena,
-                new Vector3(6.6f * i, 1.4f, 3.6f), new Vector3(0.55f, 1.4f, 0.55f), _stoneDark);
-            CreatePrimitive(PrimitiveType.Sphere, "Pillar Flame", arena,
-                new Vector3(6.6f * i, 3.05f, 3.6f), new Vector3(0.3f, 0.45f, 0.3f),
-                i < 0 ? _playerMaterial : _enemyMaterial);
-        }
+        // Buildings frame the horizon without closing the duel into another room.
+        SpawnEnvironment(_assetLibrary.villageBuildings, 0, arena,
+            new Vector3(5.9f, 0f, -0.9f), 205f, 1.38f, "Village Inn");
+        SpawnEnvironment(_assetLibrary.villageBuildings, 1, arena,
+            new Vector3(6.6f, 0f, 5.1f), 155f, 1.34f, "Village Blacksmith");
+        SpawnEnvironment(_assetLibrary.villageBuildings, 2, arena,
+            new Vector3(5.2f, 0f, 4.3f), 190f, 1.18f, "Timber House");
+        SpawnEnvironment(_assetLibrary.villageBuildings, 3, arena,
+            new Vector3(6.5f, 0f, -0.8f), 150f, 1.18f, "Roadside House");
+        SpawnEnvironment(_assetLibrary.villageBuildings, 6, arena,
+            new Vector3(19f, 0f, 7.2f), 205f, 1.0f, "Wind Mill");
+        SpawnEnvironment(_assetLibrary.villageBuildings, 7, arena,
+            new Vector3(18f, 0f, -7.4f), 150f, 1.0f, "Stable");
 
-        CreatePrimitive(PrimitiveType.Cube, "Back Wall", arena,
-            new Vector3(0f, 1.75f, 4.2f), new Vector3(13f, 3.5f, 0.35f), _stoneDark);
-        for (int i = -5; i <= 5; i += 2)
+        SpawnEnvironment(_assetLibrary.villageProps, 0, arena,
+            new Vector3(5.9f, 0f, 4.9f), 0f, 1.15f, "Stone Well");
+        SpawnEnvironment(_assetLibrary.villageProps, 1, arena,
+            new Vector3(7.2f, 0f, -2.2f), -16f, 1.0f, "Merchant Cart");
+        SpawnEnvironment(_assetLibrary.villageProps, 2, arena,
+            new Vector3(8.4f, 0f, 6.8f), 180f, 1.0f, "Market Stall");
+        SpawnEnvironment(_assetLibrary.villageProps, 3, arena,
+            new Vector3(5.2f, 0f, 4.6f), 0f, 1.0f, "Village Bonfire");
+        SpawnEnvironment(_assetLibrary.villageProps, 5, arena,
+            new Vector3(-1.5f, 0f, 6.5f), 90f, 1.0f, "Fence North");
+        SpawnEnvironment(_assetLibrary.villageProps, 5, arena,
+            new Vector3(2.0f, 0f, -6.4f), 90f, 1.0f, "Fence South");
+
+        Vector3[] treePositions =
         {
-            CreatePrimitive(PrimitiveType.Cube, "Wall Accent", arena,
-                new Vector3(i, 2.1f, 3.98f), new Vector3(0.16f, 2.1f, 0.08f), _goldMaterial);
+            new(3.6f, 0f, 6.2f), new(5.2f, 0f, 7.4f),
+            new(4.8f, 0f, 8.1f), new(10.5f, 0f, 7.2f),
+            new(3.8f, 0f, -6.2f), new(5.4f, 0f, -7.7f),
+            new(5.0f, 0f, -8.3f), new(11.2f, 0f, -7.2f)
+        };
+        for (int i = 0; i < treePositions.Length; i++)
+            SpawnEnvironment(_assetLibrary.naturePrefabs, i % 4, arena,
+                treePositions[i], i * 47f, 1.05f + (i % 3) * 0.12f, "Forest Tree");
+
+        for (int i = 0; i < 9; i++)
+        {
+            float z = i % 2 == 0 ? 5.7f : -5.8f;
+            SpawnEnvironment(_assetLibrary.naturePrefabs, 7 + i % 3, arena,
+                new Vector3(-4.5f + i * 2.5f, 0f, z), i * 33f,
+                0.8f + (i % 2) * 0.18f, "Roadside Bush");
         }
     }
 
-    private void ConvertDungeonMaterials(Renderer[] renderers)
+    private void SpawnEnvironment(
+        GameObject[] prefabs,
+        int index,
+        Transform parent,
+        Vector3 position,
+        float yaw,
+        float scale,
+        string label)
+    {
+        if (prefabs == null || prefabs.Length == 0)
+            return;
+
+        GameObject prefab = prefabs[Mathf.Abs(index) % prefabs.Length];
+        if (prefab == null)
+            return;
+
+        GameObject instance = Instantiate(prefab, parent);
+        instance.name = "CC0 " + label;
+        instance.transform.localPosition = position;
+        instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+        instance.transform.localScale = Vector3.one * scale;
+        Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length > 0)
+        {
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+
+            float targetHeight = EnvironmentTargetHeight(label);
+            if (bounds.size.y > 0.001f && targetHeight > 0f)
+            {
+                float fit = targetHeight / bounds.size.y;
+                instance.transform.localScale *= fit;
+                bounds = renderers[0].bounds;
+                for (int i = 1; i < renderers.Length; i++)
+                    bounds.Encapsulate(renderers[i].bounds);
+            }
+            instance.transform.position += Vector3.up * (position.y - bounds.min.y);
+        }
+        ConvertEnvironmentMaterials(renderers);
+    }
+
+    private static float EnvironmentTargetHeight(string label)
+    {
+        if (label.Contains("Tree"))
+            return 5.4f;
+        if (label.Contains("Bush"))
+            return 0.9f;
+        if (label.Contains("Mill"))
+            return 6.8f;
+        if (label.Contains("Inn") || label.Contains("House") ||
+            label.Contains("Blacksmith") || label.Contains("Stable"))
+            return 4.8f;
+        if (label.Contains("Market"))
+            return 2.4f;
+        if (label.Contains("Fence"))
+            return 1.25f;
+        if (label.Contains("Bonfire"))
+            return 0.8f;
+        return 1.5f;
+    }
+
+    private void ConvertEnvironmentMaterials(Renderer[] renderers)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
         if (shader == null)
@@ -1629,12 +1752,14 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 var replacement = new Material(shader);
                 Texture texture = source != null && source.HasProperty("_MainTex")
                     ? source.mainTexture : null;
+                Color color = source != null && source.HasProperty("_Color")
+                    ? source.color : Color.white;
                 if (texture != null && replacement.HasProperty("_BaseMap"))
                     replacement.SetTexture("_BaseMap", texture);
                 if (replacement.HasProperty("_BaseColor"))
-                    replacement.SetColor("_BaseColor", new Color(0.54f, 0.58f, 0.64f));
-                replacement.SetFloat("_Metallic", 0.08f);
-                replacement.SetFloat("_Smoothness", 0.28f);
+                    replacement.SetColor("_BaseColor", color);
+                replacement.SetFloat("_Metallic", 0.02f);
+                replacement.SetFloat("_Smoothness", 0.22f);
                 materials[i] = replacement;
             }
             renderer.materials = materials;
@@ -1978,20 +2103,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
     }
 
-    private void SpawnImpact(Vector3 position, Material material, float size)
-    {
-        GameObject impact = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        impact.name = "Impact";
-        impact.transform.SetParent(transform);
-        impact.transform.position = position;
-        impact.transform.localScale = Vector3.one * 0.15f;
-        Destroy(impact.GetComponent<Collider>());
-        impact.GetComponent<Renderer>().material = material;
-        PrototypePulse pulse = impact.AddComponent<PrototypePulse>();
-        pulse.targetScale = size;
-        pulse.life = 0.32f;
-    }
-
     private void CreateMaterials()
     {
         _playerMaterial = CreateMaterial(new Color(0.05f, 0.42f, 1f), 0.25f, 0.65f);
@@ -2010,12 +2121,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _audioLayerA = CreateAudioLayer(0.92f);
         _audioLayerB = CreateAudioLayer(0.72f);
 
-        // These low layers sit under the real CC0 foley clips and add weight.
-        _slashSound = CreateProceduralSound("Slash Low Air", 185f, 52f, 0.28f, 0.52f, 0.66f);
-        _guardSound = CreateProceduralSound("Shield Low Ring", 148f, 82f, 0.34f, 0.62f, 0.18f);
-        _parrySound = CreateProceduralSound("Parry Resonance", 620f, 1480f, 0.38f, 0.46f, 0.08f);
-        _dodgeSound = CreateProceduralSound("Dodge Air", 160f, 38f, 0.26f, 0.42f, 0.78f);
-        _hitSound = CreateProceduralSound("Impact Sub", 92f, 42f, 0.34f, 0.74f, 0.42f);
+        // Combat audio now uses recorded CC0 foley only. The former generated
+        // sine/noise layers produced the bouncy arcade character the duel did
+        // not need, especially under shield blocks and parries.
     }
 
     private AudioSource CreateAudioLayer(float volume)
@@ -2026,41 +2134,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         source.volume = volume;
         source.dopplerLevel = 0f;
         return source;
-    }
-
-    private static AudioClip CreateProceduralSound(
-        string clipName,
-        float startFrequency,
-        float endFrequency,
-        float duration,
-        float volume,
-        float noiseAmount)
-    {
-        const int sampleRate = 44100;
-        int sampleCount = Mathf.CeilToInt(sampleRate * duration);
-        float[] samples = new float[sampleCount];
-        var random = new System.Random(clipName.GetHashCode());
-        float phase = 0f;
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            float t = i / (float)sampleCount;
-            float frequency = Mathf.Lerp(startFrequency, endFrequency, t);
-            phase += frequency / sampleRate * Mathf.PI * 2f;
-            float tone = Mathf.Sin(phase) * (1f - noiseAmount);
-            float noise = ((float)random.NextDouble() * 2f - 1f) * noiseAmount;
-            float envelope = Mathf.Pow(1f - t, 2f) * Mathf.Min(1f, t * 28f);
-            samples[i] = (tone + noise) * envelope * volume;
-        }
-
-        AudioClip clip = AudioClip.Create(clipName, sampleCount, 1, sampleRate, false);
-        clip.SetData(samples, 0);
-        return clip;
-    }
-
-    private void PlaySound(AudioClip clip, float pitch)
-    {
-        PlayOnLayer(_audioSource, clip, pitch, 1f);
     }
 
     private static void PlayOnLayer(
@@ -2084,7 +2157,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 0.92f, 1f);
             PlayOnLayer(_audioLayerB, _assetLibrary != null ? _assetLibrary.swordDraw : null,
                 0.78f, 0.58f);
-            PlayOnLayer(_audioSource, _slashSound, 0.86f, 0.72f);
         }
         else if (motion == Motion.VerticalSlash)
         {
@@ -2093,15 +2165,15 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 0.82f, 1f);
             PlayOnLayer(_audioLayerB, _assetLibrary != null ? _assetLibrary.swordDraw : null,
                 0.66f, 0.62f);
-            PlayOnLayer(_audioSource, _slashSound, 0.70f, 0.86f);
         }
         else
         {
             PlayOnLayer(_audioLayerA,
                 _assetLibrary != null ? _assetLibrary.bodyImpactMedium : null,
                 0.72f, 0.35f);
-            PlayOnLayer(_audioLayerB, _dodgeSound, 0.62f, 0.82f);
-            PlayOnLayer(_audioSource, _hitSound, 0.58f, 0.38f);
+            PlayOnLayer(_audioLayerB,
+                _assetLibrary != null ? _assetLibrary.swordDraw : null,
+                0.88f, 0.30f);
         }
     }
 
@@ -2115,7 +2187,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
             PlayOnLayer(_audioLayerB,
                 _assetLibrary != null ? _assetLibrary.bodyImpactMedium : null,
                 0.92f, 0.82f);
-            PlayOnLayer(_audioSource, _hitSound, 0.62f, 1f);
             return;
         }
 
@@ -2125,7 +2196,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         PlayOnLayer(_audioLayerB,
             _assetLibrary != null ? _assetLibrary.bodyImpactMedium : null,
             pitch * 0.92f, 0.78f);
-        PlayOnLayer(_audioSource, _hitSound, pitch * 0.72f, 0.92f);
     }
 
     private void PlayGuardSound(Motion attack)
@@ -2141,7 +2211,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 ? (vertical ? _assetLibrary.shieldBlock : _assetLibrary.shieldBlockHeavy)
                 : null,
             vertical ? 0.68f : 0.80f, 0.58f);
-        PlayOnLayer(_audioSource, _guardSound, vertical ? 0.72f : 0.88f, 0.84f);
     }
 
     private void PlayGuardBreakSound()
@@ -2151,19 +2220,20 @@ public sealed class BossDuelPrototype : MonoBehaviour
         PlayOnLayer(_audioLayerB,
             _assetLibrary != null ? _assetLibrary.bodyImpactHeavy : null,
             0.68f, 0.88f);
-        PlayOnLayer(_audioSource, _hitSound, 0.52f, 1f);
     }
 
     private void PlayParrySound(Motion attack)
     {
         float attackPitch = attack == Motion.VerticalSlash ? 0.88f
             : attack == Motion.Kick ? 0.78f : 1f;
-        PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.parryBell : null,
+        PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.parryClang : null,
             attackPitch, 1f);
         PlayOnLayer(_audioLayerB,
-            _assetLibrary != null ? _assetLibrary.shieldBlockHeavy : null,
-            attackPitch * 1.08f, 0.86f);
-        PlayOnLayer(_audioSource, _parrySound, attackPitch * 0.92f, 0.92f);
+            _assetLibrary != null ? _assetLibrary.guardBreak : null,
+            attackPitch * 0.96f, 0.72f);
+        PlayOnLayer(_audioSource,
+            _assetLibrary != null ? _assetLibrary.swordHit : null,
+            attackPitch * 1.03f, 0.42f);
     }
 
     private void PlayTradeSound(bool includesKick)
@@ -2176,7 +2246,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         PlayOnLayer(_audioLayerB,
             _assetLibrary != null ? _assetLibrary.swordHit : null,
             includesKick ? 0.82f : 1.04f, 0.9f);
-        PlayOnLayer(_audioSource, _hitSound, 0.58f, 1f);
+    }
+
+    private void PlayDodgeSound(float pitch)
+    {
+        PlayOnLayer(_audioLayerA,
+            _assetLibrary != null ? _assetLibrary.swordDraw : null,
+            pitch, 0.24f);
     }
 
     private static Material CreateMaterial(Color color, float metallic, float smoothness)
@@ -2641,37 +2717,43 @@ public sealed class AssetShieldFollower : MonoBehaviour
             return;
 
         Vector3 left = -_fighterRoot.right;
-        Vector3 arenaOutward = -_fighterRoot.forward;
+        Vector3 forward = _fighterRoot.forward;
+        Vector3 up = _fighterRoot.up;
+        Vector3 idlePosition = _fighterRoot.position + up * 1.12f +
+                               forward * 0.18f + left * 0.50f;
         Vector3 guardPosition = _fighterRoot.position + _fighterRoot.up * 1.34f +
-                                _fighterRoot.forward * 0.52f + left * 0.08f;
-        Quaternion guardRotation =
-            Quaternion.LookRotation(_fighterRoot.up, -_fighterRoot.forward) *
-            Quaternion.Euler(90f, 0f, 0f);
-        Vector3 position = _fighterRoot.position + _fighterRoot.up * 1.18f +
-                           arenaOutward * 0.42f + left * 0.34f;
-        Quaternion rotation = guardRotation *
-                              Quaternion.AngleAxis(-24f, _fighterRoot.forward);
+                                forward * 0.48f + left * 0.18f;
+        Quaternion idleRotation = Quaternion.LookRotation(forward, up) *
+                                  Quaternion.Euler(-12f, -22f, -58f);
+        Quaternion guardRotation = Quaternion.LookRotation(forward, up) *
+                                   Quaternion.Euler(-5f, -8f, -12f);
+        Vector3 position = idlePosition;
+        Quaternion rotation = idleRotation;
 
         if (_guarding)
         {
-            position = guardPosition;
-            rotation = guardRotation;
+            float raise = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(_progress * 4.2f));
+            position = Vector3.Lerp(idlePosition, guardPosition, raise);
+            rotation = Quaternion.Slerp(idleRotation, guardRotation, raise);
         }
         else if (_parrying)
         {
-            // Start from the exact guard pose, extend the shield and the left
-            // arm toward the fighter's outside-left, then recover to guard.
+            // The parry begins from guard, opens the elbow and extends the arm
+            // to the outside-left. Because the visible shield is a hand child,
+            // its rotation follows the wrist through the whole sweep.
             float sweep = Mathf.Sin(Mathf.Clamp01(_progress) * Mathf.PI);
-            position = guardPosition + arenaOutward * (0.68f * sweep) +
-                       left * (0.46f * sweep) +
-                       _fighterRoot.up * (0.10f * sweep);
+            float extension = Mathf.SmoothStep(0f, 1f, sweep);
+            position = guardPosition + left * (0.96f * extension) +
+                       forward * (0.34f * extension) +
+                       up * (0.10f * extension);
             rotation = guardRotation *
-                       Quaternion.AngleAxis(-68f * sweep, _fighterRoot.forward);
+                       Quaternion.AngleAxis(-74f * extension, forward) *
+                       Quaternion.AngleAxis(18f * extension, up);
         }
 
         transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-34f * Time.deltaTime));
+            1f - Mathf.Exp(-42f * Time.deltaTime));
         transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-38f * Time.deltaTime));
+            1f - Mathf.Exp(-46f * Time.deltaTime));
     }
 }

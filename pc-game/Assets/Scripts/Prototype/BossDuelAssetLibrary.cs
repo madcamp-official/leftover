@@ -5,9 +5,10 @@ public sealed class BossDuelAssetLibrary : ScriptableObject
 {
     public GameObject fighterPrefab;
     public RuntimeAnimatorController combatController;
-    public GameObject dungeonRoom;
-    public GameObject dungeonGate;
-    public GameObject dungeonCorridor;
+    public GameObject knightSwordPrefab;
+    public GameObject[] villageBuildings;
+    public GameObject[] villageProps;
+    public GameObject[] naturePrefabs;
     public Sprite slashSprite;
     public Sprite impactSprite;
     public Sprite guardSprite;
@@ -20,7 +21,7 @@ public sealed class BossDuelAssetLibrary : ScriptableObject
     public AudioClip swordHit;
     public AudioClip shieldBlock;
     public AudioClip shieldBlockHeavy;
-    public AudioClip parryBell;
+    public AudioClip parryClang;
     public AudioClip guardBreak;
     public AudioClip bodyImpactHeavy;
     public AudioClip bodyImpactMedium;

@@ -50,9 +50,12 @@
 전투 시스템은 기존 `CombatInputHub` 이벤트를 사용하므로
 나중에 키보드 입력을 폰 센서/비전 입력으로 교체해도 규칙 코드는 유지된다.
 
-캐릭터는 `EEJANAI_Team/FreeSwordAnimations`의 휴머노이드 검객 프리팹과
-기본 자세를 사용하고, 검·방패는 설치된 Kevin Iglesias
-`Skeleton Animations FREE`의 장비 프리팹을 조합한다. 검 공격은
+캐릭터는 Quaternius `Animated Knight Character`(CC0)의 갑옷 기사 모델에
+`EEJANAI_Team/FreeSwordAnimations` 휴머노이드 전투 클립을 리타게팅하고,
+검·방패는 Kevin Iglesias `Skeleton Animations FREE`의 장비 프리팹을
+조합한다. 방패 메시 자체는 실제 왼손 뼈의 손등 소켓 자식으로 고정하고,
+별도의 IK 목표가 팔꿈치와 손목을 이동시키므로 기본 방어에서 패링으로 이어질 때
+방패가 손에서 분리되거나 몸을 관통하지 않는다. 검 공격은
 `slash2`(가로베기)와 `slash9`(세로베기) 휴머노이드 클립을 상체에 직접
 샘플링하고, 발 IK로 제자리 자세를 유지한다. 방패 팔과 발차기만 별도 IK로
 제어하므로 방어 중 검이 방패를 따라 회전하지 않는다.
@@ -62,12 +65,16 @@
 원본 Toon 재질은 실행 시 URP/Lit으로 변환되어 현재 렌더 파이프라인에서도
 정상 표시된다.
 
-맵은 Kenney의 `Modular Dungeon Kit`(CC0)를 사용하며 원본 라이선스 파일은
-`Assets/ThirdParty/KenneyModularDungeon/License.txt`에 함께 보존한다.
+맵은 Quaternius의 `Medieval Village`와 `Simple Nature`(모두 CC0)를 섞은
+중세 야외 마을로 구성한다. 기존 원형 발판, 금색/검정 링, 실내 벽은 사용하지
+않으며 넓은 흙 결투장, 마을길, 목조 건물, 수목과 소품을 카메라 구도에 맞춰
+배치한다. 원본 출처와 라이선스는 각 ThirdParty 폴더의 `LICENSE.txt`에
+보존한다.
 전투 이펙트는 Kenney `Particle Pack`(CC0)의 투명 PNG를 사용하며 라이선스는
 `Assets/ThirdParty/KenneyParticlePack/License.txt`에 보존한다.
 전투 사운드는 Kenney `RPG Audio`와 `Impact Sounds`(CC0)에서 선별한 검풍,
-금속 충돌, 종 울림, 중량 타격음을 최대 3개 레이어로 조합한다. 원본 라이선스는
+금속 충돌, 철판 타격과 중량 타격음을 최대 3개 레이어로 조합한다. 종소리와
+절차적으로 생성하던 바운스/신시사이저 계열 효과음은 사용하지 않는다. 원본 라이선스는
 각각 `Assets/ThirdParty/KenneyCombatAudio/RPG/License.txt`와
 `Assets/ThirdParty/KenneyCombatAudio/Impact/License.txt`에 보존한다.
 
