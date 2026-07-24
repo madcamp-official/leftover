@@ -94,6 +94,36 @@ Day 2 작업 범위. 회피 2종(앉기 / 좌우 움직이기)만 판정 — 방
 | `side_step` | 좌우 움직이기(세로 베기 회피) 판별 결과 — `"left"` / `"right"` / `"none"` |
 | `pose_confidence` | MediaPipe landmark visibility 기반 신뢰도 (0~1) |
 
+## 4. 모션 분류 결과 이벤트 이름 (표준화)
+
+기획서 2장 "동작 목록(8종)"에 대응하는 코드/로그/UI 상의 이름을 통일한다. Unity
+분류기(최종), `prototype/mediapipe_only_mvp`, `prototype/pc_server`의 폰 센서 분류
+실험이 전부 이 이름을 따른다 — 실험마다 이름이 달라서 로그/문서를 서로 못 알아보는
+일이 없도록.
+
+| 이름 (코드/JSON) | 한국어 | 종류 | 담당 (최종 아키텍처 기준) |
+|---|---|---|---|
+| `swing_horizontal` | 가로 베기 | event (순간) | 검 폰(폰1) IMU |
+| `swing_vertical` | 세로 베기 | event (순간) | 검 폰(폰1) IMU |
+| `thrust` | 찌르기 | event (순간) | 검 폰(폰1) IMU |
+| `guard_up` | 기본 방어 | level (지속 상태) | 방패 폰(폰2) IMU |
+| `parry` | 패링 | event (순간) | 방패 폰(폰2) IMU |
+| `crouch` | 앉기 | level (지속 상태) | 웹캠(vision-server) |
+| `side_step` | 좌우 움직이기 | level (지속 상태, `"left"`/`"right"`/`"none"`) | 웹캠(vision-server) |
+| `kick` | 발차기 | event (순간) | 웹캠(vision-server) — 좌/우발 구분 없이 하나로 판정 |
+
+- **event(순간)**: 한 번의 동작을 트리거처럼 발생시키는 것. 재판정을 막기 위한 쿨다운을
+  둔다 (같은 스윙 하나가 여러 프레임에 걸쳐 중복 판정되는 것 방지).
+- **level(지속 상태)**: 조건이 유지되는 동안 계속 True/값을 유지하는 것. 콜다운 대신
+  "일정 시간 이상 유지돼야 인정"하는 홀드 타임을 둬서 순간적인 오탐을 거른다.
+- 웹캠 쪽 `crouch`/`side_step`은 이미 `vision-server`가 이 이름 그대로 쓰고 있음 (3장 참고).
+- 검/방패 IMU 쪽 5개는 아직 Unity 구현 전이라 `prototype/pc_server`의 Python 실험에서
+  먼저 이 이름으로 검증한다 (아래 "결정 필요" 참고 — 폰 IMU 분류는 아직 실험 단계).
+- `kick`은 기획서 원안(7종)엔 없던 추가 동작. 게임 내 역할(공격/카운터 등)이 아직
+  미정이라 3번 섹션의 JSON 페이로드 필드에는 아직 안 넣었음 — 역할이 정해지면
+  `vision-server`의 `{"t":..,"crouch":..,"side_step":..}` 페이로드에 `"kick": true/false`
+  필드로 추가하면 된다.
+
 ## 결정 필요 (팀 회의에서 확정할 것)
 
 - [ ] 자이로 단위: deg/s vs rad/s (Unity `Gyroscope.rotationRate`는 rad/s 기준 — 통일 필요)
