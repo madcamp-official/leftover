@@ -14,4 +14,14 @@ public sealed class BossDuelAssetLibrary : ScriptableObject
     public Sprite parrySprite;
     public GameObject kevinSwordPrefab;
     public GameObject kevinShieldPrefab;
+    public AudioClip swordSlice;
+    public AudioClip swordSliceHeavy;
+    public AudioClip swordDraw;
+    public AudioClip swordHit;
+    public AudioClip shieldBlock;
+    public AudioClip shieldBlockHeavy;
+    public AudioClip parryBell;
+    public AudioClip guardBreak;
+    public AudioClip bodyImpactHeavy;
+    public AudioClip bodyImpactMedium;
 }

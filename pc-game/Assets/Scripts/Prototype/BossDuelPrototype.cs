@@ -83,11 +83,19 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private enum EffectKind
     {
-        Slash,
-        Guard,
-        Parry,
-        Dodge,
-        Hit
+        HorizontalHit,
+        VerticalHit,
+        KickHit,
+        GuardHorizontal,
+        GuardVertical,
+        GuardBreak,
+        ParryHorizontal,
+        ParryVertical,
+        ParryKick,
+        DodgeCrouch,
+        DodgeSide,
+        SwordTrade,
+        KickTrade
     }
 
     private const float MaxHealth = 100f;
@@ -128,6 +136,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private Material _parryMaterial;
     private Material _dodgeMaterial;
     private AudioSource _audioSource;
+    private AudioSource _audioLayerA;
+    private AudioSource _audioLayerB;
     private AudioClip _slashSound;
     private AudioClip _guardSound;
     private AudioClip _parrySound;
@@ -426,8 +436,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
             ? "HORIZONTAL SLASH"
             : attack == Motion.VerticalSlash ? "VERTICAL SLASH" : "KICK";
         _detail = "Strike!";
-        PlaySound(attack == Motion.Kick ? _hitSound : _slashSound,
-            attack == Motion.Kick ? 0.72f : 0.9f);
+        PlayAttackSound(attack);
     }
 
     private static Motion PrepareFor(Motion attack)
@@ -536,8 +545,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
             _banner = playerAttacking ? "RIVAL PARRIED" : "PERFECT PARRY";
             _detail = "Parry beats every attack. The attacker is staggered.";
             SpawnActionEffect(Vector3.Lerp(attacker.root.position, defender.root.position, 0.5f) +
-                Vector3.up * 1.35f, EffectKind.Parry, 1.45f);
-            PlaySound(_parrySound, 1f);
+                Vector3.up * 1.35f, ParryEffectFor(attacker.motion), 1.45f);
+            PlayParrySound(attacker.motion);
             return;
         }
 
@@ -558,8 +567,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _detail = "Basic guard stops horizontal and vertical slashes.";
             }
             SpawnActionEffect(defender.root.position + Vector3.up * 1.35f,
-                EffectKind.Guard, 1.1f);
-            PlaySound(_guardSound, 0.9f);
+                attacker.motion == Motion.Kick
+                    ? EffectKind.GuardBreak
+                    : GuardEffectFor(attacker.motion), 1.1f);
+            if (attacker.motion == Motion.Kick)
+                PlayGuardBreakSound();
+            else
+                PlayGuardSound(attacker.motion);
             return;
         }
 
@@ -576,7 +590,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     ? "Correct dodge. The slash attacker is staggered."
                     : "Side movement avoids the kick.";
                 SpawnActionEffect(defender.root.position + Vector3.up,
-                    EffectKind.Dodge, 1.15f);
+                    defender.motion == Motion.DodgeCrouch
+                        ? EffectKind.DodgeCrouch
+                        : EffectKind.DodgeSide, 1.15f);
                 PlaySound(_dodgeSound, 1.05f);
                 return;
             }
@@ -588,8 +604,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     ? "Crouching loses to kick: 0.5 damage."
                     : "Wrong dodge direction: 1.0 damage.");
             SpawnActionEffect(defender.root.position + Vector3.up * 1.2f,
-                EffectKind.Hit, 1.15f);
-            PlaySound(_hitSound, 1f);
+                HitEffectFor(attacker.motion), 1.15f);
+            PlayHitSound(attacker.motion);
             return;
         }
 
@@ -617,8 +633,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _banner = attackerKick ? "KICK TRADE x0.5" : "SWORD TRADE x1.0";
             }
             SpawnActionEffect(Vector3.Lerp(attacker.root.position, defender.root.position, 0.5f) +
-                Vector3.up * 1.25f, EffectKind.Hit, 1.35f);
-            PlaySound(_hitSound, 0.88f);
+                Vector3.up * 1.25f,
+                attackerKick || defenderKick ? EffectKind.KickTrade : EffectKind.SwordTrade,
+                1.35f);
+            PlayTradeSound(attackerKick || defenderKick);
             return;
         }
 
@@ -630,8 +648,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 : "VERTICAL HIT",
             "Clean attack according to the action matrix.");
         SpawnActionEffect(defender.root.position + Vector3.up * 1.3f,
-            attacker.motion == Motion.Kick ? EffectKind.Hit : EffectKind.Slash, 1.2f);
-        PlaySound(_hitSound, attacker.motion == Motion.Kick ? 0.72f : 1f);
+            HitEffectFor(attacker.motion), 1.2f);
+        PlayHitSound(attacker.motion);
     }
 
     private static bool IsCorrectDodge(Motion dodge, Motion attack)
@@ -644,6 +662,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private static float AttackDamage(Fighter attacker)
     {
         return attacker.facesRight ? PlayerAttackDamage : EnemyAttackDamage;
+    }
+
+    private static EffectKind HitEffectFor(Motion motion)
+    {
+        return motion == Motion.HorizontalSlash ? EffectKind.HorizontalHit
+            : motion == Motion.VerticalSlash ? EffectKind.VerticalHit
+            : EffectKind.KickHit;
+    }
+
+    private static EffectKind GuardEffectFor(Motion motion)
+    {
+        return motion == Motion.HorizontalSlash
+            ? EffectKind.GuardHorizontal
+            : EffectKind.GuardVertical;
+    }
+
+    private static EffectKind ParryEffectFor(Motion motion)
+    {
+        return motion == Motion.HorizontalSlash ? EffectKind.ParryHorizontal
+            : motion == Motion.VerticalSlash ? EffectKind.ParryVertical
+            : EffectKind.ParryKick;
     }
 
     private void StaggerAttacker(Fighter attacker, bool playerAttacking, float duration)
@@ -726,7 +765,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _enemyPhaseEnds = Time.time + AttackDuration(Motion.HorizontalSlash);
                 SetMotion(_enemy, Motion.HorizontalSlash,
                     AttackDuration(Motion.HorizontalSlash));
-                PlaySound(_slashSound, 0.8f);
+                PlayAttackSound(Motion.HorizontalSlash);
                 break;
 
             case EnemyPhase.TelegraphVertical:
@@ -734,14 +773,14 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _enemyPhaseEnds = Time.time + AttackDuration(Motion.VerticalSlash);
                 SetMotion(_enemy, Motion.VerticalSlash,
                     AttackDuration(Motion.VerticalSlash));
-                PlaySound(_slashSound, 0.8f);
+                PlayAttackSound(Motion.VerticalSlash);
                 break;
 
             case EnemyPhase.TelegraphKick:
                 _enemyPhase = EnemyPhase.AttackingKick;
                 _enemyPhaseEnds = Time.time + 0.58f;
                 SetMotion(_enemy, Motion.Kick, 0.58f);
-                PlaySound(_hitSound, 0.72f);
+                PlayAttackSound(Motion.Kick);
                 break;
 
             case EnemyPhase.AttackingHorizontal:
@@ -886,11 +925,16 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 break;
 
             case Motion.Parry:
-                shieldEuler = new Vector3(90f, Mathf.Lerp(-55f, 55f, Mathf.Sin(t * Mathf.PI)), 0f);
+            {
+                float parryReach = Mathf.Sin(t * Mathf.PI);
+                shieldEuler = new Vector3(90f, 0f, -62f * parryReach * side);
                 fighter.shieldPivot.localPosition = new Vector3(
-                    Mathf.Lerp(-0.15f, 0.8f, Mathf.Sin(t * Mathf.PI)) * side, 1.45f, -0.3f);
+                    (-0.08f - 0.78f * parryReach) * side,
+                    1.40f + 0.10f * parryReach,
+                    -0.38f);
                 fighter.shieldRenderer.material = fighter.guardMaterial;
                 break;
+            }
 
             case Motion.DodgeCrouch:
             {
@@ -946,7 +990,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         fighter.shieldPivot.localRotation = Quaternion.Euler(shieldEuler);
 
         if (fighter.motion != Motion.Guard && fighter.motion != Motion.Parry)
-            fighter.shieldPivot.localPosition = new Vector3(-0.42f * side, 1.25f, 0f);
+            fighter.shieldPivot.localPosition = new Vector3(-0.68f * side, 1.22f, -0.05f);
 
         if (fighter.motion == Motion.Hit && MotionFinished(fighter))
             fighter.bodyRenderer.material = fighter.baseMaterial;
@@ -1330,16 +1374,17 @@ public sealed class BossDuelPrototype : MonoBehaviour
             fighter.shieldFollower.SetPose(
                 fighter.motion == Motion.Guard,
                 fighter.motion == Motion.Parry,
-                t,
-                fighter.facesRight ? 1f : -1f);
+                t);
         if (fighter.groundedRig != null)
         {
             // Sword attacks come from the authored humanoid clips. Only the
             // shield arm is constrained during guard/parry, so the sword hand
             // can never inherit the shield sweep and spin around the body.
             fighter.groundedRig.lockRightHand = false;
-            fighter.groundedRig.lockLeftHand =
-                fighter.motion == Motion.Guard || fighter.motion == Motion.Parry;
+            // The shield mount is always the left-hand target, keeping the
+            // shield attached while resting outside the torso as well as
+            // during the guard-to-parry extension.
+            fighter.groundedRig.lockLeftHand = fighter.shieldFollower != null;
             fighter.groundedRig.kickActive = fighter.motion == Motion.Kick;
             fighter.groundedRig.crouchWeight = fighter.motion == Motion.DodgeCrouch
                 ? Mathf.Sin(t * Mathf.PI) : 0f;
@@ -1634,23 +1679,190 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void SpawnActionEffect(Vector3 position, EffectKind kind, float size)
     {
-        Sprite sprite = kind == EffectKind.Guard ? _assetLibrary.guardSprite
-            : kind == EffectKind.Parry ? _assetLibrary.parrySprite
-            : _assetLibrary.impactSprite;
-        Color color = kind == EffectKind.Guard ? new Color(1f, 0.68f, 0.12f, 1f)
-            : kind == EffectKind.Parry ? new Color(0.25f, 1f, 1f, 1f)
-            : kind == EffectKind.Dodge ? new Color(0.35f, 1f, 0.58f, 0.9f)
-            : new Color(1f, 0.25f, 0.10f, 1f);
-        SpawnAnimeSprite(sprite, position + Vector3.forward * 0.12f, color,
-            Vector3.one * size * 0.58f, Vector3.one * size * 1.65f, 0f, 0.26f);
-        SpawnAnimeSprite(_assetLibrary.parrySprite, position + Vector3.forward * 0.18f,
-            Color.Lerp(color, Color.white, 0.55f),
-            Vector3.one * size * 0.32f, Vector3.one * size * 1.15f, 38f, 0.18f);
+        Sprite slash = _assetLibrary != null ? _assetLibrary.slashSprite : null;
+        Sprite impact = _assetLibrary != null ? _assetLibrary.impactSprite : null;
+        Sprite circle = _assetLibrary != null ? _assetLibrary.guardSprite : null;
+        Sprite spark = _assetLibrary != null ? _assetLibrary.parrySprite : null;
+        Vector3 front = _mainCamera != null ? _mainCamera.transform.forward * -0.18f : Vector3.zero;
+        position += front;
+
+        switch (kind)
+        {
+            case EffectKind.HorizontalHit:
+                SpawnAnimeSprite(slash, position, new Color(1f, 0.16f, 0.04f, 0.95f),
+                    new Vector3(0.7f, 0.16f, 1f) * size,
+                    new Vector3(3.8f, 0.92f, 1f) * size, 0f, 0.30f, -18f);
+                SpawnAnimeSprite(impact, position, new Color(1f, 0.75f, 0.18f, 1f),
+                    Vector3.one * size * 0.28f, Vector3.one * size * 1.55f,
+                    18f, 0.20f, 120f);
+                SpawnSparkFan(spark, position, new Color(1f, 0.42f, 0.08f, 1f),
+                    12, 4.8f, -28f, 28f, size * 0.22f);
+                SpawnEnergyRing(position, _dangerMaterial, size * 1.2f, 0.24f);
+                break;
+
+            case EffectKind.VerticalHit:
+                SpawnAnimeSprite(slash, position, new Color(0.72f, 0.22f, 1f, 0.95f),
+                    new Vector3(0.58f, 0.14f, 1f) * size,
+                    new Vector3(4.1f, 0.82f, 1f) * size, 90f, 0.34f, 22f);
+                SpawnAnimeSprite(impact, position + Vector3.up * 0.08f,
+                    new Color(1f, 0.38f, 0.84f, 1f),
+                    Vector3.one * size * 0.30f, Vector3.one * size * 1.7f,
+                    45f, 0.22f, -145f);
+                SpawnSparkFan(spark, position, new Color(0.72f, 0.42f, 1f, 1f),
+                    12, 5.2f, 62f, 118f, size * 0.22f);
+                SpawnEnergyRing(position, _parryMaterial, size * 1.25f, 0.25f);
+                break;
+
+            case EffectKind.KickHit:
+                SpawnAnimeSprite(impact, position, new Color(1f, 0.56f, 0.04f, 1f),
+                    Vector3.one * size * 0.42f, Vector3.one * size * 2.0f,
+                    12f, 0.28f, 175f);
+                SpawnAnimeSprite(circle, position, new Color(1f, 0.20f, 0.04f, 0.82f),
+                    Vector3.one * size * 0.35f, Vector3.one * size * 1.7f,
+                    0f, 0.32f, -90f);
+                SpawnSparkFan(spark, position, new Color(1f, 0.70f, 0.16f, 1f),
+                    16, 4.4f, 155f, 385f, size * 0.20f);
+                SpawnEnergyRing(position, _goldMaterial, size * 1.45f, 0.28f);
+                break;
+
+            case EffectKind.GuardHorizontal:
+            case EffectKind.GuardVertical:
+            {
+                bool vertical = kind == EffectKind.GuardVertical;
+                SpawnAnimeSprite(circle, position, new Color(1f, 0.68f, 0.10f, 0.92f),
+                    Vector3.one * size * 0.72f, Vector3.one * size * 1.35f,
+                    0f, 0.36f, 24f);
+                SpawnAnimeSprite(slash, position, new Color(1f, 0.94f, 0.62f, 0.95f),
+                    new Vector3(0.52f, 0.12f, 1f) * size,
+                    new Vector3(2.4f, 0.55f, 1f) * size,
+                    vertical ? 90f : 0f, 0.20f, vertical ? 38f : -38f);
+                SpawnSparkFan(spark, position, new Color(1f, 0.80f, 0.28f, 1f),
+                    14, 4.2f, vertical ? 22f : -68f, vertical ? 158f : 68f,
+                    size * 0.18f);
+                SpawnEnergyRing(position, _goldMaterial, size * 1.5f, 0.34f);
+                break;
+            }
+
+            case EffectKind.GuardBreak:
+                SpawnAnimeSprite(circle, position, new Color(1f, 0.10f, 0.02f, 0.90f),
+                    Vector3.one * size * 0.65f, Vector3.one * size * 2.1f,
+                    0f, 0.38f, -80f);
+                SpawnAnimeSprite(impact, position, new Color(1f, 0.82f, 0.18f, 1f),
+                    Vector3.one * size * 0.32f, Vector3.one * size * 2.15f,
+                    22f, 0.24f, 210f);
+                SpawnSparkFan(spark, position, new Color(1f, 0.24f, 0.03f, 1f),
+                    22, 6.0f, 0f, 360f, size * 0.24f);
+                SpawnEnergyRing(position, _dangerMaterial, size * 1.8f, 0.30f);
+                SpawnEnergyRing(position, _goldMaterial, size * 1.3f, 0.20f);
+                break;
+
+            case EffectKind.ParryHorizontal:
+            case EffectKind.ParryVertical:
+            case EffectKind.ParryKick:
+            {
+                float attackAngle = kind == EffectKind.ParryVertical ? 90f
+                    : kind == EffectKind.ParryKick ? -35f : 0f;
+                SpawnAnimeSprite(circle, position, new Color(0.05f, 0.92f, 1f, 0.92f),
+                    Vector3.one * size * 0.62f, Vector3.one * size * 2.0f,
+                    0f, 0.40f, 55f);
+                SpawnAnimeSprite(spark, position, Color.white,
+                    Vector3.one * size * 0.38f, Vector3.one * size * 1.8f,
+                    attackAngle + 42f, 0.22f, 260f);
+                SpawnAnimeSprite(slash, position, new Color(0.25f, 1f, 1f, 0.96f),
+                    new Vector3(0.55f, 0.12f, 1f) * size,
+                    new Vector3(3.0f, 0.68f, 1f) * size,
+                    attackAngle, 0.24f, -65f);
+                SpawnAnimeSprite(slash, position, new Color(0.72f, 0.42f, 1f, 0.82f),
+                    new Vector3(0.45f, 0.10f, 1f) * size,
+                    new Vector3(2.5f, 0.56f, 1f) * size,
+                    attackAngle + 90f, 0.22f, 70f);
+                SpawnSparkFan(spark, position, new Color(0.38f, 1f, 1f, 1f),
+                    26, 7.2f, 0f, 360f, size * 0.20f);
+                SpawnEnergyRing(position, _parryMaterial, size * 2.0f, 0.32f);
+                SpawnEnergyRing(position, _goldMaterial, size * 1.25f, 0.22f);
+                break;
+            }
+
+            case EffectKind.DodgeCrouch:
+                SpawnAnimeSprite(slash, position - Vector3.up * 0.35f,
+                    new Color(0.20f, 1f, 0.52f, 0.72f),
+                    new Vector3(0.8f, 0.10f, 1f) * size,
+                    new Vector3(3.4f, 0.34f, 1f) * size,
+                    0f, 0.34f, 0f, Vector3.down * 0.5f);
+                SpawnSparkFan(spark, position - Vector3.up * 0.3f,
+                    new Color(0.32f, 1f, 0.66f, 0.8f),
+                    8, 2.5f, 160f, 380f, size * 0.14f);
+                break;
+
+            case EffectKind.DodgeSide:
+                SpawnAnimeSprite(slash, position, new Color(0.18f, 0.82f, 1f, 0.72f),
+                    new Vector3(0.55f, 0.10f, 1f) * size,
+                    new Vector3(2.8f, 0.42f, 1f) * size,
+                    -18f, 0.34f, -25f,
+                    (_mainCamera != null ? _mainCamera.transform.right : Vector3.right) * 0.9f);
+                SpawnSparkFan(spark, position, new Color(0.18f, 1f, 0.78f, 0.78f),
+                    10, 3.0f, 135f, 225f, size * 0.15f);
+                break;
+
+            case EffectKind.SwordTrade:
+            case EffectKind.KickTrade:
+            {
+                Color tradeColor = kind == EffectKind.SwordTrade
+                    ? new Color(1f, 0.18f, 0.52f, 1f)
+                    : new Color(1f, 0.46f, 0.08f, 1f);
+                SpawnAnimeSprite(slash, position, tradeColor,
+                    new Vector3(0.62f, 0.12f, 1f) * size,
+                    new Vector3(3.5f, 0.68f, 1f) * size, 35f, 0.28f, 45f);
+                SpawnAnimeSprite(slash, position, Color.Lerp(tradeColor, Color.cyan, 0.5f),
+                    new Vector3(0.62f, 0.12f, 1f) * size,
+                    new Vector3(3.5f, 0.68f, 1f) * size, -35f, 0.28f, -45f);
+                SpawnAnimeSprite(impact, position, Color.white,
+                    Vector3.one * size * 0.35f, Vector3.one * size * 2.0f,
+                    0f, 0.22f, 220f);
+                SpawnSparkFan(spark, position, tradeColor, 22, 6f,
+                    0f, 360f, size * 0.20f);
+                SpawnEnergyRing(position, _dangerMaterial, size * 1.8f, 0.28f);
+                break;
+            }
+        }
         TriggerCombatFeedback(kind);
+    }
+
+    private void SpawnSparkFan(
+        Sprite sprite,
+        Vector3 position,
+        Color color,
+        int count,
+        float speed,
+        float startAngle,
+        float endAngle,
+        float size)
+    {
+        if (sprite == null || _mainCamera == null)
+            return;
+
+        for (int i = 0; i < count; i++)
+        {
+            float angle = count <= 1 ? startAngle
+                : Mathf.Lerp(startAngle, endAngle, i / (float)(count - 1));
+            angle += UnityEngine.Random.Range(-7f, 7f);
+            float radians = angle * Mathf.Deg2Rad;
+            Vector3 velocity = (_mainCamera.transform.right * Mathf.Cos(radians) +
+                                _mainCamera.transform.up * Mathf.Sin(radians)) *
+                               UnityEngine.Random.Range(speed * 0.72f, speed * 1.15f);
+            float particleSize = size * UnityEngine.Random.Range(0.72f, 1.2f);
+            SpawnAnimeSprite(sprite, position,
+                new Color(color.r, color.g, color.b, color.a * UnityEngine.Random.Range(0.72f, 1f)),
+                new Vector3(particleSize * 1.8f, particleSize * 0.34f, 1f),
+                new Vector3(particleSize * 0.28f, particleSize * 0.08f, 1f),
+                angle, UnityEngine.Random.Range(0.24f, 0.44f),
+                UnityEngine.Random.Range(-260f, 260f), velocity, 105);
+        }
     }
 
     private void SpawnDirectionalSlash(Fighter attacker, bool horizontal)
     {
+        Sprite slashSprite = _assetLibrary != null ? _assetLibrary.slashSprite : null;
         Color color = attacker.facesRight
             ? new Color(0.12f, 0.82f, 1f, 1f)
             : new Color(1f, 0.20f, 0.06f, 1f);
@@ -1660,9 +1872,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         Vector3 start = horizontal ? new Vector3(0.8f, 0.18f, 1f) : new Vector3(0.18f, 0.8f, 1f);
         Vector3 end = horizontal ? new Vector3(4.2f, 0.75f, 1f) : new Vector3(0.75f, 4.2f, 1f);
-        SpawnAnimeSprite(_assetLibrary.slashSprite, center, color,
+        SpawnAnimeSprite(slashSprite, center, color,
             start, end, horizontal ? 0f : 90f, 0.30f);
-        SpawnAnimeSprite(_assetLibrary.slashSprite, center + Vector3.forward * 0.04f,
+        SpawnAnimeSprite(slashSprite, center + Vector3.forward * 0.04f,
             Color.Lerp(color, Color.white, 0.72f),
             start * 0.72f, end * 0.78f, horizontal ? 0f : 90f, 0.18f);
     }
@@ -1674,7 +1886,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
         Vector3 startScale,
         Vector3 endScale,
         float rotationZ,
-        float life)
+        float life,
+        float spin = 0f,
+        Vector3 velocity = default,
+        int sortingOrder = 100)
     {
         if (sprite == null || _mainCamera == null)
             return;
@@ -1688,11 +1903,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         SpriteRenderer renderer = effectObject.AddComponent<SpriteRenderer>();
         renderer.sprite = sprite;
         renderer.color = color;
-        renderer.sortingOrder = 100;
+        renderer.sortingOrder = sortingOrder;
         PrototypeSpriteEffect effect = effectObject.AddComponent<PrototypeSpriteEffect>();
         effect.startScale = startScale;
         effect.endScale = endScale;
         effect.life = life;
+        effect.spin = spin;
+        effect.velocity = velocity;
     }
 
     private void SpawnEnergyRing(Vector3 position, Material material, float radius, float life)
@@ -1719,16 +1936,28 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void TriggerCombatFeedback(EffectKind kind)
     {
-        _cameraShakeStrength = kind == EffectKind.Parry ? 0.15f
-            : kind == EffectKind.Guard ? 0.08f
-            : kind == EffectKind.Dodge ? 0.045f
-            : 0.11f;
-        _cameraShakeEnds = Time.time + (kind == EffectKind.Parry ? 0.18f : 0.12f);
-        _screenFlashColor = kind == EffectKind.Parry ? new Color(0.1f, 1f, 1f, 0.20f)
-            : kind == EffectKind.Guard ? new Color(1f, 0.62f, 0.08f, 0.16f)
-            : kind == EffectKind.Dodge ? new Color(0.2f, 1f, 0.55f, 0.12f)
-            : new Color(1f, 0.12f, 0.04f, 0.15f);
-        _screenFlashEnds = Time.time + 0.11f;
+        bool parry = kind == EffectKind.ParryHorizontal ||
+                     kind == EffectKind.ParryVertical ||
+                     kind == EffectKind.ParryKick;
+        bool guard = kind == EffectKind.GuardHorizontal ||
+                     kind == EffectKind.GuardVertical;
+        bool dodge = kind == EffectKind.DodgeCrouch ||
+                     kind == EffectKind.DodgeSide;
+        bool heavy = kind == EffectKind.GuardBreak ||
+                     kind == EffectKind.SwordTrade ||
+                     kind == EffectKind.KickTrade;
+        _cameraShakeStrength = parry ? 0.19f
+            : heavy ? 0.17f
+            : guard ? 0.10f
+            : dodge ? 0.045f
+            : 0.135f;
+        _cameraShakeEnds = Time.time + (parry || heavy ? 0.22f : 0.14f);
+        _screenFlashColor = parry ? new Color(0.08f, 0.92f, 1f, 0.26f)
+            : guard ? new Color(1f, 0.62f, 0.08f, 0.20f)
+            : dodge ? new Color(0.2f, 1f, 0.55f, 0.12f)
+            : kind == EffectKind.VerticalHit ? new Color(0.68f, 0.18f, 1f, 0.20f)
+            : new Color(1f, 0.10f, 0.03f, heavy ? 0.24f : 0.19f);
+        _screenFlashEnds = Time.time + (parry || heavy ? 0.16f : 0.11f);
     }
 
     private void UpdateCameraFeedback()
@@ -1777,16 +2006,26 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void CreateAudio()
     {
-        _audioSource = gameObject.AddComponent<AudioSource>();
-        _audioSource.playOnAwake = false;
-        _audioSource.spatialBlend = 0f;
-        _audioSource.volume = 0.72f;
+        _audioSource = CreateAudioLayer(0.78f);
+        _audioLayerA = CreateAudioLayer(0.92f);
+        _audioLayerB = CreateAudioLayer(0.72f);
 
-        _slashSound = CreateProceduralSound("Slash", 190f, 75f, 0.22f, 0.62f, 0.58f);
-        _guardSound = CreateProceduralSound("Guard", 310f, 185f, 0.20f, 0.55f, 0.16f);
-        _parrySound = CreateProceduralSound("Parry", 760f, 1320f, 0.28f, 0.58f, 0.08f);
-        _dodgeSound = CreateProceduralSound("Dodge", 145f, 48f, 0.24f, 0.44f, 0.72f);
-        _hitSound = CreateProceduralSound("Hit", 105f, 62f, 0.24f, 0.68f, 0.48f);
+        // These low layers sit under the real CC0 foley clips and add weight.
+        _slashSound = CreateProceduralSound("Slash Low Air", 185f, 52f, 0.28f, 0.52f, 0.66f);
+        _guardSound = CreateProceduralSound("Shield Low Ring", 148f, 82f, 0.34f, 0.62f, 0.18f);
+        _parrySound = CreateProceduralSound("Parry Resonance", 620f, 1480f, 0.38f, 0.46f, 0.08f);
+        _dodgeSound = CreateProceduralSound("Dodge Air", 160f, 38f, 0.26f, 0.42f, 0.78f);
+        _hitSound = CreateProceduralSound("Impact Sub", 92f, 42f, 0.34f, 0.74f, 0.42f);
+    }
+
+    private AudioSource CreateAudioLayer(float volume)
+    {
+        AudioSource source = gameObject.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.spatialBlend = 0f;
+        source.volume = volume;
+        source.dopplerLevel = 0f;
+        return source;
     }
 
     private static AudioClip CreateProceduralSound(
@@ -1821,11 +2060,123 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void PlaySound(AudioClip clip, float pitch)
     {
-        if (_audioSource == null || clip == null)
+        PlayOnLayer(_audioSource, clip, pitch, 1f);
+    }
+
+    private static void PlayOnLayer(
+        AudioSource source,
+        AudioClip clip,
+        float pitch,
+        float volumeScale)
+    {
+        if (source == null || clip == null)
             return;
 
-        _audioSource.pitch = pitch;
-        _audioSource.PlayOneShot(clip);
+        source.pitch = pitch;
+        source.PlayOneShot(clip, volumeScale);
+    }
+
+    private void PlayAttackSound(Motion motion)
+    {
+        if (motion == Motion.HorizontalSlash)
+        {
+            PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.swordSlice : null,
+                0.92f, 1f);
+            PlayOnLayer(_audioLayerB, _assetLibrary != null ? _assetLibrary.swordDraw : null,
+                0.78f, 0.58f);
+            PlayOnLayer(_audioSource, _slashSound, 0.86f, 0.72f);
+        }
+        else if (motion == Motion.VerticalSlash)
+        {
+            PlayOnLayer(_audioLayerA,
+                _assetLibrary != null ? _assetLibrary.swordSliceHeavy : null,
+                0.82f, 1f);
+            PlayOnLayer(_audioLayerB, _assetLibrary != null ? _assetLibrary.swordDraw : null,
+                0.66f, 0.62f);
+            PlayOnLayer(_audioSource, _slashSound, 0.70f, 0.86f);
+        }
+        else
+        {
+            PlayOnLayer(_audioLayerA,
+                _assetLibrary != null ? _assetLibrary.bodyImpactMedium : null,
+                0.72f, 0.35f);
+            PlayOnLayer(_audioLayerB, _dodgeSound, 0.62f, 0.82f);
+            PlayOnLayer(_audioSource, _hitSound, 0.58f, 0.38f);
+        }
+    }
+
+    private void PlayHitSound(Motion motion)
+    {
+        if (motion == Motion.Kick)
+        {
+            PlayOnLayer(_audioLayerA,
+                _assetLibrary != null ? _assetLibrary.bodyImpactHeavy : null,
+                0.78f, 1f);
+            PlayOnLayer(_audioLayerB,
+                _assetLibrary != null ? _assetLibrary.bodyImpactMedium : null,
+                0.92f, 0.82f);
+            PlayOnLayer(_audioSource, _hitSound, 0.62f, 1f);
+            return;
+        }
+
+        float pitch = motion == Motion.VerticalSlash ? 0.82f : 0.96f;
+        PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.swordHit : null,
+            pitch, 1f);
+        PlayOnLayer(_audioLayerB,
+            _assetLibrary != null ? _assetLibrary.bodyImpactMedium : null,
+            pitch * 0.92f, 0.78f);
+        PlayOnLayer(_audioSource, _hitSound, pitch * 0.72f, 0.92f);
+    }
+
+    private void PlayGuardSound(Motion attack)
+    {
+        bool vertical = attack == Motion.VerticalSlash;
+        PlayOnLayer(_audioLayerA,
+            _assetLibrary != null
+                ? (vertical ? _assetLibrary.shieldBlockHeavy : _assetLibrary.shieldBlock)
+                : null,
+            vertical ? 0.84f : 0.98f, 1f);
+        PlayOnLayer(_audioLayerB,
+            _assetLibrary != null
+                ? (vertical ? _assetLibrary.shieldBlock : _assetLibrary.shieldBlockHeavy)
+                : null,
+            vertical ? 0.68f : 0.80f, 0.58f);
+        PlayOnLayer(_audioSource, _guardSound, vertical ? 0.72f : 0.88f, 0.84f);
+    }
+
+    private void PlayGuardBreakSound()
+    {
+        PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.guardBreak : null,
+            0.78f, 1f);
+        PlayOnLayer(_audioLayerB,
+            _assetLibrary != null ? _assetLibrary.bodyImpactHeavy : null,
+            0.68f, 0.88f);
+        PlayOnLayer(_audioSource, _hitSound, 0.52f, 1f);
+    }
+
+    private void PlayParrySound(Motion attack)
+    {
+        float attackPitch = attack == Motion.VerticalSlash ? 0.88f
+            : attack == Motion.Kick ? 0.78f : 1f;
+        PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.parryBell : null,
+            attackPitch, 1f);
+        PlayOnLayer(_audioLayerB,
+            _assetLibrary != null ? _assetLibrary.shieldBlockHeavy : null,
+            attackPitch * 1.08f, 0.86f);
+        PlayOnLayer(_audioSource, _parrySound, attackPitch * 0.92f, 0.92f);
+    }
+
+    private void PlayTradeSound(bool includesKick)
+    {
+        PlayOnLayer(_audioLayerA,
+            _assetLibrary != null
+                ? (includesKick ? _assetLibrary.bodyImpactHeavy : _assetLibrary.shieldBlockHeavy)
+                : null,
+            includesKick ? 0.74f : 0.88f, 1f);
+        PlayOnLayer(_audioLayerB,
+            _assetLibrary != null ? _assetLibrary.swordHit : null,
+            includesKick ? 0.82f : 1.04f, 0.9f);
+        PlayOnLayer(_audioSource, _hitSound, 0.58f, 1f);
     }
 
     private static Material CreateMaterial(Color color, float metallic, float smoothness)
@@ -2021,6 +2372,8 @@ public sealed class PrototypeSpriteEffect : MonoBehaviour
     [NonSerialized] public Vector3 startScale = Vector3.one;
     [NonSerialized] public Vector3 endScale = Vector3.one * 2f;
     [NonSerialized] public float life = 0.25f;
+    [NonSerialized] public float spin;
+    [NonSerialized] public Vector3 velocity;
     private SpriteRenderer _renderer;
     private float _started;
     private Color _startColor;
@@ -2037,6 +2390,9 @@ public sealed class PrototypeSpriteEffect : MonoBehaviour
         float t = Mathf.Clamp01((Time.time - _started) / life);
         float eased = 1f - Mathf.Pow(1f - t, 3f);
         transform.localScale = Vector3.LerpUnclamped(startScale, endScale, eased);
+        transform.position += velocity * Time.deltaTime;
+        velocity *= Mathf.Exp(-4.5f * Time.deltaTime);
+        transform.Rotate(0f, 0f, spin * Time.deltaTime, Space.Self);
         _renderer.color = new Color(_startColor.r, _startColor.g, _startColor.b,
             _startColor.a * (1f - t));
         if (t >= 1f)
@@ -2265,7 +2621,6 @@ public sealed class AssetShieldFollower : MonoBehaviour
     private bool _guarding;
     private bool _parrying;
     private float _progress;
-    private float _side;
 
     public void Configure(Transform hand, Transform fighterRoot)
     {
@@ -2273,12 +2628,11 @@ public sealed class AssetShieldFollower : MonoBehaviour
         _fighterRoot = fighterRoot;
     }
 
-    public void SetPose(bool guarding, bool parrying, float progress, float side)
+    public void SetPose(bool guarding, bool parrying, float progress)
     {
         _guarding = guarding;
         _parrying = parrying;
         _progress = progress;
-        _side = side;
     }
 
     private void LateUpdate()
@@ -2286,30 +2640,38 @@ public sealed class AssetShieldFollower : MonoBehaviour
         if (_hand == null || _fighterRoot == null)
             return;
 
-        Vector3 position = _hand.position + _fighterRoot.up * 0.035f;
-        Quaternion rotation = Quaternion.FromToRotation(Vector3.up, _fighterRoot.forward);
+        Vector3 left = -_fighterRoot.right;
+        Vector3 arenaOutward = -_fighterRoot.forward;
+        Vector3 guardPosition = _fighterRoot.position + _fighterRoot.up * 1.34f +
+                                _fighterRoot.forward * 0.52f + left * 0.08f;
+        Quaternion guardRotation =
+            Quaternion.LookRotation(_fighterRoot.up, -_fighterRoot.forward) *
+            Quaternion.Euler(90f, 0f, 0f);
+        Vector3 position = _fighterRoot.position + _fighterRoot.up * 1.18f +
+                           arenaOutward * 0.42f + left * 0.34f;
+        Quaternion rotation = guardRotation *
+                              Quaternion.AngleAxis(-24f, _fighterRoot.forward);
 
         if (_guarding)
         {
-            position = _fighterRoot.position + _fighterRoot.up * 1.34f +
-                       _fighterRoot.forward * 0.52f - _fighterRoot.right * 0.08f * _side;
-            rotation = Quaternion.LookRotation(_fighterRoot.up, -_fighterRoot.forward) *
-                       Quaternion.Euler(90f, 0f, 0f);
+            position = guardPosition;
+            rotation = guardRotation;
         }
         else if (_parrying)
         {
-            float sweep = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(_progress));
-            position = _fighterRoot.position + _fighterRoot.up * 1.34f +
-                       _fighterRoot.forward * 0.52f +
-                       _fighterRoot.right * Mathf.Lerp(-0.48f, 0.56f, sweep);
-            rotation = Quaternion.FromToRotation(Vector3.up, _fighterRoot.forward) *
-                       Quaternion.AngleAxis(Mathf.Lerp(-34f, 54f, sweep) * _side,
-                           _fighterRoot.forward);
+            // Start from the exact guard pose, extend the shield and the left
+            // arm toward the fighter's outside-left, then recover to guard.
+            float sweep = Mathf.Sin(Mathf.Clamp01(_progress) * Mathf.PI);
+            position = guardPosition + arenaOutward * (0.68f * sweep) +
+                       left * (0.46f * sweep) +
+                       _fighterRoot.up * (0.10f * sweep);
+            rotation = guardRotation *
+                       Quaternion.AngleAxis(-68f * sweep, _fighterRoot.forward);
         }
 
         transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-24f * Time.deltaTime));
+            1f - Mathf.Exp(-34f * Time.deltaTime));
         transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-28f * Time.deltaTime));
+            1f - Mathf.Exp(-38f * Time.deltaTime));
     }
 }

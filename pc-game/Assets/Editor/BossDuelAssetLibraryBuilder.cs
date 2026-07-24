@@ -19,6 +19,10 @@ public static class BossDuelAssetLibraryBuilder
         "Assets/ThirdParty/KenneyModularDungeon/Models/FBX format/";
     private const string ParticleFolder =
         "Assets/ThirdParty/KenneyParticlePack/PNG/";
+    private const string RpgAudioFolder =
+        "Assets/ThirdParty/KenneyCombatAudio/RPG/";
+    private const string ImpactAudioFolder =
+        "Assets/ThirdParty/KenneyCombatAudio/Impact/";
     private const string KevinPrefabFolder =
         "Assets/Kevin Iglesias/Skeleton Animations/Prefabs/";
 
@@ -139,6 +143,26 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<GameObject>(KevinPrefabFolder + "SkeletonSword.prefab");
         library.kevinShieldPrefab =
             AssetDatabase.LoadAssetAtPath<GameObject>(KevinPrefabFolder + "SkeletonShield.prefab");
+        library.swordSlice =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "knifeSlice.ogg");
+        library.swordSliceHeavy =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "knifeSlice2.ogg");
+        library.swordDraw =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "drawKnife2.ogg");
+        library.swordHit =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "chop.ogg");
+        library.shieldBlock =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_heavy_000.ogg");
+        library.shieldBlockHeavy =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_heavy_001.ogg");
+        library.parryBell =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactBell_heavy_001.ogg");
+        library.guardBreak =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPlate_heavy_003.ogg");
+        library.bodyImpactHeavy =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_heavy_001.ogg");
+        library.bodyImpactMedium =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_medium_003.ogg");
         EditorUtility.SetDirty(controller);
         EditorUtility.SetDirty(upperBodyMask);
         EditorUtility.SetDirty(library);
