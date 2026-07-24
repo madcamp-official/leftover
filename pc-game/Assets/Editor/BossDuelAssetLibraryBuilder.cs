@@ -12,17 +12,11 @@ public static class BossDuelAssetLibraryBuilder
     private const string ControllerPath = DuelFolder + "/BossDuelCombat.controller";
     private const string UpperBodyMaskPath = DuelFolder + "/BossDuelUpperBody.mask";
     private const string FighterPath =
-        "Assets/ThirdParty/QuaterniusKnight/FBX/KnightCharacter.fbx";
-    private const string KnightSwordPath =
-        "Assets/ThirdParty/QuaterniusKnight/FBX/Sword.fbx";
+        "Assets/EEJANAI_Team/FreeSwordAnimations/Prefabs/EEJANAIbotSword1.prefab";
     private const string AnimationFolder =
         "Assets/EEJANAI_Team/FreeSwordAnimations/Animations/";
-    private const string VillageBuildingFolder =
-        "Assets/ThirdParty/QuaterniusMedievalVillage/Buildings/";
-    private const string VillagePropFolder =
-        "Assets/ThirdParty/QuaterniusMedievalVillage/Props/";
-    private const string NatureFolder =
-        "Assets/ThirdParty/QuaterniusSimpleNature/FBX/";
+    private const string DungeonFolder =
+        "Assets/ThirdParty/KenneyModularDungeon/Models/FBX format/";
     private const string ParticleFolder =
         "Assets/ThirdParty/KenneyParticlePack/PNG/";
     private const string RpgAudioFolder =
@@ -135,26 +129,12 @@ public static class BossDuelAssetLibraryBuilder
 
         library.fighterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(FighterPath);
         library.combatController = controller;
-        library.knightSwordPrefab =
-            AssetDatabase.LoadAssetAtPath<GameObject>(KnightSwordPath);
-        library.villageBuildings = LoadPrefabs(VillageBuildingFolder, new[]
-        {
-            "Inn.fbx", "Blacksmith.fbx", "House_1.fbx", "House_2.fbx",
-            "House_3.fbx", "House_4.fbx", "Mill.fbx", "Stable.fbx"
-        });
-        library.villageProps = LoadPrefabs(VillagePropFolder, new[]
-        {
-            "Well.fbx", "Cart.fbx", "MarketStand_1.fbx", "Bonfire_Lit.fbx",
-            "Gazebo.fbx", "Fence.fbx", "Barrel.fbx", "Crate.fbx", "Hay.fbx",
-            "Bench_1.fbx", "Path_Straight.fbx", "Path_Square.fbx"
-        });
-        library.naturePrefabs = LoadPrefabs(NatureFolder, new[]
-        {
-            "Tree1.fbx", "Tree2.fbx", "Tree3.fbx", "Tree4.fbx",
-            "Rock1.fbx", "Rock2.fbx", "Rock3.fbx",
-            "Bush1.fbx", "Bush2.fbx", "Bush3.fbx",
-            "Grass1.fbx", "Grass2.fbx", "Grass3.fbx"
-        });
+        library.dungeonRoom =
+            AssetDatabase.LoadAssetAtPath<GameObject>(DungeonFolder + "room-large.fbx");
+        library.dungeonGate =
+            AssetDatabase.LoadAssetAtPath<GameObject>(DungeonFolder + "gate-door.fbx");
+        library.dungeonCorridor =
+            AssetDatabase.LoadAssetAtPath<GameObject>(DungeonFolder + "corridor-wide.fbx");
         library.slashSprite = LoadParticleSprite("slash_02.png");
         library.impactSprite = LoadParticleSprite("star_03.png");
         library.guardSprite = LoadParticleSprite("circle_03.png");
@@ -175,8 +155,8 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_heavy_000.ogg");
         library.shieldBlockHeavy =
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_heavy_001.ogg");
-        library.parryClang =
-            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_heavy_001.ogg");
+        library.parryBell =
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactBell_heavy_001.ogg");
         library.guardBreak =
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPlate_heavy_003.ogg");
         library.bodyImpactHeavy =
@@ -187,18 +167,6 @@ public static class BossDuelAssetLibraryBuilder
         EditorUtility.SetDirty(upperBodyMask);
         EditorUtility.SetDirty(library);
         AssetDatabase.SaveAssets();
-    }
-
-    private static GameObject[] LoadPrefabs(string folder, string[] fileNames)
-    {
-        var prefabs = new List<GameObject>();
-        foreach (string fileName in fileNames)
-        {
-            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(folder + fileName);
-            if (prefab != null)
-                prefabs.Add(prefab);
-        }
-        return prefabs.ToArray();
     }
 
     private static Sprite LoadParticleSprite(string fileName)
