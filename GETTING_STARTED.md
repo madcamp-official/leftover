@@ -1,55 +1,74 @@
 # 시작 가이드
 
-기획서([보스전_게임_기획서.md](보스전_게임_기획서.md)) 5장 일정의 **Day 1**부터 시작한다:
-"폰 센서 스트리머 ↔ PC UDP 통신 검증, 시간 동기화 프로토콜 구현".
+기획서([보스전_게임_기획서.md](보스전_게임_기획서.md)) 2장에 정리된 순서대로:
+**Phase 1 — 폰 없이 MediaPipe(웹캠)만으로 7동작 전부 인식해서 게임을 먼저 완성** →
+**Phase 2 — 검/방패 인식을 폰 2대 IMU로 옮겨서 정확도·반응속도 개선**.
 
-## 역할 분담 (기획서 6장)
+지금 이 가이드는 **Phase 1 기준**이다. Phase 2(폰 시간 동기화/센서 스트리밍)는
+`shared/PROTOCOL.md`의 "Phase 2" 섹션에 레퍼런스로 남겨뒀고, 나중에 붙일 때 참고한다.
 
-- **A: 인식/판정 엔진** — `phone-sensor/`, `vision-server/`, 시간 동기화, 모션 분류 로직
-- **B: 게임/비주얼** — `pc-game/` (3D 캐릭터/보스, 이펙트, UI), 웹캠 비전 연동 지점
+## 역할 분담
 
-두 사람 다 `shared/PROTOCOL.md`를 먼저 읽고 시작 — 이게 두 프로젝트를 잇는 계약(contract)이다.
+- **게임 (Unity)** — `pc-game/`: 게이지/판정/데미지 로직, 3D 캐릭터·보스 AI, UI, 이펙트.
+  `CombatInputHub`(`pc-game/Assets/Scripts/Combat/`)만 보고 개발하면 되고, 입력이
+  키보드에서 오는지 MediaPipe에서 오는지는 몰라도 된다.
+- **인식 (MediaPipe)** — `vision-server/`: 웹캠으로 7동작(가로/세로 베기, 찌르기, 방어,
+  패링, 앉기, 좌우 움직이기)을 인식해서 `shared/PROTOCOL.md` Phase 1 포맷으로 UDP 전송.
+
+두 역할이 공유하는 건 `shared/PROTOCOL.md`의 이벤트 계약 하나뿐이라, 이것만 먼저 맞춰두면
+이후엔 완전히 독립적으로 개발 가능하다.
 
 ## 지금 레포 상태
 
-- `pc-game/`, `phone-sensor/` 폴더는 만들어져 있지만 **Unity 프로젝트 자체는 아직 없음**
-  (Unity Editor가 이 머신에 설치 안 돼 있어서 Hub GUI로 직접 생성해야 함 — 각 폴더 README 참고)
-- `shared/PROTOCOL.md`: 폰↔PC, Python↔Unity 간 UDP 패킷 포맷 정의 완료
-- `shared/unity-reference/*.cs`: 시간 동기화 + 센서 스트리밍 레퍼런스 구현체 (Unity 프로젝트
-  생성 후 `Assets/Scripts/Network/`로 복사해서 바로 사용 가능)
-- `vision-server/`: Python + MediaPipe 스캐폴드, 웹캠 캡처와 UDP 송신 배관까지 완료
-  (패링/쭈그리기 판별 로직은 Day 2에 채움)
+- `pc-game/`: Unity 프로젝트 생성 완료 (URP). `Assets/Scripts/Combat/`에 이미 있는 것:
+  - `CombatInputHub.cs` — 게임 로직이 참조하는 단일 입력 창구 (트리거 이벤트 4종 + 상태 3종)
+  - `KeyboardInputProvider.cs` — 임시 입력 소스. J/K/L=가로·세로 베기·찌르기, Space=방어,
+    F=패링, S=앉기, A/D=좌우 이동. 씬에 붙이면 바로 키보드로 테스트 가능
+  - `NetworkInputProvider.cs` — MediaPipe 연동용. UDP 9002로 오는 이벤트를 Hub에 꽂아줌
+    (아직 vision-server가 이 포맷을 안 보내므로 지금은 안 써도 됨)
+- `vision-server/`: Python + MediaPipe 웹캠 캡처까지는 되는데, 7동작 분류 로직과
+  `shared/PROTOCOL.md` Phase 1 포맷으로의 UDP 전송은 아직 구현 안 됨 — 이번 단계의 핵심 작업
+- `shared/PROTOCOL.md`: Phase 1 이벤트 계약(포맷 확정), Phase 2(폰 2대) 레퍼런스도 같이 있음
+- `phone-sensor/`: Phase 2에서 쓸 폰 프로젝트, 아직 손 안 댐 (지금은 무시해도 됨)
 
-## Day 1 체크리스트
+## 지금 할 일
 
-### A (인식/판정 엔진)
+### 게임 (Unity) 담당
 
-1. `phone-sensor/README.md` 따라 Unity Editor 설치(Android Build Support 포함) + 프로젝트 생성
-2. `shared/unity-reference/TimeSyncServer.cs`, `SensorStreamer.cs`를 `phone-sensor/Assets/Scripts/Network/`에 복사
-3. `pc-game/README.md` 따라 PC용 Unity 프로젝트도 생성 (B와 병행 가능하면 B가 만들어도 됨)
-4. `shared/unity-reference/TimeSyncClient.cs`, `SensorReceiver.cs`를 `pc-game/Assets/Scripts/Network/`에 복사
-5. 폰을 실기기로 빌드해서 PC와 같은 네트워크(가능하면 폰 핫스팟)에 연결
-6. PC 콘솔에 `[TimeSync] offset=... samples=20 rtt(last)=...` 로그가 찍히는지 확인
-7. `SensorReceiver`가 폰을 흔들 때마다 값을 받는지 확인 (`OnSample`에 임시로 `Debug.Log` 켜보기)
+1. `pc-game`을 Unity 에디터로 열기
+2. 빈 씬에 GameObject 하나 만들어서 `CombatInputHub`, `KeyboardInputProvider` 두 컴포넌트를 붙이기
+3. Play 모드에서 J/K/L/Space/F/S/A/D 눌러보면서 Console에 `[CombatInput] ...` 로그가 찍히는지 확인
+4. 확인되면 이제 `CombatInputHub.Instance`의 이벤트/상태를 구독하는 `CombatController` 작성 시작
+   — 기획서 2장의 게이지 시스템, 판정(누가 뭘 맞았는지), 회피 성공 시 반격 찬스 로직
+5. 3D 캐릭터는 없어도 됨 — 콘솔 로그나 임시 UI 텍스트로 "가로베기 성공! 데미지 10" 같은
+   식으로 먼저 로직만 검증하고, 애니메이션/비주얼은 그 다음 (기획서 5장 Day 4 이후)
 
-### B (게임/비주얼)
+### 인식 (MediaPipe) 담당
 
-1. `pc-game/README.md` 따라 Unity 프로젝트 생성 (A와 병행 가능, 하나만 만들면 됨 — 같이 상의)
-2. 3D 캐릭터/보스 에셋 후보 조사 및 기본 씬 세팅 (바닥, 조명, 카메라)
-3. `vision-server/README.md` 따라 Python venv 세팅해보고 웹캠 프리뷰가 뜨는지 확인
-   (Day 2부터 본격 연동하지만, Day 1에 환경만 미리 검증해두면 Day 2가 빨라짐)
-4. 보스 상태머신 설계 초안 잡기 (기획서 4장 아키텍처, Day 4 작업 대비)
+1. `vision-server/README.md` 따라 venv 세팅, `python main.py`로 웹캠 프리뷰 확인
+2. `shared/PROTOCOL.md`의 "Phase 1" 표를 보고 `main.py`에 7동작 분류 로직 채우기
+   (오른쪽/왼쪽 손목 landmark 속도·위치, 어깨/골반 landmark로 앉기·좌우)
+3. 분류 결과를 프로토콜 포맷 그대로 UDP 9002로 전송 (지금 `main.py`는 이전 버전 포맷
+   `guard_up`/`crouch`를 보내고 있어서 갱신 필요)
+4. **찌르기부터 먼저 실측**: 카메라 앞에서 실제로 찔러보고 안정적으로 잡히는지 확인. 잘
+   안 되면 일단 6동작으로 넘기고 찌르기는 뒤로 미뤄도 됨 (PROTOCOL.md "결정 필요" 참고)
 
-## 다음 단계 (Day 2 이후)
+## 두 역할 합치기
 
-기획서 5장 일정표 그대로 따라가면 된다. Day 1이 끝나면:
-- Day 2: 웹캠 비전(패링/쭈그리기) 연동, `vision-server/main.py`의 `detect_guard_up`/`detect_crouch` 구현
-- Day 3: 두 센서 신호(폰 IMU + 웹캠) 통합 판정 시스템 — `SensorReceiver.OnSample`에서 Tier 1
-  임계값 기반 스윙/찌르기 분류 로직 채우기 (기획서 3-4 참고)
+인식 쪽 UDP 전송이 준비되면, `pc-game` 씬에서 `KeyboardInputProvider`를 끄고
+`NetworkInputProvider`를 켜기만 하면 된다. 게임 로직 코드는 전혀 안 건드림 — 이게 이번
+아키텍처(이벤트 계약 분리)의 요점.
+
+## 다음 단계
+
+기획서 5장 일정표 참고. Phase 1(Day 1~5)로 웹캠만으로 완결된 데모까지 만들고 나서,
+시간이 남으면 Phase 2(Day 6~)로 폰 2대를 붙인다. Phase 1만으로도 발표 가능한 상태를
+유지하는 게 이 순서의 안전장치.
 
 ## 막히면
 
-- 시간 동기화 offset이 이상하게 크거나(수백 ms 이상) 계속 바뀌면: 같은 네트워크인지,
-  방화벽이 UDP 9000/9001을 막고 있진 않은지 먼저 확인
-- Android에서 센서 값이 안 들어오면: 에디터가 아니라 **실기기 빌드**로 테스트하고 있는지 확인
-  (에디터의 센서 시뮬레이터는 신뢰할 수 없음)
+- `CombatInputHub.Instance`가 `null`이면: 씬에 Hub 컴포넌트를 가진 GameObject가 있는지,
+  Provider보다 먼저 `Awake()`가 실행되는지 확인 (스크립트 실행 순서 문제일 수 있음)
+- 키보드 입력이 두 번씩 찍히면: `KeyboardInputProvider`가 씬에 중복으로 붙어있지 않은지 확인
+- UDP 9002로 아무것도 안 오면: `vision-server`가 실제로 그 포트로 보내고 있는지, 방화벽이
+  로컬 UDP를 막고 있진 않은지 확인
