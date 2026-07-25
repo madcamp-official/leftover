@@ -80,6 +80,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
         public TrailRenderer swordTrail;
         public Transform kickTarget;
         public float dodgeDirection = -1f;
+        // Gauge burned by the parry currently in its judging window. Refunded in full if the
+        // parry actually blocks an attack; stays spent if the window whiffs.
+        public float pendingParryCost;
     }
 
     private enum EffectKind
@@ -107,8 +110,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
     // flat activation cost, and it only refills while the shield is down (not guarding or
     // mid-parry). Parry has no flat cost either — it burns half of whatever is currently
     // banked, so it stays available but a full-gauge parry costs more than a low-gauge one.
-    private const float GuardDrainPerSecond = 0.6f;
-    private const float GaugeRecoveryPerSecond = 0.38f;
+    private const float GuardDrainPerSecond = 0.3f;
+    private const float GaugeRecoveryPerSecond = 0.19f;
     private const float ParryMinGauge = 0.2f;
     private const float ParryWindow = 0.42f;
     // Long enough to read which attack is coming (see AssetSwordFollower's
@@ -265,6 +268,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _enemy.hp = MaxHealth;
         _player.defenseGauge = MaxDefenseGauge;
         _enemy.defenseGauge = MaxDefenseGauge;
+        _player.pendingParryCost = 0f;
+        _enemy.pendingParryCost = 0f;
         _player.motion = Motion.Idle;
         _enemy.motion = Motion.Idle;
         _player.root.localScale = _player.baseScale;
@@ -421,7 +426,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (_enemyPhase == EnemyPhase.Waiting && reaction < parryChance &&
             _enemy.defenseGauge > ParryMinGauge)
         {
-            _enemy.defenseGauge *= 0.5f;
+            float enemyParryCost = _enemy.defenseGauge * 0.5f;
+            _enemy.defenseGauge -= enemyParryCost;
+            _enemy.pendingParryCost = enemyParryCost;
             _enemyPhase = EnemyPhase.Parrying;
             _enemyPhaseEnds = Time.time + AttackWindup + 0.48f;
             SetMotion(_enemy, Motion.Parry, AttackWindup + 0.48f);
@@ -500,7 +507,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
             return;
         }
 
-        _player.defenseGauge *= 0.5f;
+        float parryCost = _player.defenseGauge * 0.5f;
+        _player.defenseGauge -= parryCost;
+        _player.pendingParryCost = parryCost;
         _playerParryUses++;
         _playerParryEnds = Time.time + ParryWindow;
         SetMotion(_player, Motion.Parry, ParryWindow);
@@ -577,9 +586,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         if (parried)
         {
+            defender.defenseGauge = Mathf.Min(MaxDefenseGauge,
+                defender.defenseGauge + defender.pendingParryCost);
+            defender.pendingParryCost = 0f;
             StaggerAttacker(attacker, playerAttacking, 1.2f);
             _banner = playerAttacking ? "RIVAL PARRIED" : "PERFECT PARRY";
-            _detail = "Parry beats every attack. The attacker is staggered.";
+            _detail = "Parry beats every attack. The gauge spent on it is refunded.";
             SpawnActionEffect(Vector3.Lerp(attacker.root.position, defender.root.position, 0.5f) +
                 Vector3.up * 1.35f, ParryEffectFor(attacker.motion), 1.45f);
             PlayParrySound(attacker.motion);
@@ -1578,11 +1590,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
             cameraObject.AddComponent<AudioListener>();
         }
 
-        // Player-side over-the-shoulder view: the blue fighter stays in the
-        // foreground while the rival and its attack telegraphs remain readable.
-        camera.transform.position = new Vector3(-6.4f, 3.15f, -3.25f);
-        camera.transform.LookAt(new Vector3(1.15f, 1.28f, 0f));
-        camera.fieldOfView = 58f;
+        // Pokemon-battle style framing: camera sits close behind/beside the player so
+        // only their upper body looms in the lower-left foreground, while the rival
+        // stands further off to the right, fully visible and looking larger/closer
+        // than the old wide establishing shot.
+        camera.transform.position = new Vector3(-3.0f, 2.05f, -1.1f);
+        camera.transform.LookAt(new Vector3(1.15f, 0.95f, 0.35f));
+        camera.fieldOfView = 38f;
         camera.backgroundColor = new Color(0.025f, 0.035f, 0.06f);
         Material skybox = _assetLibrary != null ? _assetLibrary.skyboxMaterial : null;
         if (skybox != null)
@@ -1651,11 +1665,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
             ConvertDungeonMaterials(floor.GetComponentsInChildren<Renderer>(true));
         }
 
-        CreatePrimitive(PrimitiveType.Cylinder, "Duel Platform", arena,
-            new Vector3(0f, -0.15f, 0f), new Vector3(5.6f, 0.28f, 5.6f), _stoneDark);
-        CreatePrimitive(PrimitiveType.Cylinder, "Platform Inlay", arena,
-            new Vector3(0f, 0.03f, 0f), new Vector3(4.75f, 0.06f, 4.75f), _stoneLight);
-
         // Real sci-fi light props ring the platform instead of the old
         // primitive gold/black bars.
         GameObject floorLightPrefab = _assetLibrary != null ? _assetLibrary.arenaFloorLight : null;
@@ -1690,11 +1699,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         CreatePrimitive(PrimitiveType.Cube, "Back Wall", arena,
             new Vector3(0f, 1.75f, 4.2f), new Vector3(13f, 3.5f, 0.35f), _stoneDark);
-        for (int i = -5; i <= 5; i += 2)
-        {
-            CreatePrimitive(PrimitiveType.Cube, "Wall Accent", arena,
-                new Vector3(i, 2.1f, 3.98f), new Vector3(0.16f, 2.1f, 0.08f), _goldMaterial);
-        }
     }
 
     private void ConvertDungeonMaterials(Renderer[] renderers)
