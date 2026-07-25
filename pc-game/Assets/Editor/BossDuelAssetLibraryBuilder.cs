@@ -128,6 +128,16 @@ public static class BossDuelAssetLibraryBuilder
         idleState.writeDefaultValues = true;
         baseMachine.defaultState = idleState;
 
+        // Also add a base-layer (full body, unmasked) Dead state. Every other combat
+        // state only needs the upper-body layer below because legs are separately
+        // IK-driven (grounding/kick/dodge) while standing, but death has no such
+        // per-motion leg handling - without this, dying left the legs stuck on
+        // whatever the base layer's Idle pose was while only the torso collapsed.
+        AnimationClip deadClip = LoadStateClip("Dead");
+        AnimatorState deadState = baseMachine.AddState("Dead");
+        deadState.motion = deadClip;
+        deadState.writeDefaultValues = true;
+
         AvatarMask upperBodyMask = AssetDatabase.LoadAssetAtPath<AvatarMask>(UpperBodyMaskPath);
         if (upperBodyMask == null)
         {

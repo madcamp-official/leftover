@@ -464,6 +464,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             : attack == Motion.VerticalSlash ? "VERTICAL SLASH" : "KICK";
         _detail = "Strike!";
         PlayAttackSound(attack);
+        // On top of the sword-tip trail (which only starts drawing once the blade is
+        // already moving), fire the dedicated horizontal/vertical streak the instant the
+        // strike begins so which attack is coming reads immediately, not just from the
+        // trail shape as it develops.
+        if (attack == Motion.HorizontalSlash || attack == Motion.VerticalSlash)
+            SpawnDirectionalSlash(_player, attack == Motion.HorizontalSlash, 1.4f, 0.5f);
     }
 
     private static Motion PrepareFor(Motion attack)
@@ -813,6 +819,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 SetMotion(_enemy, Motion.HorizontalSlash,
                     AttackDuration(Motion.HorizontalSlash));
                 PlayAttackSound(Motion.HorizontalSlash);
+                SpawnDirectionalSlash(_enemy, true, 1.4f, 0.5f);
                 break;
 
             case EnemyPhase.TelegraphVertical:
@@ -821,6 +828,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 SetMotion(_enemy, Motion.VerticalSlash,
                     AttackDuration(Motion.VerticalSlash));
                 PlayAttackSound(Motion.VerticalSlash);
+                SpawnDirectionalSlash(_enemy, false, 1.4f, 0.5f);
                 break;
 
             case EnemyPhase.TelegraphKick:
@@ -1106,6 +1114,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
         bool facesRight,
         Material teamMaterial)
     {
+        // The incoming spawn height (0.25) was tuned for the old procedural capsule
+        // body, which needed lifting off the ground to sit at its pivot. The Mixamo
+        // rig's own feet already sit at y=0 in its rest pose when the root is at
+        // y=0, so keeping that +0.25 here just floats the whole character above
+        // the ground plane with a visible gap under the feet.
+        position.y = 0f;
         var fighter = new Fighter
         {
             facesRight = facesRight,
@@ -1174,15 +1188,18 @@ public sealed class BossDuelPrototype : MonoBehaviour
         ConvertFighterMaterialsToUrp(fighter.renderers, teamColor);
         for (int i = 0; i < fighter.renderers.Length; i++)
         {
-            // ConvertFighterMaterialsToUrp already applied the team hint; read
-            // it back as-is instead of blending a second time (that compounded
-            // into a flat, detail-less team color).
-            Material shared = fighter.renderers[i].sharedMaterial;
-            fighter.rendererBaseColors[i] = shared != null && shared.HasProperty("_BaseColor")
-                ? shared.GetColor("_BaseColor")
-                : shared != null && shared.HasProperty("_Color")
-                    ? shared.color
-                    : Color.white;
+            // The Mixamo knight's own material has no real diffuse texture (flat
+            // white either way), so painting a plain 10% team tint over it just
+            // reads as colorless. Give each body part (Body/Head_Hands/
+            // Lower_Armor) a plausible knight tone instead, and lean hard into
+            // the team hue on the torso specifically so it's the color read at
+            // a glance.
+            string n = fighter.renderers[i].name.ToLowerInvariant();
+            Color baseTone = n.Contains("lower") ? new Color(0.30f, 0.31f, 0.34f)
+                : n.Contains("head") ? new Color(0.55f, 0.5f, 0.42f)
+                : new Color(0.4f, 0.4f, 0.44f);
+            float teamBlend = n.Contains("lower") || n.Contains("head") ? 0.18f : 0.6f;
+            fighter.rendererBaseColors[i] = Color.Lerp(baseTone, teamColor, teamBlend);
         }
         fighter.bodyRenderer = fighter.renderers.Length > 0 ? fighter.renderers[0] : null;
         RestoreFighterAppearance(fighter);
@@ -1204,7 +1221,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         var mount = new GameObject("Left Hand Shield");
         mount.transform.SetParent(leftHand);
         mount.transform.localPosition = new Vector3(0f, 0.05f, 0.03f);
-        mount.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        mount.transform.localRotation = ShieldBaseRotation;
         fighter.shieldPivot = mount.transform;
         if (_assetLibrary != null && _assetLibrary.shieldPrefab != null)
         {
@@ -1250,7 +1267,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
         {
             GameObject sword = Instantiate(_assetLibrary.swordPrefab, mount);
             sword.name = "Medieval Sword";
-            sword.transform.localPosition = Vector3.zero;
+            // The prefab's own pivot sits right at the guard (measured via its
+            // MeshRenderer.localBounds: grip runs from y=-0.294 to y=0 below the
+            // pivot, blade above it), so the hand reads as gripping the decorative
+            // guard cap instead of the grip itself. Shift the mesh up by half the
+            // grip length so the grip's midpoint lands on the hand instead.
+            sword.transform.localPosition = new Vector3(0f, 0.147f, 0f);
             sword.transform.localRotation = Quaternion.identity;
             sword.transform.localScale = Vector3.one;
             Renderer[] renderers = sword.GetComponentsInChildren<Renderer>(true);
@@ -1280,7 +1302,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
         // of a separate canned effect.
         Transform tip = new GameObject("Sword Blade Tip").transform;
         tip.SetParent(mount);
-        tip.localPosition = new Vector3(0f, 1.68f, 0f);
+        // +0.147 matches the grip-centering shift applied to the sword mesh above,
+        // so the trail still starts right at the physical blade tip instead of
+        // floating past it in empty air.
+        tip.localPosition = new Vector3(0f, 1.68f + 0.147f, 0f);
         tip.localRotation = Quaternion.identity;
         TrailRenderer trail = tip.gameObject.AddComponent<TrailRenderer>();
         trail.time = 0.22f;
@@ -1403,12 +1428,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 position.x -= 0.22f * side;
                 actionRotation = Quaternion.Euler(0f, 0f, -13f * side);
                 break;
-            case Motion.Dead:
-                actionRotation = Quaternion.Euler(0f, 0f,
-                    Mathf.Lerp(0f, -82f * side, Mathf.Clamp01(t * 1.8f)));
-                position.y -= Mathf.Lerp(0f, 0.55f, Mathf.Clamp01(t * 1.8f));
-                break;
         }
+
+        // Dead used to also tip the whole root -82 degrees and sink it, on top of
+        // whatever the "Falling Back" clip itself already does to the bones - the
+        // two competing falls were the source of the "이상한" contorted collapse.
+        // The clip's own animated fall is the only thing driving the pose now.
 
         fighter.root.position = position;
         fighter.root.rotation = fighter.baseRotation * actionRotation;
@@ -1441,9 +1466,29 @@ public sealed class BossDuelPrototype : MonoBehaviour
             fighter.groundedRig.lateralDirection = fighter.dodgeDirection;
         }
 
+        if (fighter.shieldPivot != null && fighter.shieldPivot.parent != null)
+        {
+            // At rest the shield turns away (outward, off the guard line) so
+            // snapping square to face the opponent on Guard/Parry reads as a
+            // deliberate, visible action instead of barely changing angle. Built
+            // in world space (around the character's vertical axis) and folded
+            // back into the hand bone's local frame - the hand's own local axes
+            // point in an unpredictable direction depending on the pose it's
+            // currently animating through, so a plain local-space Euler landed
+            // the shield face-on to the camera instead of turned outward.
+            float idleTurn = fighter.motion == Motion.Idle ? ShieldIdleYaw * side : 0f;
+            Transform handBone = fighter.shieldPivot.parent;
+            Quaternion worldExtra = Quaternion.AngleAxis(idleTurn, Vector3.up);
+            Quaternion localExtra = Quaternion.Inverse(handBone.rotation) * worldExtra * handBone.rotation;
+            fighter.shieldPivot.localRotation = localExtra * ShieldBaseRotation;
+        }
+
         if (fighter.motion == Motion.Hit && MotionFinished(fighter))
             RestoreFighterAppearance(fighter);
     }
+
+    private const float ShieldIdleYaw = 34f;
+    private static readonly Quaternion ShieldBaseRotation = Quaternion.Euler(0f, 0f, 90f);
 
     private static readonly Color TelegraphHorizontalColor = new Color(1f, 0.55f, 0.08f);
     private static readonly Color TelegraphVerticalColor = new Color(0.55f, 0.2f, 1f);
@@ -1499,6 +1544,24 @@ public sealed class BossDuelPrototype : MonoBehaviour
             fighter.animator.speed = 1f;
             if (fighter.animator.layerCount > 1)
                 fighter.animator.SetLayerWeight(1, 0f);
+            return;
+        }
+
+        if (motion == Motion.Dead)
+        {
+            // Every other combat state only needs the upper-body-masked layer
+            // because legs are separately IK-driven while standing (grounding/
+            // kick/dodge) - but nothing drives the legs during death, so playing
+            // Dead there only collapsed the torso while the legs stayed on
+            // whatever the base layer's Idle pose was. Play the same clip on the
+            // base (full-body, unmasked) layer too so the whole body falls.
+            fighter.animator.speed = 1f;
+            fighter.animator.Play(Animator.StringToHash("Dead"), 0, 0f);
+            if (fighter.animator.layerCount > 1 && fighter.animator.HasState(1, Animator.StringToHash("Dead")))
+            {
+                fighter.animator.SetLayerWeight(1, 1f);
+                fighter.animator.Play(Animator.StringToHash("Dead"), 1, 0f);
+            }
             return;
         }
 
@@ -1577,8 +1640,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
         // only their upper body looms in the lower-left foreground, while the rival
         // stands further off to the right, fully visible and looking larger/closer
         // than the old wide establishing shot.
-        camera.transform.position = new Vector3(-4.4f, 2.0f, -1.9f);
-        camera.transform.LookAt(new Vector3(1.7f, 1.0f, 0.3f));
+        // Y values dropped 0.25 to match the fighters' spawn height moving from
+        // 0.25 (old procedural capsule pivot) down to 0 (grounded Mixamo rig).
+        camera.transform.position = new Vector3(-4.4f, 1.75f, -1.9f);
+        camera.transform.LookAt(new Vector3(1.7f, 0.75f, 0.3f));
         camera.fieldOfView = 42f;
         camera.backgroundColor = new Color(0.53f, 0.7f, 0.87f);
         // Ordinary sky: always clear to the skybox, but only override RenderSettings.skybox
@@ -1909,7 +1974,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
     }
 
-    private void SpawnDirectionalSlash(Fighter attacker, bool horizontal)
+    private void SpawnDirectionalSlash(Fighter attacker, bool horizontal, float scale = 1.15f, float life = 1.2f)
     {
         Color color = attacker.facesRight
             ? new Color(0.12f, 0.82f, 1f, 1f)
@@ -1929,8 +1994,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 : Quaternion.identity;
             Quaternion rotation = facing * Quaternion.Euler(0f, 0f, horizontal ? 0f : 90f);
             GameObject vfx = Instantiate(prefab, center, rotation, transform);
-            vfx.transform.localScale = Vector3.one * 1.15f;
-            Destroy(vfx, 1.2f);
+            vfx.transform.localScale = Vector3.one * scale;
+            Destroy(vfx, life);
             return;
         }
 
@@ -2577,7 +2642,11 @@ public sealed class GroundedFighterRig : MonoBehaviour
         // per the clip), which reads as floating/bent legs on more dynamic mocap sources.
         // Only hold the anchor still while a body-offset pose (crouch/dodge) is active, so
         // the hip can shift relative to planted feet without them sliding across the floor.
-        if (Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
+        // Also hold it while a kick is active - otherwise this captures the kicking foot's
+        // IK-driven raised position as the new "standing" anchor, and since that anchor then
+        // drives next frame's IK too, the raised pose becomes self-reinforcing and the foot
+        // never comes back down once a kick gets interrupted mid-swing (e.g. by taking a hit).
+        if (!kickActive && Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
         {
             _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
             _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
