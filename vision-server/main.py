@@ -1,24 +1,22 @@
 """
 웹캠 비전 서버 (Python + MediaPipe) -> Unity(PC 게임)로 UDP 전송.
-PROTOCOL.md "3. 웹캠 비전 결과" 참고.
+PROTOCOL.md "Phase 1: MediaPipe 이벤트 프로토콜" 참고.
 
-Day 1 목표: 웹캠 캡처 + 포즈 랜드마크 오버레이가 뜨는지 확인.
-Day 2 목표: guard_up(방패 패링), crouch(쭈그리기) 판별 로직 채워서 UDP 전송. (완료)
+기획서 2장 7동작(가로/세로 베기, 기본 방어, 패링, 앉기, 좌우 움직이기, 발차기)을 전부
+이 프로세스 하나에서 분류해서, 인식된 동작 이벤트만 UDP 9002로 Unity에 보낸다.
+`prototype/mediapipe_only_mvp/main.py`에서 실측으로 검증한 로직을 그대로 옮겨왔다 —
+그쪽은 계속 독립 스파이크로 남겨두고, 이 파일이 실제 Unity와 연결되는 진짜 서버다.
 
 주의: 이 머신의 mediapipe 빌드(0.10.35, Python 3.14 win_amd64)는 예전
 mp.solutions.pose API가 빠져있고 Tasks API(mediapipe.tasks.python.vision.PoseLandmarker)만
 들어있다. 레거시 mp.solutions.pose.Pose(...)를 쓰면 AttributeError가 나서, 아래는
-Tasks API 기준으로 작성했다 (다른 머신에서 mp.solutions.pose가 된다면 그쪽이 더 간단하니
-필요하면 되돌려도 된다).
+Tasks API 기준으로 작성했다.
 
-인식 로직 (Tier 1: 임계값 기반, 기획서 4-3-4 참고):
-  - 쭈그리기(crouch): 어깨-엉덩이 중간 y좌표가 '서 있을 때' 기준보다 일정 비율 이상 내려가면 감지.
-    카메라 거리/신장에 따라 절대값이 아니라 "어깨-엉덩이 거리(torso length)" 대비 상대값을 씀.
-  - 방패 자세(guard_up): 양 손목이 모두 어깨 높이 근처에서 몸 앞쪽 중앙에 모여있으면 감지.
-    depth(z)는 카메라 기준 상대값이라 오차가 크므로 1차는 x,y만 사용.
+찌르기는 스윙과 자꾸 섞여 잡혀서 비활성화 상태 (기획서 2장 열린 질문 참고). 발차기는
+무릎 각도로, 나머지는 손목/코 랜드마크의 몸통 기준 상대좌표로 판정한다.
 
-'s' 키: 서 있는 기준 자세 캘리브레이션 (crouch 판정 기준선). 캘리브레이션 전에는
-crouch가 항상 False로 나가니, --show로 카메라 창을 보면서 한 번 눌러줘야 한다.
+'s' 키: 서 있는 기준 자세 캘리브레이션 (앉기/좌우 판정 기준선). 캘리브레이션 전에는
+앉기/좌우 판정이 항상 False로 나가니, --show로 카메라 창을 보면서 한 번 눌러줘야 한다.
 
 실행: python main.py --pc-ip 127.0.0.1
 """
@@ -26,6 +24,7 @@ crouch가 항상 False로 나가니, --show로 카메라 창을 보면서 한 �
 import argparse
 import collections
 import json
+import math
 import pathlib
 import socket
 import time
@@ -37,17 +36,78 @@ from mediapipe.tasks.python.core.base_options import BaseOptions
 
 MODEL_PATH = pathlib.Path(__file__).parent / "models" / "pose_landmarker_lite.task"
 
-# PoseLandmark 인덱스 (BlazePose 33 keypoints)
-L_SHOULDER, R_SHOULDER = 11, 12
-L_HIP, R_HIP = 23, 24
-L_WRIST, R_WRIST = 15, 16
+# PoseLandmark 인덱스 (BlazePose 33 keypoints, MediaPipe가 실제로 리턴하는 raw 라벨)
+_NOSE = 0  # 좌우 구분 없는 단일 랜드마크라 미러 보정 불필요
+_L_SHOULDER, _R_SHOULDER = 11, 12
+_L_ELBOW, _R_ELBOW = 13, 14
+_L_WRIST, _R_WRIST = 15, 16
+_L_HIP, _R_HIP = 23, 24
+_L_KNEE, _R_KNEE = 25, 26
+_L_ANKLE, _R_ANKLE = 27, 28
 
-SQUAT_DROP_RATIO = 0.35  # torso 길이 대비 이만큼 더 내려가면 쭈그림으로 판정
+# 실측 결과 미러(flip) 때문에 raw 라벨이 실제 좌우와 반대였다. PHYS_*가 "사용자 실제 기준"
+# 좌/우를 가리키도록 여기서 한 번에 뒤집어 보정 — 아래부터는 전부 PHYS_*만 쓴다.
+PHYS_R_SHOULDER, PHYS_L_SHOULDER = _L_SHOULDER, _R_SHOULDER
+PHYS_R_ELBOW, PHYS_L_ELBOW = _L_ELBOW, _R_ELBOW
+PHYS_R_WRIST, PHYS_L_WRIST = _L_WRIST, _R_WRIST
+PHYS_R_HIP, PHYS_L_HIP = _L_HIP, _R_HIP
+PHYS_R_KNEE, PHYS_L_KNEE = _L_KNEE, _R_KNEE
+PHYS_R_ANKLE, PHYS_L_ANKLE = _L_ANKLE, _R_ANKLE
+
+SWORD_WRIST = PHYS_R_WRIST    # 검 = 오른손 (기획서: "오른손에 스마트폰(검)")
+SHIELD_WRIST = PHYS_L_WRIST   # 방패 = 왼손
+
 SMOOTH_WINDOW = 5
 
+# --- 회피 ---
+SQUAT_DROP_RATIO = 0.35       # torso 길이 대비 이만큼 더 내려가면 앉기
+# 옆으로 허리를 굽히는 "기울이기"(어깨-엉덩이 offset)는 너무 힘들었고, 몸통 회전(어깨
+# z-차이)은 z값 노이즈가 너무 커서 좌우로 계속 깜빡였다. 코(허리 대비 지렛대가 가장
+# 긴 지점) x좌표와 엉덩이 중심 x의 차이로 바꿨다 — 어깨보다 같은 동작에도 훨씬 크게
+# 움직이고, z가 아니라 x라 노이즈도 적다.
+HEAD_LEAN_RATIO = 0.35        # torso 길이 대비 코-엉덩이 x offset이 이만큼 넘으면 회피 (실측 후 조정)
 
-def now_ms() -> float:
-    return time.time() * 1000.0
+# --- 검: 스윙 (짧은 시간창 안에서의, 몸통 기준 상대적인 손목 이동을 분석) ---
+SWING_WINDOW_SEC = 0.25       # 이 시간 안의 이동을 하나의 "스윙 후보"로 봄
+SWING_DIST_RATIO = 0.55       # torso 길이 대비 이만큼 이상 움직여야 스윙 후보
+SWING_AXIS_RATIO = 1.3        # 우세 축이 다른 축보다 이 배 이상 커야 가로/세로 판정
+SWORD_COOLDOWN_SEC = 0.45     # 한 번 판정되면 이 시간 동안 재판정 안 함 (같은 스윙 중복 방지)
+
+# --- 방패: 기본 방어 ---
+GUARD_Y_BAND_RATIO = 0.5      # 어깨 높이 기준 ±이 비율(torso 길이) 안이면 "가슴 높이"
+GUARD_STATIONARY_SPEED = 1.2  # torso길이/초. 이보다 느리면 "정지"로 간주
+GUARD_HOLD_SEC = 0.20         # 이 시간 이상 연속으로 정지+가슴높이여야 기본 방어로 인정
+
+# --- 찌르기: 팔꿈치 각도가 급격히 펴짐(오른팔), 옆 이동은 적어야 함. 현재 비활성화. ---
+THRUST_WINDOW_SEC = 0.30
+THRUST_LATERAL_CAP = 0.35     # torso 길이 비. 이 이하로 옆으로 덜 움직여야 스윙과 구분됨
+THRUST_COOLDOWN_SEC = 0.5
+
+# --- 패링: 몸통 중심에서 바깥쪽으로 뻗을 때만 인정 (왼팔). 캘리브레이션 없이 고정 임계값. ---
+PARRY_WINDOW_SEC = 0.25
+PARRY_OUTWARD_RATIO = 0.5     # torso 길이 대비 중심에서 이만큼 이상 "더 멀어져야" 패링 (실측 후 조정)
+PARRY_COOLDOWN_SEC = 0.5
+
+# --- 찌르기 전용: 실측 샘플 기반 캘리브레이션 (현재 _thrust 자체가 비활성화라 이 값들도 미사용) ---
+CALIB_CAPTURE_SEC = 1.2
+CALIB_SAMPLES_NEEDED = 3
+CALIB_MARGIN = 0.55
+
+# --- 발차기: 무릎 각도(엉덩이-무릎-발목)가 급격히 펴짐. 좌/우 다리 구분 없이 kick 하나로 판정 ---
+KICK_WINDOW_SEC = 0.30
+KICK_ANGLE_DELTA = 25.0       # 도. 이 이상 무릎이 급하게 펴지면 발차기 (실측 후 조정)
+KICK_COOLDOWN_SEC = 0.5
+
+EVENT_DISPLAY_SEC = 0.4       # 순간 이벤트를 화면에 이만큼 켜둠
+
+# 순간 이벤트(한국어 표시용 이름) -> PROTOCOL.md Phase 1 트리거 이벤트의 action 값
+EVENT_ACTION_MAP = {
+    "가로 베기": "swing_horizontal",
+    "세로 베기": "swing_vertical",
+    "패링": "parry",
+    "찌르기": "thrust",  # 현재 비활성화 상태라 실제로는 안 나감
+    "발차기": "kick",
+}
 
 
 def mid(a, b):
@@ -55,20 +115,65 @@ def mid(a, b):
 
 
 def dist(p1, p2):
-    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5
+    return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
 
 
-class MotionClassifier:
-    """crouch/guard_up 판정. calibrate()를 한 번 호출해야 crouch가 동작한다."""
+def angle_deg(a, b, c):
+    """b를 꼭짓점으로 하는 a-b-c 각도(도). 팔이 완전히 펴지면 180에 가까워진다."""
+    v1 = (a.x - b.x, a.y - b.y)
+    v2 = (c.x - b.x, c.y - b.y)
+    m1, m2 = math.hypot(*v1), math.hypot(*v2)
+    if m1 * m2 == 0:
+        return 180.0
+    cos_a = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (m1 * m2)))
+    return math.degrees(math.acos(cos_a))
 
-    def __init__(self):
+
+class MotionRecognizer:
+    """8동작(찌르기 제외 7개 활성) 분류. send_fn(payload_dict)이 있으면 인식/상태 변화
+    시점마다 PROTOCOL.md Phase 1 포맷 그대로 호출한다 (UDP 전송은 호출부 책임)."""
+
+    def __init__(self, send_fn=None):
+        self.send_fn = send_fn
+
         self.baseline_torso_mid_y = None
         self.baseline_torso_len = None
+        self.torso_len_ema = None  # 캘리브레이션 전에도 분모(torso_len)가 프레임마다 안 흔들리게
+
         self.torso_mid_y_hist = collections.deque(maxlen=SMOOTH_WINDOW)
+        self.head_offset_hist = collections.deque(maxlen=SMOOTH_WINDOW)  # 코x - 엉덩이중심x
+
+        self.sword_hist = collections.deque()        # (t, rel_x, rel_y)
+        self.shield_hist = collections.deque()        # (t, x, y)
+        self.thrust_hist = collections.deque()        # (t, elbow_angle, rel_x, rel_y)
+        self.parry_swing_hist = collections.deque()   # (t, outward)
+        self.kick_hist = {"L": collections.deque(), "R": collections.deque()}  # (t, knee_angle)
+
+        self.guard_held_since = None
+        self.last_sword_event_t = -999.0
+        self.last_thrust_event_t = -999.0
+        self.last_parry_event_t = -999.0
+        self.last_kick_event_t = -999.0
+
+        # 레벨 상태 전환(시작/종료) 시점에만 이벤트를 보낸다 (PROTOCOL.md "상태 이벤트" 정의).
+        self.prev_squat = False
+        self.prev_lateral = None
+        self.prev_guard = False
+
+        # 찌르기 전용 캘리브레이션 상태 (현재 _thrust 비활성화라 미사용, 재활성화 대비 보존)
+        self.thrust_samples = []
+        self.thrust_threshold = None
+        self.thrust_capture_until = None
+        self.thrust_capture_peak = 0.0
+
+        # 화면에 잠깐 표시할 순간 이벤트: {"name": 표시종료시각}
+        self.active_events = {}
 
     def calibrate(self, landmarks):
-        sh_mid = mid(landmarks[L_SHOULDER], landmarks[R_SHOULDER])
-        hip_mid = mid(landmarks[L_HIP], landmarks[R_HIP])
+        """서 있는 기준 자세 (앉기 기준선). 좌우 회피는 코-엉덩이 offset 기반이라 별도
+        기준선이 필요 없다 (똑바로 서면 offset이 자연스럽게 0에 가까움)."""
+        sh_mid = mid(landmarks[PHYS_L_SHOULDER], landmarks[PHYS_R_SHOULDER])
+        hip_mid = mid(landmarks[PHYS_L_HIP], landmarks[PHYS_R_HIP])
         self.baseline_torso_mid_y = (sh_mid[1] + hip_mid[1]) / 2
         self.baseline_torso_len = dist(sh_mid, hip_mid)
         print(
@@ -76,35 +181,289 @@ class MotionClassifier:
             f"torso_len={self.baseline_torso_len:.3f}"
         )
 
-    def detect_crouch(self, landmarks) -> bool:
-        sh_mid = mid(landmarks[L_SHOULDER], landmarks[R_SHOULDER])
-        hip_mid = mid(landmarks[L_HIP], landmarks[R_HIP])
+    def start_thrust_capture(self, t):
+        if len(self.thrust_samples) >= CALIB_SAMPLES_NEEDED:
+            self.thrust_samples = []
+            self.thrust_threshold = None
+            print("[calib] 찌르기 재보정 시작")
+        self.thrust_capture_until = t + CALIB_CAPTURE_SEC
+        self.thrust_capture_peak = 0.0
+        print(f"[calib] 찌르기 캡처 {len(self.thrust_samples) + 1}/{CALIB_SAMPLES_NEEDED} - 지금 찌르세요!")
+
+    def _fire(self, name, t):
+        self.active_events[name] = t + EVENT_DISPLAY_SEC
+        print(f"[event] {name}  t={t:.2f}")
+        action = EVENT_ACTION_MAP.get(name)
+        if action and self.send_fn:
+            self.send_fn({"action": action})
+
+    def _prune(self, hist, t, window_sec):
+        while hist and t - hist[0][0] > window_sec:
+            hist.popleft()
+
+    def _torso(self, landmarks):
+        sh_mid = mid(landmarks[PHYS_L_SHOULDER], landmarks[PHYS_R_SHOULDER])
+        hip_mid = mid(landmarks[PHYS_L_HIP], landmarks[PHYS_R_HIP])
+
+        raw_torso_len = dist(sh_mid, hip_mid)
+        # 캘리브레이션 전에는 매 프레임 새로 재는 값이라 landmark 노이즈가 그대로 분모에
+        # 실려서, 손목이 가만히 있어도 상대좌표가 흔들려 보이는 문제가 있었다. EMA로 완화.
+        self.torso_len_ema = raw_torso_len if self.torso_len_ema is None else (
+            0.2 * raw_torso_len + 0.8 * self.torso_len_ema
+        )
+        torso_len = self.baseline_torso_len or self.torso_len_ema
+        return sh_mid, hip_mid, torso_len
+
+    def _dodge(self, landmarks, t):
+        """앉기(레벨) / 좌우 회피(레벨).
+
+        어깨-엉덩이 offset(너무 힘듦), 어깨 z-차이 회전(노이즈로 계속 깜빡임)을 시도했다가
+        **코 x좌표와 엉덩이 중심 x의 차이**로 바꿨다. 코는 엉덩이(허리) 기준 지렛대가
+        가장 긴 지점이라 목만 살짝 기울여도 어깨 기준보다 훨씬 큰 offset이 나오고, z가
+        아니라 x좌표라 노이즈도 적다. 발을 옮겨도 "허리 대비 고개가 얼마나 빠져나갔는지"만
+        보므로 계속 유지되고, 고개가 몸 중심으로 돌아오면 바로 해제된다.
+        """
+        sh_mid, hip_mid, torso_len = self._torso(landmarks)
+
         torso_mid_y = (sh_mid[1] + hip_mid[1]) / 2
+        head_offset = landmarks[_NOSE].x - hip_mid[0]
         self.torso_mid_y_hist.append(torso_mid_y)
+        self.head_offset_hist.append(head_offset)
         smoothed_y = sum(self.torso_mid_y_hist) / len(self.torso_mid_y_hist)
+        smoothed_head = sum(self.head_offset_hist) / len(self.head_offset_hist)
 
-        if self.baseline_torso_mid_y is None or not self.baseline_torso_len:
+        squat = False
+        lateral = None  # None | "LEFT" | "RIGHT"
+        if self.baseline_torso_len:
+            drop = smoothed_y - self.baseline_torso_mid_y
+            squat = drop > SQUAT_DROP_RATIO * self.baseline_torso_len
+
+        if torso_len:
+            head_ratio = smoothed_head / torso_len
+            if abs(head_ratio) > HEAD_LEAN_RATIO:
+                # 이미지가 거울모드라 화면상 왼쪽이 사용자 입장에서도 왼쪽으로 보임
+                lateral = "LEFT" if head_ratio < 0 else "RIGHT"
+
+        return squat, lateral
+
+    def _sword_swing(self, landmarks, t):
+        """가로베기 / 세로베기 (순간 이벤트). 손목을 몸통 중심 기준 상대좌표로 추적한다."""
+        sh_mid, hip_mid, torso_len = self._torso(landmarks)
+        if not torso_len:
+            return
+        center_x = (sh_mid[0] + hip_mid[0]) / 2
+        center_y = (sh_mid[1] + hip_mid[1]) / 2
+
+        wrist = landmarks[SWORD_WRIST]
+        rel_x = (wrist.x - center_x) / torso_len
+        rel_y = (wrist.y - center_y) / torso_len
+
+        self.sword_hist.append((t, rel_x, rel_y))
+        self._prune(self.sword_hist, t, SWING_WINDOW_SEC)
+
+        if t - self.last_sword_event_t < SWORD_COOLDOWN_SEC or len(self.sword_hist) < 3:
+            return
+
+        t0, rel_x0, rel_y0 = self.sword_hist[0]
+        dx = rel_x - rel_x0
+        dy = rel_y - rel_y0
+        total_dist = math.hypot(dx, dy)
+
+        if total_dist < SWING_DIST_RATIO:
+            return  # 별로 안 움직임
+
+        self.last_sword_event_t = t
+        if abs(dx) > abs(dy) * SWING_AXIS_RATIO:
+            self._fire("가로 베기", t)
+        elif abs(dy) > abs(dx) * SWING_AXIS_RATIO:
+            self._fire("세로 베기", t)
+        else:
+            return  # 어느 쪽도 우세하지 않으면(대각선) 판정 안 함 -> 다시 스윙해달라고 유도
+
+        # 스윙 중간에 팔이 펴지는 순간을 찌르기가 별개로 잡아버리는 걸 막기 위해
+        # 스윙이 발동하면 잠깐 찌르기 판정도 같이 쉬게 한다 (반대 방향도 _thrust에서 동일하게 처리).
+        self.last_thrust_event_t = t
+        # 오른손으로 스윙할 때 반동/균형으로 왼팔도 같이 흔들려서 패링이 같이 잡히는 문제가
+        # 있었다. 스윙이 발동하면 잠깐 패링도 같이 쉬게 한다 (반대도 _shield_parry에서 처리).
+        self.last_parry_event_t = t
+
+    def _shield_guard(self, landmarks, t):
+        """기본 방어 (레벨 상태)."""
+        sh_mid, hip_mid, torso_len = self._torso(landmarks)
+        if not torso_len:
             return False
-        drop = smoothed_y - self.baseline_torso_mid_y  # y는 아래로 갈수록 증가
-        return drop > SQUAT_DROP_RATIO * self.baseline_torso_len
 
-    def detect_guard_up(self, landmarks) -> bool:
-        sh_mid = mid(landmarks[L_SHOULDER], landmarks[R_SHOULDER])
-        hip_mid = mid(landmarks[L_HIP], landmarks[R_HIP])
-        l_wrist, r_wrist = landmarks[L_WRIST], landmarks[R_WRIST]
-        shoulder_width = dist(
-            (landmarks[L_SHOULDER].x, landmarks[L_SHOULDER].y),
-            (landmarks[R_SHOULDER].x, landmarks[R_SHOULDER].y),
-        )
-        torso_len = self.baseline_torso_len or dist(sh_mid, hip_mid)
+        wrist = landmarks[SHIELD_WRIST]
+        self.shield_hist.append((t, wrist.x, wrist.y))
+        self._prune(self.shield_hist, t, GUARD_HOLD_SEC + 0.1)
 
-        # 양 손목이 어깨 높이(±torso_len*0.5) 안에 있고, 엉덩이보다 위(=들어 올린 상태)
-        wrists_near_shoulder_height = (
-            abs(l_wrist.y - sh_mid[1]) < torso_len * 0.5
-            and abs(r_wrist.y - sh_mid[1]) < torso_len * 0.5
-        )
-        wrists_up = l_wrist.y < hip_mid[1] and r_wrist.y < hip_mid[1]
-        return wrists_near_shoulder_height and wrists_up and shoulder_width > 0
+        in_band = abs(wrist.y - sh_mid[1]) < torso_len * GUARD_Y_BAND_RATIO and wrist.y < hip_mid[1]
+
+        recent = [s for s in self.shield_hist if t - s[0] <= GUARD_HOLD_SEC]
+        stationary = True
+        if len(recent) >= 2:
+            (t0, x0, y0), (t1, x1, y1) = recent[0], recent[-1]
+            dt = max(t1 - t0, 1e-3)
+            speed = math.hypot(x1 - x0, y1 - y0) / torso_len / dt
+            stationary = speed < GUARD_STATIONARY_SPEED
+
+        guard_up = False
+        if in_band and stationary:
+            if self.guard_held_since is None:
+                self.guard_held_since = t
+            elif t - self.guard_held_since >= GUARD_HOLD_SEC:
+                guard_up = True
+        else:
+            self.guard_held_since = None
+
+        return guard_up
+
+    def _thrust(self, landmarks, t):
+        """찌르기: 팔꿈치 각도가 급격히 펴짐 + 옆 이동은 적음 (스윙과 구분). 현재 비활성화."""
+        sh_mid, hip_mid, torso_len = self._torso(landmarks)
+        if not torso_len:
+            return
+        center_x = (sh_mid[0] + hip_mid[0]) / 2
+        center_y = (sh_mid[1] + hip_mid[1]) / 2
+
+        wrist = landmarks[PHYS_R_WRIST]
+        elbow = landmarks[PHYS_R_ELBOW]
+        shoulder = landmarks[PHYS_R_SHOULDER]
+        angle = angle_deg(shoulder, elbow, wrist)
+        rel_x = (wrist.x - center_x) / torso_len
+        rel_y = (wrist.y - center_y) / torso_len
+
+        self.thrust_hist.append((t, angle, rel_x, rel_y))
+        self._prune(self.thrust_hist, t, THRUST_WINDOW_SEC)
+        if len(self.thrust_hist) < 3:
+            return
+
+        t0, angle0, rx0, ry0 = self.thrust_hist[0]
+        d_angle = angle - angle0
+        lateral = math.hypot(rel_x - rx0, rel_y - ry0)
+        metric = d_angle if lateral < THRUST_LATERAL_CAP else 0.0
+
+        if self.thrust_capture_until is not None:
+            self.thrust_capture_peak = max(self.thrust_capture_peak, metric)
+            if t >= self.thrust_capture_until:
+                self.thrust_samples.append(self.thrust_capture_peak)
+                print(f"[calib] 찌르기 샘플 {len(self.thrust_samples)}/{CALIB_SAMPLES_NEEDED}: peak={self.thrust_capture_peak:.1f}deg")
+                self.thrust_capture_until = None
+                if len(self.thrust_samples) >= CALIB_SAMPLES_NEEDED:
+                    self.thrust_threshold = (sum(self.thrust_samples) / len(self.thrust_samples)) * CALIB_MARGIN
+                    print(f"[calib] 찌르기 임계값 확정: {self.thrust_threshold:.1f}deg")
+            return
+
+        if self.thrust_threshold is None:
+            return  # 't'로 캘리브레이션하기 전까지는 판정 안 함
+
+        if metric > self.thrust_threshold and t - self.last_thrust_event_t > THRUST_COOLDOWN_SEC:
+            self.last_thrust_event_t = t
+            self.last_sword_event_t = t  # 이후 잠깐 스윙 판정도 같이 쉬게 함 (반대는 _sword_swing에서 처리)
+            self._fire("찌르기", t)
+
+    def _shield_parry(self, landmarks, t):
+        """패링 (순간 이벤트). 왼쪽 손목을 몸통 중심 기준 상대좌표로 추적하되, "몸통
+        중심에서 얼마나 더 멀어졌는지"(바깥으로 뻗는 정도)만 본다 — 단순히 손목이 많이
+        움직였다고 인정하면 좌우로 왔다갔다하는 동작도 걸리기 때문에, 반드시 안쪽(중심에
+        가까운 지점)에서 시작해 바깥쪽(중심에서 먼 지점)으로 끝나야 한다."""
+        sh_mid, hip_mid, torso_len = self._torso(landmarks)
+        if not torso_len:
+            return
+        center_x = (sh_mid[0] + hip_mid[0]) / 2
+        center_y = (sh_mid[1] + hip_mid[1]) / 2
+
+        wrist = landmarks[SHIELD_WRIST]
+        rel_x = (wrist.x - center_x) / torso_len
+        rel_y = (wrist.y - center_y) / torso_len
+        outward = math.hypot(rel_x, rel_y)
+
+        self.parry_swing_hist.append((t, outward))
+        self._prune(self.parry_swing_hist, t, PARRY_WINDOW_SEC)
+
+        if t - self.last_parry_event_t < PARRY_COOLDOWN_SEC or len(self.parry_swing_hist) < 3:
+            return
+
+        t0, outward0 = self.parry_swing_hist[0]
+        outward_delta = outward - outward0  # 양수면 중심에서 멀어지는 중(바깥으로 뻗음)
+
+        if outward_delta < PARRY_OUTWARD_RATIO:
+            return  # 안쪽에서 바깥쪽으로 뻗는 움직임이 아님
+
+        self.last_parry_event_t = t
+        # 패링 반동으로 오른팔도 같이 흔들려 스윙이 같이 잡히는 걸 막기 위해 스윙도 잠깐 쉬게 함
+        self.last_sword_event_t = t
+        self._fire("패링", t)
+
+    def _kick(self, landmarks, t):
+        """발차기: 무릎 각도(엉덩이-무릎-발목)가 급격히 펴짐. 좌/우 다리 구분 없이 kick 하나로 판정."""
+        _, _, torso_len = self._torso(landmarks)
+        if not torso_len:
+            return
+        if t - self.last_kick_event_t < KICK_COOLDOWN_SEC:
+            return
+
+        legs = {
+            "L": (landmarks[PHYS_L_HIP], landmarks[PHYS_L_KNEE], landmarks[PHYS_L_ANKLE]),
+            "R": (landmarks[PHYS_R_HIP], landmarks[PHYS_R_KNEE], landmarks[PHYS_R_ANKLE]),
+        }
+        for side, (hip, knee, ankle) in legs.items():
+            angle = angle_deg(hip, knee, ankle)
+            hist = self.kick_hist[side]
+            hist.append((t, angle))
+            self._prune(hist, t, KICK_WINDOW_SEC)
+            if len(hist) < 3:
+                continue
+            t0, angle0 = hist[0]
+            if angle - angle0 > KICK_ANGLE_DELTA:
+                self.last_kick_event_t = t
+                self._fire("발차기", t)
+                return  # 한 프레임에 양다리 중복 판정 방지
+
+    def _log_state_transitions(self, squat, lateral, guard_up, t):
+        """레벨 상태(앉기/좌우회피/방어)는 매 프레임 유지되지만, 로그/전송은 PROTOCOL.md의
+        "상태 이벤트"처럼 바뀌는 시점(시작/종료)에만 한다 — 매 프레임 보내면 스팸이지만,
+        시작/종료 시점만 있으면 "그 사이엔 계속 그 상태였다"는 걸 Unity 쪽에서 재구성할 수 있다."""
+        if squat != self.prev_squat:
+            print(f"[state] 앉기 {'시작' if squat else '종료'}  t={t:.2f}")
+            self.prev_squat = squat
+            if self.send_fn:
+                self.send_fn({"action": "crouch", "active": squat})
+        if lateral != self.prev_lateral:
+            if lateral:
+                print(f"[state] 좌우회피-{lateral} 시작  t={t:.2f}")
+            elif self.prev_lateral:
+                print(f"[state] 좌우회피-{self.prev_lateral} 종료  t={t:.2f}")
+            self.prev_lateral = lateral
+            if self.send_fn:
+                position = lateral.lower() if lateral else "none"
+                self.send_fn({"action": "lateral", "position": position})
+        if guard_up != self.prev_guard:
+            print(f"[state] 방어 {'시작' if guard_up else '종료'}  t={t:.2f}")
+            self.prev_guard = guard_up
+            if self.send_fn:
+                self.send_fn({"action": "guard", "active": guard_up})
+
+    def update(self, landmarks, t):
+        """한 프레임 처리. 화면에 그릴 상태 dict를 리턴."""
+        squat, lateral = self._dodge(landmarks, t)
+        self._sword_swing(landmarks, t)
+        guard_up = self._shield_guard(landmarks, t)
+        # 찌르기(_thrust)는 스윙과 자꾸 섞여 잡혀서 일단 비활성화. 재활성화하려면 아래 한 줄만 살리면 됨.
+        # self._thrust(landmarks, t)
+        self._shield_parry(landmarks, t)
+        self._kick(landmarks, t)
+        self._log_state_transitions(squat, lateral, guard_up, t)
+
+        # 만료된 순간 이벤트 정리
+        self.active_events = {name: until for name, until in self.active_events.items() if until > t}
+
+        return {
+            "squat": squat,
+            "lateral": lateral,
+            "guard_up": guard_up,
+            "events": list(self.active_events.keys()),
+        }
 
 
 def load_landmarker() -> vision.PoseLandmarker:
@@ -137,14 +496,22 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest = (args.pc_ip, args.port)
 
+    def send(payload):
+        sock.sendto(json.dumps(payload).encode("utf-8"), dest)
+
+    landmarker = load_landmarker()
+    recognizer = MotionRecognizer(send_fn=send)
+
     cap = cv2.VideoCapture(args.camera_index)
     if not cap.isOpened():
         raise RuntimeError(f"카메라 {args.camera_index}번을 열 수 없습니다.")
 
-    landmarker = load_landmarker()
-    classifier = MotionClassifier()
     start_time = time.time()
-    print("준비되면 화면 보고 똑바로 선 뒤 's' 키로 캘리브레이션 하세요 (crouch 판정 기준선). 종료는 'q'.")
+    print(f"[udp] {dest[0]}:{dest[1]} 로 동작 이벤트 전송")
+    print("화면 보고 똑바로 선 뒤 's' 키로 캘리브레이션 하세요. 종료는 'q'.")
+    print("패링은 캘리브레이션 없이 스윙과 같은 방식으로 자동 판정됩니다. (찌르기는 일단 비활성화)")
+    print("발차기는 무릎 각도로 즉시 판정됩니다 (좌/우 구분 없음, 캘리브레이션 불필요).")
+    print("검=오른손(빨강)  방패=왼손(파랑)")
 
     try:
         while True:
@@ -155,47 +522,49 @@ def main():
             frame = cv2.flip(frame, 1)  # 거울 모드 (직관적인 좌우)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            ts_ms = int((time.time() - start_time) * 1000)
+            now = time.time() - start_time
+            result = landmarker.detect_for_video(mp_image, int(now * 1000))
 
-            result = landmarker.detect_for_video(mp_image, ts_ms)
-
-            guard_up = False
-            crouch = False
-            confidence = 0.0
-
+            lines = ["NO POSE"]
             if result.pose_landmarks:
                 landmarks = result.pose_landmarks[0]
                 visibilities = [lm.visibility for lm in landmarks]
                 confidence = sum(visibilities) / len(visibilities) if visibilities else 0.0
 
-                crouch = classifier.detect_crouch(landmarks)
-                guard_up = classifier.detect_guard_up(landmarks)
+                state = recognizer.update(landmarks, now)
+
+                level_parts = []
+                if state["squat"]:
+                    level_parts.append("SQUAT")
+                if state["lateral"]:
+                    level_parts.append(f"DODGE-{state['lateral']}")
+                if state["guard_up"]:
+                    level_parts.append("GUARD")
+                lines = [
+                    "level: " + (" + ".join(level_parts) if level_parts else "IDLE") + f"  conf={confidence:.2f}",
+                    "event: " + (" / ".join(state["events"]) if state["events"] else "-"),
+                ]
 
                 if args.show:
                     h, w = frame.shape[:2]
-                    for lm in landmarks:
-                        cv2.circle(frame, (int(lm.x * w), int(lm.y * h)), 3, (0, 255, 0), -1)
-
-            payload = {
-                "t": now_ms(),
-                "guard_up": guard_up,
-                "crouch": crouch,
-                "pose_confidence": round(confidence, 3),
-            }
-            sock.sendto(json.dumps(payload).encode("utf-8"), dest)
+                    marker_color = {
+                        SWORD_WRIST: (0, 0, 255),      # 검 손목: 빨강
+                        SHIELD_WRIST: (255, 0, 0),     # 방패 손목: 파랑
+                        PHYS_L_KNEE: (0, 165, 255),    # 무릎: 주황
+                        PHYS_R_KNEE: (0, 165, 255),
+                    }
+                    for i, lm in enumerate(landmarks):
+                        color = marker_color.get(i, (0, 255, 0))
+                        cv2.circle(frame, (int(lm.x * w), int(lm.y * h)), 4, color, -1)
 
             if args.show:
+                for i, line in enumerate(lines):
+                    cv2.putText(
+                        frame, line, (20, 40 + i * 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2,
+                    )
                 cv2.putText(
-                    frame,
-                    f"guard_up={guard_up} crouch={crouch} conf={confidence:.2f}",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 255, 0),
-                    2,
-                )
-                cv2.putText(
-                    frame, "[s]=calibrate  [q]=quit", (10, 60),
+                    frame, "[s]=calibrate  [q]=quit", (20, frame.shape[0] - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1,
                 )
                 cv2.imshow("vision-server", frame)
@@ -203,7 +572,7 @@ def main():
                 if key == ord("q"):
                     break
                 elif key == ord("s") and result.pose_landmarks:
-                    classifier.calibrate(result.pose_landmarks[0])
+                    recognizer.calibrate(result.pose_landmarks[0])
     finally:
         cap.release()
         cv2.destroyAllWindows()

@@ -36,36 +36,42 @@ Python 쪽에서 끝내고 Unity는 "무슨 동작이 인식됐다"만 받는다
 자세는 **상태 이벤트**로 보낸다. Unity 쪽 `CombatInputHub`(`pc-game/Assets/Scripts/Combat/`)가
 이 그대로의 이름으로 메서드를 갖고 있으니 필드명을 임의로 바꾸지 말 것.
 
-**트리거 이벤트** (동작이 인식된 그 순간 1회 전송)
+**아래 표가 유일한 기준 문서다.** `vision-server/main.py`(`EVENT_ACTION_MAP`,
+`_log_state_transitions`)와 `pc-game/Assets/Scripts/Combat/NetworkInputProvider.cs`가
+실제로 주고받는 값 그대로다 — 다른 곳에 이름이 다르게 적혀 있으면 이 표가 맞고 그쪽이 틀린 것.
+
+**트리거 이벤트** (동작이 인식된 그 순간 1회 전송, `{"action": "..."}` 형태만 옴)
+
+| 동작 | `action` 값 | 인식 방법 (`vision-server`) |
+|---|---|---|
+| 가로 베기 | `swing_horizontal` | 오른쪽 손목, 몸통 중심 기준 상대좌표가 짧은 시간에 크게 이동 + 수평 성분 우세 |
+| 세로 베기 | `swing_vertical` | 위와 동일하되 수직 성분 우세 |
+| 발차기 | `kick` | 무릎 각도(엉덩이-무릎-발목)가 짧은 시간에 급격히 펴짐. 좌/우 다리 구분 없이 `kick` 하나로 판정 |
+| 패링 | `parry` | 왼쪽 손목이 몸통 중심 기준 "안쪽 → 바깥쪽"으로 뻗는 방향일 때만 인정 (방향 무관하게 크기만 보면 스윙 반동에 오탐돼서 방향성 추가함) |
+| 찌르기 | `thrust` | **현재 전송 안 됨.** 스윙과 자꾸 섞여 잡혀서 `vision-server/main.py`의 `update()`에서 `_thrust()` 호출을 꺼둔 상태 (인식 로직 자체는 남아있음) |
+
+**상태 이벤트** (상태가 바뀌는 시점에만 전송 — 매 프레임 보낼 필요 없음)
+
+| 동작 | `action` 값 | 부가 필드 | 인식 방법 (`vision-server`) |
+|---|---|---|---|
+| 기본 방어 | `guard` | `active: true/false` | 왼쪽 손목이 가슴 높이 근처에서 일정 시간 이상 정지 |
+| 앉기 | `crouch` | `active: true/false` | 어깨-엉덩이 중간 y가 기준 자세보다 일정 비율 이상 내려감 |
+| 좌우 회피 | `lateral` | `position: "left" / "right" / "none"` | 코 x좌표와 엉덩이 중심 x의 차이(offset). 발을 옮겨도 유지되고, 고개가 정면으로 돌아오면 `"none"`으로 해제 |
+
 ```json
 {"action": "swing_horizontal"}
-{"action": "swing_vertical"}
 {"action": "kick"}
-{"action": "parry"}
-```
-
-**상태 이벤트** (상태가 바뀔 때마다 전송 — 매 프레임 보낼 필요 없이 변화 시점에만 보내도 됨)
-```json
 {"action": "guard", "active": true}
-{"action": "crouch", "active": true}
+{"action": "crouch", "active": false}
 {"action": "lateral", "position": "left"}
 ```
-- `guard.active` / `crouch.active`: 자세 유지 중이면 `true`, 풀면 `false`
-- `lateral.position`: `"left"` / `"right"` / `"center"`
 
-| 동작(기획서 2장) | `action` 값 | 인식 소스 (MediaPipe Pose 랜드마크) |
-|---|---|---|
-| 가로 베기 | `swing_horizontal` | 오른쪽 손목 속도벡터, 수평 성분 우세 |
-| 세로 베기 | `swing_vertical` | 오른쪽 손목 속도벡터, 수직 성분 우세 |
-| 발차기 | `kick` | 한쪽 무릎을 들고 발목을 전방으로 뻗는 동작 |
-| 기본 방어 | `guard` (active) | 왼쪽 손목이 가슴 근처에서 정지 |
-| 패링 | `parry` | 왼쪽 손목이 가슴 근처 → 몸 바깥으로 급가속 |
-| 앉기 | `crouch` (active) | 어깨/골반 랜드마크 y좌표 하강 |
-| 좌우 움직이기 | `lateral` | 어깨 랜드마크 x좌표 이동 (발 고정, 상체만) |
-
-발차기는 MediaPipe의 무릎·발목 랜드마크로 무릎 들기와 전방 신전을 함께
-확인한다. 상체 동작과 혼동하지 않도록 지지발 이동량이 임계값보다 작을 때만
-단발 이벤트를 발생시킨다.
+- `lateral.position`이 `"none"`으로 오면 Unity `NetworkInputProvider`는 `left`/`right`가 아닌
+  모든 값을 `LateralPosition.Center`로 취급하므로 그대로 동작한다 (코드 주석엔 `"center"`로
+  적혀 있지만 실제 비교는 `"left"`/`"right"`만 하고 나머지는 전부 Center로 떨어짐).
+- **트리거 vs 상태**: 트리거는 한 번의 동작을 순간적으로 알리는 것 — 같은 스윙이 여러
+  프레임에 걸쳐 중복 판정되지 않도록 쿨다운을 둔다. 상태는 조건이 유지되는 동안 계속
+  True/값을 유지하는 것 — 판정이 순간적으로 흔들려도 오탐이 안 나도록 홀드 타임을 둔다.
 
 ### Unity 쪽 수신부
 
@@ -162,30 +168,11 @@ PC 수신 측은 `device`별로 `seq` 역전/누락을 따로 감지하고, 오�
 
 ## 4. 모션 분류 결과 이벤트 이름 (표준화)
 
-기획서 2장 "동작 목록(7종)"에 대응하는 코드/로그/UI 상의 이름을 통일한다. Unity
-분류기(최종), `prototype/mediapipe_only_mvp`, `prototype/pc_server`의 폰 센서 분류
-실험이 전부 이 이름을 따른다 — 실험마다 이름이 달라서 로그/문서를 서로 못 알아보는
-일이 없도록.
-
-| 이름 (코드/JSON) | 한국어 | 종류 | 담당 (최종 아키텍처 기준) |
-|---|---|---|---|
-| `swing_horizontal` | 가로 베기 | event (순간) | 웹캠(vision-server) |
-| `swing_vertical` | 세로 베기 | event (순간) | 웹캠(vision-server) |
-| `guard_up` | 기본 방어 | level (지속 상태) | 웹캠(vision-server) |
-| `parry` | 패링 | event (순간) | 웹캠(vision-server) |
-| `crouch` | 앉기 | level (지속 상태) | 웹캠(vision-server) |
-| `side_step` | 좌우 움직이기 | level (지속 상태, `"left"`/`"right"`/`"none"`) | 웹캠(vision-server) |
-| `kick` | 발차기 | event (순간) | 웹캠(vision-server) — 좌/우발 구분 없이 하나로 판정 |
-
-- **event(순간)**: 한 번의 동작을 트리거처럼 발생시키는 것. 재판정을 막기 위한 쿨다운을
-  둔다 (같은 스윙 하나가 여러 프레임에 걸쳐 중복 판정되는 것 방지).
-- **level(지속 상태)**: 조건이 유지되는 동안 계속 True/값을 유지하는 것. 콜다운 대신
-  "일정 시간 이상 유지돼야 인정"하는 홀드 타임을 둬서 순간적인 오탐을 거른다.
-- 웹캠 쪽 `crouch`/`side_step`은 이미 `vision-server`가 이 이름 그대로 쓰고 있음 (3장 참고).
-- 모든 최종 동작은 웹캠 기반 `vision-server`에서 분류한다. 폰 IMU 섹션은 과거 실험 및
-  향후 보조 입력 검토를 위한 참고 자료다.
-- `kick`은 `vision-server`의 단발 이벤트로 전송하며 Unity에서는 다른 공격과 동일하게
-  `CombatInputHub`를 통해 처리한다.
+**이 섹션은 삭제하고 위 "Phase 1 > 이벤트 종류" 표로 합쳤다** (`guard_up`/`side_step`처럼
+실제 와이어 값(`guard`/`lateral`)과 다른 이름이 여기 따로 적혀 있어서 문서끼리 서로
+안 맞는 문제가 있었음). 이벤트 이름/값을 찾을 땐 항상 위쪽 "Phase 1: MediaPipe 이벤트
+프로토콜 > 이벤트 종류" 표를 참고할 것 — `prototype/mediapipe_only_mvp`,
+`prototype/pc_server`의 실험 코드도 전부 그 표의 이름을 따른다.
 
 ## 결정 필요 (팀 회의에서 확정할 것)
 
