@@ -1594,20 +1594,18 @@ public sealed class BossDuelPrototype : MonoBehaviour
         // only their upper body looms in the lower-left foreground, while the rival
         // stands further off to the right, fully visible and looking larger/closer
         // than the old wide establishing shot.
-        camera.transform.position = new Vector3(-3.0f, 2.05f, -1.1f);
-        camera.transform.LookAt(new Vector3(1.15f, 0.95f, 0.35f));
-        camera.fieldOfView = 38f;
-        camera.backgroundColor = new Color(0.025f, 0.035f, 0.06f);
+        camera.transform.position = new Vector3(-4.4f, 2.0f, -1.9f);
+        camera.transform.LookAt(new Vector3(1.7f, 1.0f, 0.3f));
+        camera.fieldOfView = 42f;
+        camera.backgroundColor = new Color(0.53f, 0.7f, 0.87f);
+        // Ordinary sky: always clear to the skybox, but only override RenderSettings.skybox
+        // when the library supplies a custom one. Otherwise this leaves whatever skybox the
+        // Scene's own Lighting settings already have (Unity's default procedural sky), rather
+        // than forcing a specific look here.
         Material skybox = _assetLibrary != null ? _assetLibrary.skyboxMaterial : null;
+        camera.clearFlags = CameraClearFlags.Skybox;
         if (skybox != null)
-        {
             RenderSettings.skybox = skybox;
-            camera.clearFlags = CameraClearFlags.Skybox;
-        }
-        else
-        {
-            camera.clearFlags = CameraClearFlags.SolidColor;
-        }
         _mainCamera = camera;
         _cameraRestPosition = camera.transform.position;
 
@@ -1636,56 +1634,25 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (_assetLibrary != null && _assetLibrary.dungeonGate != null)
         {
             GameObject gate = Instantiate(_assetLibrary.dungeonGate, arena);
-            gate.name = "Sci-Fi Modular Door";
+            gate.name = "Kenney CC0 Dungeon Gate";
             gate.transform.localPosition = new Vector3(2.25f, 0f, 4.05f);
             gate.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            gate.transform.localScale = Vector3.one * 1.4f;
+            gate.transform.localScale = Vector3.one * 1.08f;
             ConvertDungeonMaterials(gate.GetComponentsInChildren<Renderer>(true));
         }
 
-        if (_assetLibrary != null && _assetLibrary.dungeonRoom != null)
-        {
-            for (int i = -1; i <= 1; i += 2)
-            {
-                GameObject wall = Instantiate(_assetLibrary.dungeonRoom, arena);
-                wall.name = "Sci-Fi Modular Backdrop";
-                wall.transform.localPosition = new Vector3(5.4f * i, 0f, 2.6f);
-                wall.transform.localRotation = Quaternion.Euler(0f, i < 0 ? 200f : 160f, 0f);
-                wall.transform.localScale = Vector3.one * 1.6f;
-                ConvertDungeonMaterials(wall.GetComponentsInChildren<Renderer>(true));
-            }
-        }
+        CreatePrimitive(PrimitiveType.Cylinder, "Duel Platform", arena,
+            new Vector3(0f, -0.15f, 0f), new Vector3(5.6f, 0.28f, 5.6f), _stoneDark);
+        CreatePrimitive(PrimitiveType.Cylinder, "Platform Inlay", arena,
+            new Vector3(0f, 0.03f, 0f), new Vector3(4.75f, 0.06f, 4.75f), _stoneLight);
 
-        if (_assetLibrary != null && _assetLibrary.dungeonCorridor != null)
+        for (int i = 0; i < 12; i++)
         {
-            GameObject floor = Instantiate(_assetLibrary.dungeonCorridor, arena);
-            floor.name = "Sci-Fi Modular Approach Floor";
-            floor.transform.localPosition = new Vector3(0f, -0.16f, 4.6f);
-            floor.transform.localScale = new Vector3(5.5f, 1f, 2.4f);
-            ConvertDungeonMaterials(floor.GetComponentsInChildren<Renderer>(true));
-        }
-
-        // Real sci-fi light props ring the platform instead of the old
-        // primitive gold/black bars.
-        GameObject floorLightPrefab = _assetLibrary != null ? _assetLibrary.arenaFloorLight : null;
-        for (int i = 0; i < 8; i++)
-        {
-            float angle = i * Mathf.PI * 2f / 8f;
-            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.6f, 0.05f, Mathf.Sin(angle) * 4.6f);
-            if (floorLightPrefab != null)
-            {
-                GameObject prop = Instantiate(floorLightPrefab, arena);
-                prop.name = "Sci-Fi Modular Floor Light";
-                prop.transform.localPosition = point;
-                prop.transform.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
-                prop.transform.localScale = Vector3.one * 0.8f;
-                ConvertDungeonMaterials(prop.GetComponentsInChildren<Renderer>(true));
-            }
-            else
-            {
-                CreatePrimitive(PrimitiveType.Cylinder, "Arena Floor Marker", arena,
-                    point, new Vector3(0.22f, 0.05f, 0.22f), _parryMaterial);
-            }
+            float angle = i * Mathf.PI * 2f / 12f;
+            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.2f, 0.08f, Mathf.Sin(angle) * 4.2f);
+            Transform tile = CreatePrimitive(PrimitiveType.Cube, "Ring Tile", arena, point,
+                new Vector3(1.15f, 0.08f, 0.38f), i % 2 == 0 ? _goldMaterial : _stoneDark);
+            tile.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
         }
 
         for (int i = -1; i <= 1; i += 2)
@@ -1699,6 +1666,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         CreatePrimitive(PrimitiveType.Cube, "Back Wall", arena,
             new Vector3(0f, 1.75f, 4.2f), new Vector3(13f, 3.5f, 0.35f), _stoneDark);
+        for (int i = -5; i <= 5; i += 2)
+        {
+            CreatePrimitive(PrimitiveType.Cube, "Wall Accent", arena,
+                new Vector3(i, 2.1f, 3.98f), new Vector3(0.16f, 2.1f, 0.08f), _goldMaterial);
+        }
     }
 
     private void ConvertDungeonMaterials(Renderer[] renderers)
@@ -2596,8 +2568,6 @@ public sealed class GroundedFighterRig : MonoBehaviour
     private Transform _rightFoot;
     private Vector3 _leftFootAnchor;
     private Vector3 _rightFootAnchor;
-    private Quaternion _leftFootRotation;
-    private Quaternion _rightFootRotation;
     private bool _ready;
     private Transform _rightHandTarget;
     private Transform _leftHandTarget;
@@ -2650,8 +2620,6 @@ public sealed class GroundedFighterRig : MonoBehaviour
         {
             _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
             _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
-            _leftFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _leftFoot.rotation;
-            _rightFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _rightFoot.rotation;
         }
         _ready = true;
     }
@@ -2661,14 +2629,16 @@ public sealed class GroundedFighterRig : MonoBehaviour
         if (!_ready || !lockFeet || _animator == null || _fighterRoot == null)
             return;
 
+        // Only the foot POSITION is IK-driven (for grounding during the crouch/dodge hip
+        // offset below). Rotation is intentionally left to the Animator — continuously
+        // reading a live foot rotation back into IK the same frame it was applied created
+        // a feedback loop that showed up as the ankle spinning in place.
         _animator.SetIKPositionWeight(AvatarIKGoal.LeftFoot, 1f);
-        _animator.SetIKRotationWeight(AvatarIKGoal.LeftFoot, 1f);
+        _animator.SetIKRotationWeight(AvatarIKGoal.LeftFoot, 0f);
         _animator.SetIKPositionWeight(AvatarIKGoal.RightFoot, 1f);
-        _animator.SetIKRotationWeight(AvatarIKGoal.RightFoot, 1f);
+        _animator.SetIKRotationWeight(AvatarIKGoal.RightFoot, 0f);
         _animator.SetIKPosition(AvatarIKGoal.LeftFoot, _fighterRoot.TransformPoint(_leftFootAnchor));
         _animator.SetIKPosition(AvatarIKGoal.RightFoot, _fighterRoot.TransformPoint(_rightFootAnchor));
-        _animator.SetIKRotation(AvatarIKGoal.LeftFoot, _fighterRoot.rotation * _leftFootRotation);
-        _animator.SetIKRotation(AvatarIKGoal.RightFoot, _fighterRoot.rotation * _rightFootRotation);
         if (kickActive && _kickFootTarget != null)
         {
             _animator.SetIKPositionWeight(AvatarIKGoal.RightFoot, 1f);

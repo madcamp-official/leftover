@@ -28,8 +28,8 @@
 
 ## 보스전 프로토타입
 
-`Assets/Scenes/SampleScene.unity`를 열고 Play를 누르면 런타임에 별이 보이는
-밤하늘 아래 SF 아레나와 1대1 우주전사 듀얼이 자동으로 구성된다.
+`Assets/Scenes/SampleScene.unity`를 열고 Play를 누르면 런타임에 평범한 낮
+하늘 아래 돌바닥 중세 던전 아레나와 1대1 기사 듀얼이 자동으로 구성된다.
 
 ### 실행 방법 (웹캠 모션 인식으로 플레이)
 
@@ -84,15 +84,17 @@
 그 자세에서 수직축으로 빠르게 바깥으로 쳐내는 스윙 후 복귀하도록 만들었다
 (`AssetShieldFollower` 참고).
 
-캐릭터는 `MyAssets/CyberSoldier`의 로우폴리 안드로이드 병사(무료, Mecanim
-Humanoid로 강제 설정)를 쓴다. 몸통 애니메이션(대기/방어/패링/가로·세로
-베기/발차기/피격/사망)은 [Mixamo](https://www.mixamo.com)의 "Sword And
-Shield" 모션캡처 팩(Adobe 계정 무료)을 Humanoid로 리타기팅해서 쓴다 —
-이전에는 EEJANAI `FreeSwordAnimations`와 Kevin Iglesias `Human Melee
-Animations FREE`를 짜깁기해서 썼는데, 출처가 다른 두 팩을 섞다 보니 모션이
-서로 안 맞고 빈약한 느낌이 있어서 하나의 일관된 모캡 소스로 교체했다.
-Mixamo 클립이 없는 개발 환경에서는 `BossDuelAssetLibraryBuilder`가 자동으로
-예전 EEJANAI/Kevin Iglesias 클립으로 폴백한다(콘솔에 경고 표시).
+캐릭터는 [Mixamo](https://www.mixamo.com)의 "Knight D Pelegrini" 캐릭터
+하나를 몸/애니메이션 전부의 유일한 소스로 쓴다. 대기/방어/패링/가로·세로
+베기/발차기/피격/사망 10개 상태를 전부 **이 캐릭터 위에서** 다운로드한
+"Sword And Shield" 모션캡처 클립으로 재생하므로 리타기깅 오차가 전혀 없다
+— 이전에는 별도 모델(CyberSoldier 등)에 다른 소스(EEJANAI/Kevin
+Iglesias, 나중엔 Mixamo도) 애니메이션을 리타기팅해서 썼는데, 몸통 비례가
+서로 안 맞아 모션이 어색했던 문제가 있어서 "캐릭터 메시와 애니메이션을
+같은 Mixamo 소스로 통일"하는 방식으로 바꿨다. Mixamo 클립이 없는 개발
+환경에서는 `BossDuelAssetLibraryBuilder`가 자동으로 예전 EEJANAI/Kevin
+Iglesias 클립으로 폴백한다(콘솔에 경고 표시, 이 경우 CyberSoldier가 아니라
+Knight 메시 위에 리타기팅됨).
 
 검·방패는 전용 메시 대신 절차적 지오메트리에 발광 재질(호박/청록/보라
 에너지 코어)을 입혀 에너지 무기처럼 보이게 했다 —
@@ -102,22 +104,24 @@ Mixamo 클립이 없는 개발 환경에서는 `BossDuelAssetLibraryBuilder`가 
 따로 제어한다(가로/세로 베기 궤적, 방어/패링 자세).
 
 Asset Store/Mixamo 원본은 라이선스상 저장소에 포함하지 않으므로 각
-개발자가 직접 설치해야 한다:
-- EEJANAI/Kevin Iglesias/Cyber Soldier: Unity Package Manager "My Assets"
-- Mixamo "Sword And Shield" 팩: [mixamo.com](https://www.mixamo.com)에
-  Adobe 계정으로 로그인 → "Sword And Shield"로 검색 → 아래 10개 클립을
-  다운로드(포맷 FBX, 스킨 무관 — 애니메이션만 씀)해서
-  `pc-game/Assets/Mixamo/Animations/`에 정확히 이 파일명으로 넣는다:
-  `Sword And Shield Idle (Idle).fbx`,
-  `Sword And Shield Slash - Cross Slash (Horizontal).fbx`,
-  `Sword And Shield Slash - Downward Slash (Vertical).fbx`,
-  `Sword And Shield Kick - Sparta Kick (Kick).fbx`,
-  `Sword And Shield Block Idle (Guard).fbx`,
-  `Sword And Shield Block - Idle To Block (Parry).fbx`,
-  `Sword And Shield Crouch Block Idle (DodgeCrouch).fbx`,
-  `Sword And Shield Strafe - Left Walk (DodgeLeft).fbx`,
-  `Sword And Shield Impact - Unblocked (Hit-Stagger).fbx`,
-  `Sword And Shield Death - Falling Back (Dead).fbx`.
+개발자가 직접 설치해야 한다. [mixamo.com](https://www.mixamo.com)에 Adobe
+계정으로 로그인 → **Characters** 탭에서 "Knight"로 검색해 "Knight D
+Pelegrini" 선택 → **Animations** 탭에서 "Sword And Shield"로 검색, 아래
+10개 클립을 그 캐릭터가 선택된 채로 하나씩 다운로드(포맷 FBX Binary,
+스킨은 첫 번째 것만 With Skin/나머지는 Without Skin이면 충분 — 애니메이션만
+쓰므로 무관)해서 정확히 이 파일명으로 넣는다:
+- `pc-game/Assets/Mixamo/Character/Knight D Pelegrini - Sword And Shield Idle (FighterMesh+Idle).fbx`
+  (Idle, **With Skin** — 실제로 화면에 보이는 메시가 여기서 나옴)
+- `pc-game/Assets/Mixamo/Animations/`에 나머지 9개(Without Skin이면 충분):
+  `Knight - Sword And Shield Slash - Cross Slash (Horizontal).fbx`,
+  `Knight - Sword And Shield Slash - Downward Slash (Vertical).fbx`,
+  `Knight - Sword And Shield Kick - Sparta Kick (Kick).fbx`,
+  `Knight - Sword And Shield Block Idle (Guard).fbx`,
+  `Knight - Sword And Shield Block - Idle To Block (Parry).fbx`,
+  `Knight - Sword And Shield Crouch Block Idle (DodgeCrouch).fbx`,
+  `Knight - Sword And Shield Strafe - Left Walk (DodgeLeft).fbx`,
+  `Knight - Sword And Shield Impact - Unblocked (Hit-Stagger).fbx`,
+  `Knight - Sword And Shield Death - Falling Back (Dead).fbx`.
 
 `Tools > Boss Duel > Audit Sword Clip Trajectories`에서 각 클립의 손 궤적을
 다시 비교할 수 있다. `Tools > Boss Duel > Rebuild Asset Library`를
@@ -132,19 +136,25 @@ Asset Store/Mixamo 원본은 라이선스상 저장소에 포함하지 않으므
 대기 애니메이션의 자연스러운 다리 움직임과 계속 어긋나면서(다리는 대기
 클립대로 움직이는데 발만 옛날 위치에 고정) 다리가 붕 뜬 것처럼 보이는
 문제가 있었다. 앉기/좌우 회피 중에는 여전히 그 순간의 발 위치를 고정해서
-엉덩이가 그 자리에서 위아래·좌우로 움직이는 것처럼 보이게 한다.
+엉덩이가 그 자리에서 위아래·좌우로 움직이는 것처럼 보이게 한다. 발
+**회전**은 IK로 덮어쓰지 않고 애니메이션이 그대로 재생하게 둔다 — 매 프레임
+읽은 실시간 회전값을 그 자리에서 다시 IK에 먹이는 피드백 루프가 발목이
+계속 도는 버그로 이어졌던 걸 고치면서, 위치만 고정하고 회전은 손대지 않는
+쪽으로 단순화했다.
 
-하늘은 `SpaceSkies Free`의 성운 스카이박스(별이 보이는 밤하늘)를 쓰고,
-아레나 배경은 `Modular Sci-Fi Corridor`(MagixBox)의 문·벽·바닥 모듈을
-기존 Kenney 던전 자리에 그대로 꽂아 넣었다(둘 다 무료, 절차적 기둥은 유지하되
-재질만 SF 톤 금속+발광으로 교체). 원형 바닥판과 벽면 장식 막대는 시야를
-가리는 잡동사니라는 피드백을 받아 제거했다. 타격 슬래시
-이펙트는 `Stylized Slash VFX`(HungNguyenVFX)의 색상별 파티클 프리팹을
-쓰고, 가드/패링/임팩트 버스트는 기존 Kenney 스프라이트 시스템을 그대로
-재사용한다. 전투 사운드는 `TII_SoundLibrary_3Steps`(SCI-FI, 무료)의 빔소드
-생성·스위시·레이저 히트·에너지 실드 업/다운/임팩트 클립과 `Free Laser
-Weapons`(Daniel SoundsGood)의 블래스트음을 최대 3개 레이어로 조합한다.
-원본 라이선스는 각 패키지 폴더에 보존돼 있다.
+하늘은 씬의 기본 프로시저럴 스카이박스(평범한 파란 하늘)를 그대로 쓴다 —
+한때 `SpaceSkies Free`의 성운 스카이박스로 바꿨다가 다시 원래대로 되돌렸다.
+아레나는 `KenneyModularDungeon`(무료, CC0)의 돌 아치문 게이트와 절차적
+스톤 바닥판/기둥/뒷벽으로 구성된 중세 던전이다 — 한때 SF 모듈러 킷으로
+전부 바꿨다가, 캐릭터 모션을 먼저 완성하자는 우선순위에 맞춰 원래의
+중세 구성(바닥판 포함)으로 되돌렸다. 타격 슬래시 이펙트는 `Stylized Slash
+VFX`(HungNguyenVFX)의 색상별 파티클 프리팹을 쓰고, 가드/패링/임팩트
+버스트는 기존 Kenney 스프라이트 시스템을 그대로 재사용한다. 전투 사운드는
+`TII_SoundLibrary_3Steps`(SCI-FI, 무료)의 빔소드 생성·스위시·레이저
+히트·에너지 실드 업/다운/임팩트 클립과 `Free Laser Weapons`(Daniel
+SoundsGood)의 블래스트음을 최대 3개 레이어로 조합한다(사운드는 SF 톤을
+그대로 유지 — 이번 피드백은 맵/캐릭터에 한정). 원본 라이선스는 각 패키지
+폴더에 보존돼 있다.
 
 상대 AI는 플레이어의 공격 반복 횟수와 공격별 사용 빈도를 기억해 익숙한
 공격일수록 방어/패링 확률을 높인다. 앉기 회피가 많으면 세로베기와 발차기를,

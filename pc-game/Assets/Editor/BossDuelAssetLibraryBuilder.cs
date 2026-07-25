@@ -11,10 +11,15 @@ public static class BossDuelAssetLibraryBuilder
     private const string LibraryPath = DuelFolder + "/BossDuelAssetLibrary.asset";
     private const string ControllerPath = DuelFolder + "/BossDuelCombat.controller";
     private const string UpperBodyMaskPath = DuelFolder + "/BossDuelUpperBody.mask";
-    // Space-warrior body. Rigged but unanimated, so it retargets the same
-    // EEJANAI/Human Melee Humanoid clips used for the previous knight model.
+    // Mixamo's own "Knight D Pelegrini" character (Adobe, free w/ account), paired
+    // natively with every "Sword And Shield" clip below — all captured on the exact
+    // same Mixamo skeleton/proportions, so there is zero cross-rig retargeting error
+    // (unlike the earlier pass that retargeted this pack onto the unrelated
+    // CyberSoldier model, which visibly mismatched). Humanoid rig is still forced
+    // below since Mixamo FBX imports default to Generic.
+    private const string MixamoCharacterFolder = "Assets/Mixamo/Character/";
     private const string FighterPath =
-        "Assets/MyAssets/CyberSoldier/CyberSoldier.fbx";
+        MixamoCharacterFolder + "Knight D Pelegrini - Sword And Shield Idle (FighterMesh+Idle).fbx";
     private const string AnimationFolder =
         "Assets/EEJANAI_Team/FreeSwordAnimations/Animations/";
     private const string HumanMeleeFolder =
@@ -25,32 +30,25 @@ public static class BossDuelAssetLibraryBuilder
         HumanMeleeFolder + "Shield/HumanM@AttackShield01.fbx";
     private const string HumanMeleeDamagePath =
         HumanMeleeFolder + "HumanM@CombatDamage01.fbx";
-    // Mixamo's "Sword And Shield" pack (Adobe, free w/ account) — a single coherent
-    // motion-captured source replacing the EEJANAI/Kevin Iglesias mashup for every
-    // combat state. Downloaded "Without Skin"/"With Skin" FBX (either works, only the
-    // animation sub-asset is used) via mixamo.com, Humanoid retargeting is forced below.
     private const string MixamoFolder = "Assets/Mixamo/Animations/";
     private static readonly string[] MixamoAnimationFiles =
     {
-        "Sword And Shield Idle (Idle).fbx",
-        "Sword And Shield Slash - Cross Slash (Horizontal).fbx",
-        "Sword And Shield Slash - Downward Slash (Vertical).fbx",
-        "Sword And Shield Kick - Sparta Kick (Kick).fbx",
-        "Sword And Shield Block Idle (Guard).fbx",
-        "Sword And Shield Block - Idle To Block (Parry).fbx",
-        "Sword And Shield Crouch Block Idle (DodgeCrouch).fbx",
-        "Sword And Shield Strafe - Left Walk (DodgeLeft).fbx",
-        "Sword And Shield Impact - Unblocked (Hit-Stagger).fbx",
-        "Sword And Shield Death - Falling Back (Dead).fbx"
+        "Knight - Sword And Shield Slash - Cross Slash (Horizontal).fbx",
+        "Knight - Sword And Shield Slash - Downward Slash (Vertical).fbx",
+        "Knight - Sword And Shield Kick - Sparta Kick (Kick).fbx",
+        "Knight - Sword And Shield Block Idle (Guard).fbx",
+        "Knight - Sword And Shield Block - Idle To Block (Parry).fbx",
+        "Knight - Sword And Shield Crouch Block Idle (DodgeCrouch).fbx",
+        "Knight - Sword And Shield Strafe - Left Walk (DodgeLeft).fbx",
+        "Knight - Sword And Shield Impact - Unblocked (Hit-Stagger).fbx",
+        "Knight - Sword And Shield Death - Falling Back (Dead).fbx"
     };
-    private const string SciFiModularFolder =
-        "Assets/Sci Fi Modular Pack/Prefabs/";
+    private const string DungeonFolder =
+        "Assets/ThirdParty/KenneyModularDungeon/Models/FBX format/";
     private const string ParticleFolder =
         "Assets/ThirdParty/KenneyParticlePack/PNG/";
     private const string SlashVfxFolder =
         "Assets/slash5-HungNguyen/prefab/slash/";
-    private const string SkyboxPath =
-        "Assets/SpaceSkies Free/Skybox_3/Purple_2K_Resolution.mat";
     private const string LaserAudioFolder =
         "Assets/Laser Weapons Sound Pack/Free/";
     private const string SciFiWeaponAudioFolder =
@@ -62,17 +60,18 @@ public static class BossDuelAssetLibraryBuilder
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
-        { "Idle", MixamoFolder + "Sword And Shield Idle (Idle).fbx" },
-        { "HorizontalSlash", MixamoFolder + "Sword And Shield Slash - Cross Slash (Horizontal).fbx" },
-        { "VerticalSlash", MixamoFolder + "Sword And Shield Slash - Downward Slash (Vertical).fbx" },
-        { "Kick", MixamoFolder + "Sword And Shield Kick - Sparta Kick (Kick).fbx" },
-        { "Guard", MixamoFolder + "Sword And Shield Block Idle (Guard).fbx" },
-        { "Parry", MixamoFolder + "Sword And Shield Block - Idle To Block (Parry).fbx" },
-        { "DodgeCrouch", MixamoFolder + "Sword And Shield Crouch Block Idle (DodgeCrouch).fbx" },
-        { "DodgeLeft", MixamoFolder + "Sword And Shield Strafe - Left Walk (DodgeLeft).fbx" },
-        { "Hit", MixamoFolder + "Sword And Shield Impact - Unblocked (Hit-Stagger).fbx" },
-        { "Stagger", MixamoFolder + "Sword And Shield Impact - Unblocked (Hit-Stagger).fbx" },
-        { "Dead", MixamoFolder + "Sword And Shield Death - Falling Back (Dead).fbx" }
+        // FighterPath's own FBX already carries the Idle clip alongside the mesh.
+        { "Idle", FighterPath },
+        { "HorizontalSlash", MixamoFolder + "Knight - Sword And Shield Slash - Cross Slash (Horizontal).fbx" },
+        { "VerticalSlash", MixamoFolder + "Knight - Sword And Shield Slash - Downward Slash (Vertical).fbx" },
+        { "Kick", MixamoFolder + "Knight - Sword And Shield Kick - Sparta Kick (Kick).fbx" },
+        { "Guard", MixamoFolder + "Knight - Sword And Shield Block Idle (Guard).fbx" },
+        { "Parry", MixamoFolder + "Knight - Sword And Shield Block - Idle To Block (Parry).fbx" },
+        { "DodgeCrouch", MixamoFolder + "Knight - Sword And Shield Crouch Block Idle (DodgeCrouch).fbx" },
+        { "DodgeLeft", MixamoFolder + "Knight - Sword And Shield Strafe - Left Walk (DodgeLeft).fbx" },
+        { "Hit", MixamoFolder + "Knight - Sword And Shield Impact - Unblocked (Hit-Stagger).fbx" },
+        { "Stagger", MixamoFolder + "Knight - Sword And Shield Impact - Unblocked (Hit-Stagger).fbx" },
+        { "Dead", MixamoFolder + "Knight - Sword And Shield Death - Falling Back (Dead).fbx" }
     };
 
     // If a teammate hasn't installed the Mixamo pack yet, fall back to whatever this
@@ -185,15 +184,14 @@ public static class BossDuelAssetLibraryBuilder
 
         library.fighterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(FighterPath);
         library.combatController = controller;
-        library.dungeonRoom =
-            AssetDatabase.LoadAssetAtPath<GameObject>(SciFiModularFolder + "WallIntersection.prefab");
+        // Back to the medieval dungeon kit + a plain default sky, per feedback that the
+        // SF modular set/space skybox didn't fit and the arena needs a visible floor again.
         library.dungeonGate =
-            AssetDatabase.LoadAssetAtPath<GameObject>(SciFiModularFolder + "Door.prefab");
-        library.dungeonCorridor =
-            AssetDatabase.LoadAssetAtPath<GameObject>(SciFiModularFolder + "Floor1.prefab");
-        library.arenaFloorLight =
-            AssetDatabase.LoadAssetAtPath<GameObject>(SciFiModularFolder + "Light1.prefab");
-        library.skyboxMaterial = AssetDatabase.LoadAssetAtPath<Material>(SkyboxPath);
+            AssetDatabase.LoadAssetAtPath<GameObject>(DungeonFolder + "gate-door.fbx");
+        library.dungeonRoom = null;
+        library.dungeonCorridor = null;
+        library.arenaFloorLight = null;
+        library.skyboxMaterial = null;
         library.slashSprite = LoadParticleSprite("slash_02.png");
         library.impactSprite = LoadParticleSprite("star_03.png");
         library.guardSprite = LoadParticleSprite("circle_03.png");
