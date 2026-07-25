@@ -25,6 +25,24 @@ public static class BossDuelAssetLibraryBuilder
         HumanMeleeFolder + "Shield/HumanM@AttackShield01.fbx";
     private const string HumanMeleeDamagePath =
         HumanMeleeFolder + "HumanM@CombatDamage01.fbx";
+    // Mixamo's "Sword And Shield" pack (Adobe, free w/ account) — a single coherent
+    // motion-captured source replacing the EEJANAI/Kevin Iglesias mashup for every
+    // combat state. Downloaded "Without Skin"/"With Skin" FBX (either works, only the
+    // animation sub-asset is used) via mixamo.com, Humanoid retargeting is forced below.
+    private const string MixamoFolder = "Assets/Mixamo/Animations/";
+    private static readonly string[] MixamoAnimationFiles =
+    {
+        "Sword And Shield Idle (Idle).fbx",
+        "Sword And Shield Slash - Cross Slash (Horizontal).fbx",
+        "Sword And Shield Slash - Downward Slash (Vertical).fbx",
+        "Sword And Shield Kick - Sparta Kick (Kick).fbx",
+        "Sword And Shield Block Idle (Guard).fbx",
+        "Sword And Shield Block - Idle To Block (Parry).fbx",
+        "Sword And Shield Crouch Block Idle (DodgeCrouch).fbx",
+        "Sword And Shield Strafe - Left Walk (DodgeLeft).fbx",
+        "Sword And Shield Impact - Unblocked (Hit-Stagger).fbx",
+        "Sword And Shield Death - Falling Back (Dead).fbx"
+    };
     private const string SciFiModularFolder =
         "Assets/Sci Fi Modular Pack/Prefabs/";
     private const string ParticleFolder =
@@ -44,10 +62,24 @@ public static class BossDuelAssetLibraryBuilder
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
+        { "Idle", MixamoFolder + "Sword And Shield Idle (Idle).fbx" },
+        { "HorizontalSlash", MixamoFolder + "Sword And Shield Slash - Cross Slash (Horizontal).fbx" },
+        { "VerticalSlash", MixamoFolder + "Sword And Shield Slash - Downward Slash (Vertical).fbx" },
+        { "Kick", MixamoFolder + "Sword And Shield Kick - Sparta Kick (Kick).fbx" },
+        { "Guard", MixamoFolder + "Sword And Shield Block Idle (Guard).fbx" },
+        { "Parry", MixamoFolder + "Sword And Shield Block - Idle To Block (Parry).fbx" },
+        { "DodgeCrouch", MixamoFolder + "Sword And Shield Crouch Block Idle (DodgeCrouch).fbx" },
+        { "DodgeLeft", MixamoFolder + "Sword And Shield Strafe - Left Walk (DodgeLeft).fbx" },
+        { "Hit", MixamoFolder + "Sword And Shield Impact - Unblocked (Hit-Stagger).fbx" },
+        { "Stagger", MixamoFolder + "Sword And Shield Impact - Unblocked (Hit-Stagger).fbx" },
+        { "Dead", MixamoFolder + "Sword And Shield Death - Falling Back (Dead).fbx" }
+    };
+
+    // If a teammate hasn't installed the Mixamo pack yet, fall back to whatever this
+    // state used before the Mixamo pass (EEJANAI / Kevin Iglesias Human Melee FREE).
+    private static readonly Dictionary<string, string> StateClipFallbackPaths = new()
+    {
         { "Idle", AnimationFolder + "battle stance.anim" },
-        // Human Melee FREE supplies a cleaner right-hand one-handed cut.
-        // The free pack has no second right-hand cut, so the measured EEJANAI
-        // vertical clip remains in use to keep the two attack axes unambiguous.
         { "HorizontalSlash", HumanMeleeHorizontalPath },
         { "VerticalSlash", AnimationFolder + "slash9.anim" },
         { "Kick", AnimationFolder + "slash8.anim" },
@@ -58,14 +90,6 @@ public static class BossDuelAssetLibraryBuilder
         { "Hit", HumanMeleeDamagePath },
         { "Stagger", HumanMeleeDamagePath },
         { "Dead", AnimationFolder + "damaged (tired) stance.anim" }
-    };
-
-    private static readonly Dictionary<string, string> StateClipFallbackPaths = new()
-    {
-        { "HorizontalSlash", AnimationFolder + "slash2.anim" },
-        { "Parry", AnimationFolder + "slash4.anim" },
-        { "Hit", AnimationFolder + "damaged (tired) stance.anim" },
-        { "Stagger", AnimationFolder + "damaged (tired) stance.anim" }
     };
 
     static BossDuelAssetLibraryBuilder()
@@ -148,6 +172,8 @@ public static class BossDuelAssetLibraryBuilder
         });
 
         EnsureHumanoidRig(FighterPath);
+        foreach (string file in MixamoAnimationFiles)
+            EnsureHumanoidRig(MixamoFolder + file);
 
         BossDuelAssetLibrary library =
             AssetDatabase.LoadAssetAtPath<BossDuelAssetLibrary>(LibraryPath);
@@ -236,8 +262,9 @@ public static class BossDuelAssetLibraryBuilder
         if (StateClipFallbackPaths.TryGetValue(stateName, out string fallbackPath))
         {
             Debug.LogWarning(
-                $"[BossDuel] Optional Human Melee clip is missing for {stateName}; " +
-                $"using the bundled fallback. Install Human Melee Animations FREE " +
+                $"[BossDuel] Mixamo clip is missing for {stateName}; using the older " +
+                $"EEJANAI/Kevin Iglesias fallback. Download mixamo.com's \"Sword And " +
+                $"Shield\" pack into Assets/Mixamo/Animations/ (see pc-game/README.md) " +
                 $"and rebuild the asset library to enable the upgraded motion.");
             return LoadAnimationClip(fallbackPath, true);
         }

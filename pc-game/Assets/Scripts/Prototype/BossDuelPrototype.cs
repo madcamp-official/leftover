@@ -2629,18 +2629,30 @@ public sealed class GroundedFighterRig : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (_ready || _animator == null || !_animator.isHuman || _fighterRoot == null)
+        if (_animator == null || !_animator.isHuman || _fighterRoot == null)
             return;
 
-        _leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
-        _rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
         if (_leftFoot == null || _rightFoot == null)
-            return;
+        {
+            _leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+            _rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+            if (_leftFoot == null || _rightFoot == null)
+                return;
+        }
 
-        _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
-        _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
-        _leftFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _leftFoot.rotation;
-        _rightFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _rightFoot.rotation;
+        // Keep tracking the live animated foot pose while standing normally, instead of
+        // freezing a single snapshot forever — a one-time snapshot fights the continuously
+        // looping Idle clip's natural leg motion (feet pinned while hips/knees keep moving
+        // per the clip), which reads as floating/bent legs on more dynamic mocap sources.
+        // Only hold the anchor still while a body-offset pose (crouch/dodge) is active, so
+        // the hip can shift relative to planted feet without them sliding across the floor.
+        if (Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
+        {
+            _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
+            _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
+            _leftFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _leftFoot.rotation;
+            _rightFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _rightFoot.rotation;
+        }
         _ready = true;
     }
 

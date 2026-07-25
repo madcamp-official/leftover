@@ -85,20 +85,54 @@
 (`AssetShieldFollower` 참고).
 
 캐릭터는 `MyAssets/CyberSoldier`의 로우폴리 안드로이드 병사(무료, Mecanim
-Humanoid로 강제 설정)를 쓰고, 애니메이션은 이전과 동일하게 EEJANAI
-`FreeSwordAnimations`와 Kevin Iglesias `Human Melee Animations FREE`
-클립을 리타기팅해서 재사용한다(세로베기는 손 궤적상 수직 이동이 가장 큰
-EEJANAI `slash9`). 검·방패는 전용 메시 대신 절차적 지오메트리에 발광
-재질(호박/청록/보라 에너지 코어)을 입혀 에너지 무기처럼 보이게 했다 —
+Humanoid로 강제 설정)를 쓴다. 몸통 애니메이션(대기/방어/패링/가로·세로
+베기/발차기/피격/사망)은 [Mixamo](https://www.mixamo.com)의 "Sword And
+Shield" 모션캡처 팩(Adobe 계정 무료)을 Humanoid로 리타기팅해서 쓴다 —
+이전에는 EEJANAI `FreeSwordAnimations`와 Kevin Iglesias `Human Melee
+Animations FREE`를 짜깁기해서 썼는데, 출처가 다른 두 팩을 섞다 보니 모션이
+서로 안 맞고 빈약한 느낌이 있어서 하나의 일관된 모캡 소스로 교체했다.
+Mixamo 클립이 없는 개발 환경에서는 `BossDuelAssetLibraryBuilder`가 자동으로
+예전 EEJANAI/Kevin Iglesias 클립으로 폴백한다(콘솔에 경고 표시).
+
+검·방패는 전용 메시 대신 절차적 지오메트리에 발광 재질(호박/청록/보라
+에너지 코어)을 입혀 에너지 무기처럼 보이게 했다 —
 `BossDuelAssetLibrary.kevinSwordPrefab`/`kevinShieldPrefab`은 의도적으로
-비워둬서 이 폴백 경로를 강제한다. Asset Store 원본은 라이선스상 저장소에
-포함하지 않으므로 EEJANAI/Kevin Iglesias/Cyber Soldier 패키지는 각
-개발자가 Unity Package Manager "My Assets"에서 설치해야 한다.
+비워둬서 이 폴백 경로를 강제한다. 검/방패 자체의 움직임은 몸통 애니메이션과
+무관하게 `AssetSwordFollower`/`AssetShieldFollower`가 순수 좌표 계산으로
+따로 제어한다(가로/세로 베기 궤적, 방어/패링 자세).
+
+Asset Store/Mixamo 원본은 라이선스상 저장소에 포함하지 않으므로 각
+개발자가 직접 설치해야 한다:
+- EEJANAI/Kevin Iglesias/Cyber Soldier: Unity Package Manager "My Assets"
+- Mixamo "Sword And Shield" 팩: [mixamo.com](https://www.mixamo.com)에
+  Adobe 계정으로 로그인 → "Sword And Shield"로 검색 → 아래 10개 클립을
+  다운로드(포맷 FBX, 스킨 무관 — 애니메이션만 씀)해서
+  `pc-game/Assets/Mixamo/Animations/`에 정확히 이 파일명으로 넣는다:
+  `Sword And Shield Idle (Idle).fbx`,
+  `Sword And Shield Slash - Cross Slash (Horizontal).fbx`,
+  `Sword And Shield Slash - Downward Slash (Vertical).fbx`,
+  `Sword And Shield Kick - Sparta Kick (Kick).fbx`,
+  `Sword And Shield Block Idle (Guard).fbx`,
+  `Sword And Shield Block - Idle To Block (Parry).fbx`,
+  `Sword And Shield Crouch Block Idle (DodgeCrouch).fbx`,
+  `Sword And Shield Strafe - Left Walk (DodgeLeft).fbx`,
+  `Sword And Shield Impact - Unblocked (Hit-Stagger).fbx`,
+  `Sword And Shield Death - Falling Back (Dead).fbx`.
+
 `Tools > Boss Duel > Audit Sword Clip Trajectories`에서 각 클립의 손 궤적을
 다시 비교할 수 있다. `Tools > Boss Duel > Rebuild Asset Library`를
 실행하면 Resources용 에셋 라이브러리와 전용 Animator Controller가 재생성된다.
 원본 Toon 재질은 실행 시 URP/Lit으로 변환되어 현재 렌더 파이프라인에서도
 정상 표시된다.
+
+캐릭터의 발은 `GroundedFighterRig`가 IK로 지면에 고정한다. 예전에는 이
+고정 위치를 게임 시작 시 딱 한 번만 스냅샷으로 찍어서 평생 고정했는데,
+평상시(앉기/좌우 회피가 아닐 때)에는 매 프레임 현재 애니메이션의 발
+위치를 다시 추적하도록 바꿨다 — 한 번 찍은 스냅샷이 계속 반복 재생되는
+대기 애니메이션의 자연스러운 다리 움직임과 계속 어긋나면서(다리는 대기
+클립대로 움직이는데 발만 옛날 위치에 고정) 다리가 붕 뜬 것처럼 보이는
+문제가 있었다. 앉기/좌우 회피 중에는 여전히 그 순간의 발 위치를 고정해서
+엉덩이가 그 자리에서 위아래·좌우로 움직이는 것처럼 보이게 한다.
 
 하늘은 `SpaceSkies Free`의 성운 스카이박스(별이 보이는 밤하늘)를 쓰고,
 아레나 배경은 `Modular Sci-Fi Corridor`(MagixBox)의 문·벽·바닥 모듈을
