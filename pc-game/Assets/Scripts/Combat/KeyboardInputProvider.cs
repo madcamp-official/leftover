@@ -1,6 +1,8 @@
-// Phase 1 임시 입력 소스 — MediaPipe 연동 전까지 이걸로 게임 로직/밸런스를 테스트한다.
-// 씬에 CombatInputHub와 함께 붙여서 사용. NetworkInputProvider와 동시에 켜두지 말 것
-// (둘 다 같은 Hub를 건드리므로 입력이 꼬일 수 있음).
+// Phase 1 임시 입력 소스 — 카메라 없이 게임 로직/밸런스를 테스트할 때 쓴다.
+// 씬에 CombatInputHub와 함께 붙여서 사용하며, NetworkInputProvider(MediaPipe)와
+// 동시에 켜둬도 된다: 유지형 상태(방어/앉기/좌우)는 이 컴포넌트가 "자기가 마지막으로
+// 보낸 값"만 기준으로 변화가 있을 때만 Hub를 건드리므로, 키보드를 아예 안 만지는 동안은
+// NetworkInputProvider가 세팅한 상태를 매 프레임 false로 되돌리지 않는다.
 //
 // 키맵:
 //   J = 가로 베기   K = 세로 베기   L = 발차기
@@ -30,6 +32,12 @@ public class KeyboardInputProvider : MonoBehaviour
 
     private CombatInputHub _hub;
 
+    // 이 프로바이더가 마지막으로 Hub에 보낸 값. Hub의 현재 값(다른 프로바이더가 바꿨을
+    // 수도 있음)이 아니라 이 값과 비교해야 다른 입력 소스와 공존할 수 있다.
+    private bool _lastGuarding;
+    private bool _lastCrouching;
+    private LateralPosition _lastLateral = LateralPosition.Center;
+
     private void Start() => _hub = CombatInputHub.Instance;
 
     private void Update()
@@ -45,9 +53,8 @@ public class KeyboardInputProvider : MonoBehaviour
         if (keyboard.lKey.wasPressedThisFrame) _hub.RaiseKick();
         if (keyboard.fKey.wasPressedThisFrame) _hub.RaiseParry();
 
-        _hub.SetGuarding(keyboard.spaceKey.isPressed);
-        _hub.SetCrouching(keyboard.sKey.isPressed);
-
+        bool guarding = keyboard.spaceKey.isPressed;
+        bool crouching = keyboard.sKey.isPressed;
         bool left = keyboard.aKey.isPressed;
         bool right = keyboard.dKey.isPressed;
 #else
@@ -56,15 +63,30 @@ public class KeyboardInputProvider : MonoBehaviour
         if (Input.GetKeyDown(kickKey)) _hub.RaiseKick();
         if (Input.GetKeyDown(parryKey)) _hub.RaiseParry();
 
-        _hub.SetGuarding(Input.GetKey(guardKey));
-        _hub.SetCrouching(Input.GetKey(crouchKey));
-
+        bool guarding = Input.GetKey(guardKey);
+        bool crouching = Input.GetKey(crouchKey);
         bool left = Input.GetKey(leftKey);
         bool right = Input.GetKey(rightKey);
 #endif
+        if (guarding != _lastGuarding)
+        {
+            _lastGuarding = guarding;
+            _hub.SetGuarding(guarding);
+        }
+
+        if (crouching != _lastCrouching)
+        {
+            _lastCrouching = crouching;
+            _hub.SetCrouching(crouching);
+        }
+
         LateralPosition pos = left && !right ? LateralPosition.Left
                              : right && !left ? LateralPosition.Right
                              : LateralPosition.Center;
-        _hub.SetLateralPosition(pos);
+        if (pos != _lastLateral)
+        {
+            _lastLateral = pos;
+            _hub.SetLateralPosition(pos);
+        }
     }
 }

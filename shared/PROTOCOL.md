@@ -76,10 +76,14 @@ Python 쪽에서 끝내고 Unity는 "무슨 동작이 인식됐다"만 받는다
 ### Unity 쪽 수신부
 
 `pc-game/Assets/Scripts/Combat/NetworkInputProvider.cs`가 이 포맷을 그대로 파싱해서
-`CombatInputHub`에 꽂아준다. 게임 로직 개발 중에는 `NetworkInputProvider` 대신
-`KeyboardInputProvider`를 씬에 켜두면 같은 이벤트를 키보드로 흉내 낼 수 있다
-(J/K/L=가로베기·세로베기·발차기, Space=방어, F=패링, S=앉기, A/D=좌우). 두 Provider는 동시에 켜두지
-말 것 — MediaPipe 연동 시점에 Provider 컴포넌트만 교체하면 게임 로직은 그대로 재사용된다.
+`CombatInputHub`에 꽂아준다. `BossDuelPrototype.ConnectInput()`이 Play 시작 시
+`KeyboardInputProvider`와 `NetworkInputProvider`를 **둘 다** 같은 `CombatInput`
+게임오브젝트에 자동으로 붙인다 — vision-server(`python main.py --pc-ip 127.0.0.1`)를
+켜두면 웹캠 모션으로, 안 켜두면 키보드로(J/K/L=가로베기·세로베기·발차기, Space=방어,
+F=패링, S=앉기, A/D=좌우) 그대로 플레이할 수 있고 둘을 동시에 써도 된다.
+`KeyboardInputProvider`는 자기가 마지막으로 Hub에 보낸 값만 기준으로 변화가 있을 때만
+`SetGuarding`/`SetCrouching`/`SetLateralPosition`을 호출하므로, 키보드를 안 만지는
+동안은 `NetworkInputProvider`가 세팅한 상태를 매 프레임 덮어쓰지 않는다.
 
 ---
 

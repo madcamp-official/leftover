@@ -1,10 +1,10 @@
-// Phase 2 입력 소스 — MediaPipe(vision-server, Python)가 UDP:9002로 보내는 인식 이벤트를
-// 받아 CombatInputHub에 그대로 꽂아준다. 와이어 포맷은 shared/PROTOCOL.md "Phase 1 이벤트
-// 프로토콜" 참고 (문서상 이름은 Phase 1이지만, Unity 입력 소스 기준으로는 두 번째로 붙이는
-// 것이라 파일명은 NetworkInputProvider).
+// MediaPipe(vision-server, Python)가 UDP:9002로 보내는 인식 이벤트를 받아
+// CombatInputHub에 그대로 꽂아준다. 와이어 포맷은 shared/PROTOCOL.md "Phase 1 이벤트
+// 프로토콜" 참고.
 //
-// KeyboardInputProvider 대신 이 컴포넌트를 활성화하면 게임 로직은 한 줄도 안 건드리고
-// 입력 소스만 교체된다.
+// BossDuelPrototype.ConnectInput()이 Play 시작 시 KeyboardInputProvider와 함께 자동으로
+// 붙여준다 — vision-server(main.py --pc-ip 127.0.0.1)를 켜두면 별도 씬 설정 없이 바로
+// 웹캠 모션으로 플레이할 수 있고, vision-server를 안 켜면 그냥 키보드로만 동작한다.
 
 using System;
 using System.Collections.Concurrent;
@@ -32,7 +32,17 @@ public class NetworkInputProvider : MonoBehaviour
 
     private void Start()
     {
-        _udp = new UdpClient(listenPort);
+        try
+        {
+            _udp = new UdpClient(listenPort);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[NetworkInput] UDP {listenPort} 바인딩 실패, MediaPipe 입력 비활성화(키보드는 계속 동작): {e.Message}");
+            enabled = false;
+            return;
+        }
+
         _running = true;
         _recvThread = new Thread(ReceiveLoop) { IsBackground = true };
         _recvThread.Start();

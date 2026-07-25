@@ -29,8 +29,34 @@
 ## 보스전 프로토타입
 
 `Assets/Scenes/SampleScene.unity`를 열고 Play를 누르면 런타임에 별이 보이는
-밤하늘 아래 SF 아레나와 1대1 우주전사 듀얼이 자동으로 구성된다. 센서 연동
-전에는 아래 키로 전투 루프를 검증한다.
+밤하늘 아래 SF 아레나와 1대1 우주전사 듀얼이 자동으로 구성된다.
+
+### 실행 방법 (웹캠 모션 인식으로 플레이)
+
+1. `vision-server`에서 파이썬 인식 서버를 켠다 ([vision-server/README.md](../vision-server/README.md) 참고):
+   ```bash
+   cd vision-server
+   python3 -m venv .venv && source .venv/bin/activate  # 최초 1회
+   pip install -r requirements.txt                      # 최초 1회
+   python main.py --pc-ip 127.0.0.1
+   ```
+   카메라 창이 뜨면 화면 보고 똑바로 선 뒤 `s`로 캘리브레이션 한 번 해줘야
+   앉기(`crouch`) 판정이 정상 동작한다. 나머지 동작은 캘리브레이션 없이 바로 인식된다.
+2. Unity에서 `Assets/Scenes/SampleScene.unity`를 열고 Play를 누른다. `BossDuelPrototype`이
+   Play 시작 시 `CombatInput` 게임오브젝트에 `KeyboardInputProvider`와
+   `NetworkInputProvider`(UDP 9002 수신)를 자동으로 둘 다 붙이므로, 씬을 따로 만질 필요
+   없이 그대로 웹캠 앞에서 몸을 움직이면 게임이 반응한다.
+   - 가로/세로 베기: 오른손을 몸통 기준으로 짧게 크게 움직이기(수평/수직 우세 방향으로 판정)
+   - 발차기: 무릎을 빠르게 펴기(좌우 다리 구분 없음)
+   - 기본 방어: 왼손을 가슴 높이에서 잠깐 정지
+   - 패링: 왼손을 몸통 중심에서 바깥쪽으로 뻗기
+   - 앉기 / 좌우 회피: 무릎 굽히기 / 고개(코)를 좌우로 기울이기
+3. vision-server가 꺼져 있거나 카메라가 없으면 `NetworkInputProvider`가 UDP 소켓만
+   바인딩해둔 채 조용히 대기하고, 키보드(J/K/L=가로베기·세로베기·발차기, `Space`=방어,
+   `F`=패링, `S`=앉기, `A`/`D`=좌우)로 그대로 테스트할 수 있다 — 둘을 동시에 켜둬도
+   서로 입력을 덮어쓰지 않는다.
+
+키보드로 전투 루프를 검증할 때는 아래 표를 참고한다.
 
 | 키 | 동작 |
 |---|---|

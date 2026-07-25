@@ -236,12 +236,18 @@ public sealed class BossDuelPrototype : MonoBehaviour
         {
             var inputObject = new GameObject("CombatInput");
             _input = inputObject.AddComponent<CombatInputHub>();
-            inputObject.AddComponent<KeyboardInputProvider>();
         }
-        else if (FindAnyObjectByType<KeyboardInputProvider>() == null)
-        {
+
+        // 키보드는 카메라 없이도 바로 테스트할 수 있는 폴백으로 항상 붙여둔다.
+        // NetworkInputProvider(vision-server/MediaPipe, UDP 9002)도 함께 붙여서
+        // Play를 누르는 순간부터 웹캠 모션 인식으로도 플레이할 수 있게 한다. 두
+        // 프로바이더는 KeyboardInputProvider가 자기 자신의 마지막 전송값만 기준으로
+        // 변화가 있을 때만 Hub를 건드리도록 되어 있어 함께 켜둬도 서로 덮어쓰지 않는다.
+        if (FindAnyObjectByType<KeyboardInputProvider>() == null)
             _input.gameObject.AddComponent<KeyboardInputProvider>();
-        }
+
+        if (FindAnyObjectByType<NetworkInputProvider>() == null)
+            _input.gameObject.AddComponent<NetworkInputProvider>();
 
         _input.OnSwingHorizontal += PlayerHorizontalSlash;
         _input.OnSwingVertical += PlayerVerticalSlash;
