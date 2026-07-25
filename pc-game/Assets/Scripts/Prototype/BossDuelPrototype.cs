@@ -75,8 +75,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         public Renderer[] renderers;
         public Color[] rendererBaseColors;
         public GroundedFighterRig groundedRig;
-        public AssetShieldFollower shieldFollower;
-        public AssetSwordFollower swordFollower;
         public TrailRenderer swordTrail;
         public Transform kickTarget;
         public float dodgeDirection = -1f;
@@ -114,9 +112,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private const float GaugeRecoveryPerSecond = 0.19f;
     private const float ParryMinGauge = 0.2f;
     private const float ParryWindow = 0.42f;
-    // Long enough to read which attack is coming (see AssetSwordFollower's
-    // explicit prepare pose and the blade telegraph tint in AnimateAssetFighter),
-    // short enough to still demand a fast reaction.
+    // Long enough to read which attack is coming (the windup clip itself plus the
+    // blade telegraph tint in AnimateAssetFighter), short enough to still demand a
+    // fast reaction.
     private const float AttackWindup = 0.36f;
 
     private Fighter _player;
@@ -1168,7 +1166,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
         CreateAssetShield(fighter, leftHand, root, teamMaterial);
         CreateAssetSword(fighter, rightHand, root);
-        fighter.groundedRig.ConfigureCombatHands(fighter.swordPivot, fighter.shieldPivot);
 
         fighter.renderers = model.GetComponentsInChildren<Renderer>(true);
         fighter.rendererBaseColors = new Color[fighter.renderers.Length];
@@ -1200,12 +1197,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (leftHand == null)
             return;
 
+        // Parented directly to the hand bone (not a procedurally-driven pivot) so the
+        // shield simply follows whatever the real animation clip (Idle/Guard/Parry) is
+        // doing this frame.
         var mount = new GameObject("Left Hand Shield");
-        mount.transform.SetParent(fighterRoot);
-        AssetShieldFollower follower = mount.AddComponent<AssetShieldFollower>();
-        follower.Configure(leftHand, fighterRoot);
-        fighter.shieldFollower = follower;
-
+        mount.transform.SetParent(leftHand);
+        mount.transform.localPosition = new Vector3(0f, 0.05f, 0.03f);
+        mount.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
         fighter.shieldPivot = mount.transform;
         if (_assetLibrary != null && _assetLibrary.kevinShieldPrefab != null)
         {
@@ -1238,11 +1236,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (rightHand == null)
             return;
 
-        Transform mount = new GameObject("Right Hand Sword (Constrained)").transform;
-        mount.SetParent(fighterRoot);
-        AssetSwordFollower follower = mount.gameObject.AddComponent<AssetSwordFollower>();
-        follower.Configure(rightHand, fighterRoot);
-        fighter.swordFollower = follower;
+        // Parented directly to the hand bone (not a procedurally-driven pivot) so the
+        // sword simply follows whatever the real animation clip (Idle/slash/etc) is
+        // doing this frame.
+        Transform mount = new GameObject("Right Hand Sword").transform;
+        mount.SetParent(rightHand);
+        mount.localPosition = new Vector3(0f, 0.05f, 0f);
+        mount.localRotation = Quaternion.identity;
         fighter.swordPivot = mount;
 
         if (_assetLibrary != null && _assetLibrary.kevinSwordPrefab != null)
@@ -1275,10 +1275,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _bladeCoreMaterial);
         }
 
-        // A trail on the blade tip traces whatever arc the sword actually
-        // swings through - horizontal cuts read as a horizontal streak,
-        // vertical cuts as a vertical one, for free from the real motion
-        // (see AssetSwordFollower) instead of a separate canned effect.
+        // A trail on the blade tip traces whatever arc the sword actually swings
+        // through - horizontal cuts read as a horizontal streak, vertical cuts as a
+        // vertical one, for free from the real animation clip's hand motion instead
+        // of a separate canned effect.
         Transform tip = new GameObject("Sword Blade Tip").transform;
         tip.SetParent(mount);
         tip.localPosition = new Vector3(0f, 1.68f, 0f);
@@ -1422,34 +1422,18 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 (0.22f + kickDrive * 1.02f) + fighter.root.right * 0.16f;
         }
         UpdateBladeTelegraph(fighter);
-        SwordPose swordPose = fighter.motion switch
-        {
-            Motion.PrepareHorizontal => SwordPose.PrepareHorizontal,
-            Motion.PrepareVertical => SwordPose.PrepareVertical,
-            Motion.HorizontalSlash => SwordPose.StrikeHorizontal,
-            Motion.VerticalSlash => SwordPose.StrikeVertical,
-            _ => SwordPose.Idle
-        };
-        if (fighter.swordFollower != null)
-            fighter.swordFollower.SetPose(swordPose, t);
+        // Sword/shield are bone-parented to the actual hand transforms (see
+        // CreateAssetSword/CreateAssetShield), so they simply move with whatever
+        // the Mixamo clip's real arm animation is doing this frame - no procedural
+        // hand IK override, no separate pose follower.
+        bool swordActive = fighter.motion == Motion.PrepareHorizontal ||
+            fighter.motion == Motion.PrepareVertical ||
+            fighter.motion == Motion.HorizontalSlash ||
+            fighter.motion == Motion.VerticalSlash;
         if (fighter.swordTrail != null)
-            fighter.swordTrail.emitting = swordPose != SwordPose.Idle;
-        if (fighter.shieldFollower != null)
-            fighter.shieldFollower.SetPose(
-                fighter.motion == Motion.Guard,
-                fighter.motion == Motion.Parry,
-                t);
+            fighter.swordTrail.emitting = swordActive;
         if (fighter.groundedRig != null)
         {
-            // The sword hand is IK-driven (via AssetSwordFollower's explicit
-            // pose) only while winding up or striking, so the readable
-            // horizontal/vertical geometry actually reaches the visible
-            // blade instead of whatever the authored clip's hand does.
-            fighter.groundedRig.lockRightHand = swordPose != SwordPose.Idle;
-            // The shield mount is always the left-hand target, keeping the
-            // shield attached while resting outside the torso as well as
-            // during the guard-to-parry extension.
-            fighter.groundedRig.lockLeftHand = fighter.shieldFollower != null;
             fighter.groundedRig.kickActive = fighter.motion == Motion.Kick;
             fighter.groundedRig.crouchWeight = fighter.motion == Motion.DodgeCrouch
                 ? Mathf.Sin(t * Mathf.PI) : 0f;
@@ -1499,15 +1483,19 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         if (motion == Motion.Idle)
         {
-            fighter.animator.speed = 1f;
+            // A held, motionless pose instead of a perpetually-looping mocap clip -
+            // even subtle idle sway reads as constant jitter once the fighter is
+            // otherwise still, so freeze on the clip's first frame.
             if (fighter.animator.layerCount > 1)
                 fighter.animator.SetLayerWeight(1, 0f);
             fighter.animator.Play(Animator.StringToHash("Idle"), 0, 0f);
+            fighter.animator.speed = 1f;
+            fighter.animator.Update(0f);
+            fighter.animator.speed = 0f;
             return;
         }
 
-        if (motion == Motion.PrepareKick || motion == Motion.Kick ||
-            motion == Motion.Guard)
+        if (motion == Motion.PrepareKick || motion == Motion.Kick)
         {
             fighter.animator.speed = 1f;
             if (fighter.animator.layerCount > 1)
@@ -1515,7 +1503,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             return;
         }
 
-        bool preparing = IsPrepareMotion(motion);
+        // Horizontal/vertical slash each have one continuous swing clip covering
+        // both the windup and the strike - only (re)start it when entering the
+        // windup (PrepareHorizontal/PrepareVertical). The follow-up
+        // HorizontalSlash/VerticalSlash motion just lets that same clip keep
+        // playing, so the swing reads as one motion instead of rewinding to
+        // frame 0 partway through.
         Motion clipMotion = motion == Motion.PrepareHorizontal ? Motion.HorizontalSlash
             : motion == Motion.PrepareVertical ? Motion.VerticalSlash
             : motion;
@@ -1523,19 +1516,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (fighter.animator.layerCount > 1 && fighter.animator.HasState(1, state))
         {
             fighter.animator.SetLayerWeight(1, 1f);
-            if (preparing || IsAttackMotion(motion))
-            {
-                // Attack poses are sampled deterministically in
-                // SampleAuthoredSwordAnimation for authored anticipation,
-                // acceleration and recovery timing.
-                fighter.animator.speed = 0f;
-                fighter.animator.Play(state, 1, preparing ? 0.02f : 0.18f);
-            }
-            else
-            {
-                fighter.animator.speed = 1f;
+            fighter.animator.speed = 1f;
+            bool continuesWindup = motion == Motion.HorizontalSlash || motion == Motion.VerticalSlash;
+            if (!continuesWindup)
                 fighter.animator.Play(state, 1, 0f);
-            }
         }
     }
 
@@ -2569,12 +2553,8 @@ public sealed class GroundedFighterRig : MonoBehaviour
     private Vector3 _leftFootAnchor;
     private Vector3 _rightFootAnchor;
     private bool _ready;
-    private Transform _rightHandTarget;
-    private Transform _leftHandTarget;
     private Transform _kickFootTarget;
     public bool lockFeet = true;
-    public bool lockRightHand;
-    public bool lockLeftHand;
     public bool kickActive;
     public float crouchWeight;
     public float lateralWeight;
@@ -2584,12 +2564,6 @@ public sealed class GroundedFighterRig : MonoBehaviour
     {
         _animator = animator;
         _fighterRoot = fighterRoot;
-    }
-
-    public void ConfigureCombatHands(Transform rightHandTarget, Transform leftHandTarget)
-    {
-        _rightHandTarget = rightHandTarget;
-        _leftHandTarget = leftHandTarget;
     }
 
     public void ConfigureKickFoot(Transform kickFootTarget)
@@ -2650,185 +2624,6 @@ public sealed class GroundedFighterRig : MonoBehaviour
         bodyPosition -= _fighterRoot.up * (0.42f * crouchWeight);
         bodyPosition += _fighterRoot.right * (0.28f * lateralWeight * lateralDirection);
         _animator.bodyPosition = bodyPosition;
-
-        float rightHandWeight = lockRightHand ? 1f : 0f;
-        float leftHandWeight = lockLeftHand ? 1f : 0f;
-        if (_rightHandTarget != null)
-        {
-            _animator.SetIKPositionWeight(AvatarIKGoal.RightHand, rightHandWeight);
-            _animator.SetIKRotationWeight(AvatarIKGoal.RightHand, rightHandWeight);
-            _animator.SetIKPosition(AvatarIKGoal.RightHand, _rightHandTarget.position);
-            _animator.SetIKRotation(AvatarIKGoal.RightHand, _rightHandTarget.rotation);
-        }
-        if (_leftHandTarget != null)
-        {
-            _animator.SetIKPositionWeight(AvatarIKGoal.LeftHand, leftHandWeight);
-            _animator.SetIKRotationWeight(AvatarIKGoal.LeftHand, leftHandWeight);
-            _animator.SetIKPosition(AvatarIKGoal.LeftHand, _leftHandTarget.position);
-            _animator.SetIKRotation(AvatarIKGoal.LeftHand, _leftHandTarget.rotation);
-        }
     }
 }
 
-public enum SwordPose { Idle, PrepareHorizontal, PrepareVertical, StrikeHorizontal, StrikeVertical }
-
-// Drives the sword pivot explicitly from the fighter's own axes - the same
-// approach AssetShieldFollower uses for the shield - instead of sampling an
-// imported clip's hand track. That's what makes the two attacks readable as
-// distinct shapes: horizontal is a full left-to-right sweep, vertical is a
-// straight overhead raise followed by a downward chop.
-public sealed class AssetSwordFollower : MonoBehaviour
-{
-    private Transform _fighterRoot;
-    private SwordPose _pose;
-    private float _progress;
-
-    public void Configure(Transform hand, Transform fighterRoot)
-    {
-        _fighterRoot = fighterRoot;
-    }
-
-    public void SetPose(SwordPose pose, float progress)
-    {
-        _pose = pose;
-        _progress = Mathf.Clamp01(progress);
-    }
-
-    private void LateUpdate()
-    {
-        if (_fighterRoot == null)
-            return;
-
-        Vector3 forward = _fighterRoot.forward;
-        Vector3 up = _fighterRoot.up;
-        Vector3 right = _fighterRoot.right;
-
-        // Blade rest position/pointing when nothing is happening - hangs at
-        // the hip, angled forward-down.
-        Vector3 position = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
-        Vector3 bladeDirection = (up * 0.4f - forward * 0.6f).normalized;
-
-        switch (_pose)
-        {
-            case SwordPose.PrepareHorizontal:
-            {
-                // Wind up by pulling the blade all the way out to the
-                // fighter's own left, roughly level with the chest.
-                float wind = Mathf.SmoothStep(0f, 1f, _progress);
-                Vector3 restPos = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
-                Vector3 leftPos = _fighterRoot.position + up * 1.3f - right * 0.95f + forward * 0.3f;
-                position = Vector3.Lerp(restPos, leftPos, wind);
-                bladeDirection = Vector3.Lerp((up * 0.4f - forward * 0.6f).normalized, -right, wind);
-                break;
-            }
-            case SwordPose.StrikeHorizontal:
-            {
-                // Sweep a full 180 degrees from the left extreme through the
-                // center to the right extreme.
-                float swing = _progress;
-                Vector3 leftPos = _fighterRoot.position + up * 1.3f - right * 0.95f + forward * 0.3f;
-                Vector3 rightPos = _fighterRoot.position + up * 1.3f + right * 0.95f + forward * 0.3f;
-                float arc = Mathf.Sin(swing * Mathf.PI) * 0.35f;
-                position = Vector3.Lerp(leftPos, rightPos, swing) + forward * arc;
-                bladeDirection = Vector3.Lerp(-right, right, swing).normalized;
-                break;
-            }
-            case SwordPose.PrepareVertical:
-            {
-                // Raise the blade straight up above the head.
-                float wind = Mathf.SmoothStep(0f, 1f, _progress);
-                Vector3 restPos = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
-                Vector3 overhead = _fighterRoot.position + up * 2.05f + forward * 0.2f;
-                position = Vector3.Lerp(restPos, overhead, wind);
-                bladeDirection = Vector3.Lerp((up * 0.4f - forward * 0.6f).normalized, up, wind);
-                break;
-            }
-            case SwordPose.StrikeVertical:
-            {
-                // Chop straight down from overhead to a forward-low finish.
-                float swing = _progress;
-                Vector3 overhead = _fighterRoot.position + up * 2.05f + forward * 0.2f;
-                Vector3 lowFinish = _fighterRoot.position + up * 0.4f + forward * 1.1f;
-                position = Vector3.Lerp(overhead, lowFinish, swing);
-                bladeDirection = Vector3.Lerp(up, (forward + up * 0.15f).normalized, swing);
-                break;
-            }
-        }
-
-        Quaternion rotation = Quaternion.FromToRotation(Vector3.up, bladeDirection.normalized);
-        float positionSpeed = _pose == SwordPose.Idle ? 20f : 40f;
-        float rotationSpeed = _pose == SwordPose.Idle ? 20f : 46f;
-        transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-positionSpeed * Time.deltaTime));
-        transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-rotationSpeed * Time.deltaTime));
-    }
-}
-
-public sealed class AssetShieldFollower : MonoBehaviour
-{
-    private Transform _hand;
-    private Transform _fighterRoot;
-    private bool _guarding;
-    private bool _parrying;
-    private float _progress;
-
-    public void Configure(Transform hand, Transform fighterRoot)
-    {
-        _hand = hand;
-        _fighterRoot = fighterRoot;
-    }
-
-    public void SetPose(bool guarding, bool parrying, float progress)
-    {
-        _guarding = guarding;
-        _parrying = parrying;
-        _progress = progress;
-    }
-
-    private void LateUpdate()
-    {
-        if (_hand == null || _fighterRoot == null)
-            return;
-
-        Vector3 up = _fighterRoot.up;
-        Vector3 forward = _fighterRoot.forward;
-        Vector3 left = -_fighterRoot.right;
-
-        // The shield primitive's flat face normal runs along its local Y
-        // axis, so aligning that with "forward" points the face squarely at
-        // the opponent - the read a block needs.
-        Quaternion faceForward = Quaternion.FromToRotation(Vector3.up, forward);
-
-        Vector3 restPosition = _fighterRoot.position + up * 1.05f - forward * 0.1f + left * 0.42f;
-        Quaternion restRotation = faceForward * Quaternion.AngleAxis(35f, forward);
-
-        Vector3 guardPosition = _fighterRoot.position + up * 1.32f + forward * 0.5f;
-        Quaternion guardRotation = faceForward;
-
-        Vector3 position = restPosition;
-        Quaternion rotation = restRotation;
-
-        if (_guarding)
-        {
-            position = guardPosition;
-            rotation = guardRotation;
-        }
-        else if (_parrying)
-        {
-            // Hold the guard face, then bat it outward with a fast yaw sweep
-            // around the vertical axis - a deflect, not a lunge - and spring
-            // back to guard.
-            float sweep = Mathf.Sin(Mathf.Clamp01(_progress) * Mathf.PI);
-            position = guardPosition + left * (0.55f * sweep) + forward * (0.25f * sweep);
-            rotation = guardRotation * Quaternion.AngleAxis(100f * sweep, up);
-        }
-
-        float positionSpeed = _parrying ? 46f : 30f;
-        float rotationSpeed = _parrying ? 52f : 34f;
-        transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-positionSpeed * Time.deltaTime));
-        transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-rotationSpeed * Time.deltaTime));
-    }
-}
