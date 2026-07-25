@@ -28,8 +28,9 @@
 
 ## 보스전 프로토타입
 
-`Assets/Scenes/SampleScene.unity`를 열고 Play를 누르면 런타임에 1대1 보스전
-아레나가 자동으로 구성된다. 센서 연동 전에는 아래 키로 전투 루프를 검증한다.
+`Assets/Scenes/SampleScene.unity`를 열고 Play를 누르면 런타임에 별이 보이는
+밤하늘 아래 SF 아레나와 1대1 우주전사 듀얼이 자동으로 구성된다. 센서 연동
+전에는 아래 키로 전투 루프를 검증한다.
 
 | 키 | 동작 |
 |---|---|
@@ -50,26 +51,39 @@
 전투 시스템은 기존 `CombatInputHub` 이벤트를 사용하므로
 나중에 키보드 입력을 폰 센서/비전 입력으로 교체해도 규칙 코드는 유지된다.
 
-캐릭터는 `EEJANAI_Team/FreeSwordAnimations`의 휴머노이드 검객 프리팹과
-기본 자세를 사용하고, 검·방패는 설치된 Kevin Iglesias
-`Skeleton Animations FREE`의 장비 프리팹을 조합한다. 검 공격은
-`slash2`(가로베기)와 `slash9`(세로베기) 휴머노이드 클립을 상체에 직접
-샘플링하고, 발 IK로 제자리 자세를 유지한다. 방패 팔과 발차기만 별도 IK로
-제어하므로 방어 중 검이 방패를 따라 회전하지 않는다.
+**가로/세로 베기 준비 동작(0.36초)은 검날 색으로도 구분된다** — 가로 베기는
+호박색, 세로 베기는 보라색으로 검날이 펄스 발광하므로, 모션이 비슷해 보이는
+순간에도 어떤 공격이 오는지 색으로 즉시 읽을 수 있다. 방패는 절차적 애니메이션을
+다시 짜서 기본 방어 시 정면(상대 방향)으로 방패 면이 똑바로 향하고, 패링은
+그 자세에서 수직축으로 빠르게 바깥으로 쳐내는 스윙 후 복귀하도록 만들었다
+(`AssetShieldFollower` 참고).
+
+캐릭터는 `MyAssets/CyberSoldier`의 로우폴리 안드로이드 병사(무료, Mecanim
+Humanoid로 강제 설정)를 쓰고, 애니메이션은 이전과 동일하게 EEJANAI
+`FreeSwordAnimations`와 Kevin Iglesias `Human Melee Animations FREE`
+클립을 리타기팅해서 재사용한다(세로베기는 손 궤적상 수직 이동이 가장 큰
+EEJANAI `slash9`). 검·방패는 전용 메시 대신 절차적 지오메트리에 발광
+재질(호박/청록/보라 에너지 코어)을 입혀 에너지 무기처럼 보이게 했다 —
+`BossDuelAssetLibrary.kevinSwordPrefab`/`kevinShieldPrefab`은 의도적으로
+비워둬서 이 폴백 경로를 강제한다. Asset Store 원본은 라이선스상 저장소에
+포함하지 않으므로 EEJANAI/Kevin Iglesias/Cyber Soldier 패키지는 각
+개발자가 Unity Package Manager "My Assets"에서 설치해야 한다.
 `Tools > Boss Duel > Audit Sword Clip Trajectories`에서 각 클립의 손 궤적을
 다시 비교할 수 있다. `Tools > Boss Duel > Rebuild Asset Library`를
 실행하면 Resources용 에셋 라이브러리와 전용 Animator Controller가 재생성된다.
 원본 Toon 재질은 실행 시 URP/Lit으로 변환되어 현재 렌더 파이프라인에서도
 정상 표시된다.
 
-맵은 Kenney의 `Modular Dungeon Kit`(CC0)를 사용하며 원본 라이선스 파일은
-`Assets/ThirdParty/KenneyModularDungeon/License.txt`에 함께 보존한다.
-전투 이펙트는 Kenney `Particle Pack`(CC0)의 투명 PNG를 사용하며 라이선스는
-`Assets/ThirdParty/KenneyParticlePack/License.txt`에 보존한다.
-전투 사운드는 Kenney `RPG Audio`와 `Impact Sounds`(CC0)에서 선별한 검풍,
-금속 충돌, 종 울림, 중량 타격음을 최대 3개 레이어로 조합한다. 원본 라이선스는
-각각 `Assets/ThirdParty/KenneyCombatAudio/RPG/License.txt`와
-`Assets/ThirdParty/KenneyCombatAudio/Impact/License.txt`에 보존한다.
+하늘은 `SpaceSkies Free`의 성운 스카이박스(별이 보이는 밤하늘)를 쓰고,
+아레나 배경은 `Modular Sci-Fi Corridor`(MagixBox)의 문·벽·바닥 모듈을
+기존 Kenney 던전 자리에 그대로 꽂아 넣었다(둘 다 무료, 절차적 원형
+플랫폼/기둥은 유지하되 재질만 SF 톤 금속+발광으로 교체). 타격 슬래시
+이펙트는 `Stylized Slash VFX`(HungNguyenVFX)의 색상별 파티클 프리팹을
+쓰고, 가드/패링/임팩트 버스트는 기존 Kenney 스프라이트 시스템을 그대로
+재사용한다. 전투 사운드는 `TII_SoundLibrary_3Steps`(SCI-FI, 무료)의 빔소드
+생성·스위시·레이저 히트·에너지 실드 업/다운/임팩트 클립과 `Free Laser
+Weapons`(Daniel SoundsGood)의 블래스트음을 최대 3개 레이어로 조합한다.
+원본 라이선스는 각 패키지 폴더에 보존돼 있다.
 
 상대 AI는 플레이어의 공격 반복 횟수와 공격별 사용 빈도를 기억해 익숙한
 공격일수록 방어/패링 확률을 높인다. 앉기 회피가 많으면 세로베기와 발차기를,
