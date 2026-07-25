@@ -103,9 +103,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private const float PlayerAttackDamage = 18f;
     private const float EnemyAttackDamage = 22f;
     private const float MaxDefenseGauge = 3f;
-    private const float GuardGaugeCost = 1f;
-    private const float ParryGaugeCost = 0.5f;
+    // Reinhardt shield model: holding basic guard continuously drains the gauge instead of a
+    // flat activation cost, and it only refills while the shield is down (not guarding or
+    // mid-parry). Parry has no flat cost either — it burns half of whatever is currently
+    // banked, so it stays available but a full-gauge parry costs more than a low-gauge one.
+    private const float GuardDrainPerSecond = 0.6f;
     private const float GaugeRecoveryPerSecond = 0.38f;
+    private const float ParryMinGauge = 0.2f;
     private const float ParryWindow = 0.42f;
     // Long enough to read which attack is coming (see AssetSwordFollower's
     // explicit prepare pose and the blade telegraph tint in AnimateAssetFighter),
@@ -318,20 +322,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
         {
             if (_player.motion != Motion.Guard)
             {
-                if (_player.defenseGauge < GuardGaugeCost)
+                if (_player.defenseGauge <= 0f)
                 {
                     _banner = "NO GUARD GAUGE";
                     _detail = "Wait for the defense gauge to recover.";
                     return;
                 }
-                _player.defenseGauge -= GuardGaugeCost;
                 SetMotion(_player, Motion.Guard, 0.12f);
             }
             return;
         }
 
-        if (_player.motion == Motion.Guard && (_input == null || !_input.IsGuarding))
+        if (_player.motion == Motion.Guard &&
+            (_input == null || !_input.IsGuarding || _player.defenseGauge <= 0f))
+        {
+            if (_player.defenseGauge <= 0f)
+            {
+                _banner = "SHIELD DEPLETED";
+                _detail = "Out of defense gauge — the shield drops.";
+            }
             SetMotion(_player, Motion.Idle, 0.2f);
+        }
 
         ResolveAttackIfNeeded(_player, true);
 
@@ -408,9 +419,9 @@ public sealed class BossDuelPrototype : MonoBehaviour
         float dodgeChance = 0.24f + familiarity * 0.08f;
         float reaction = UnityEngine.Random.value;
         if (_enemyPhase == EnemyPhase.Waiting && reaction < parryChance &&
-            _enemy.defenseGauge >= ParryGaugeCost)
+            _enemy.defenseGauge > ParryMinGauge)
         {
-            _enemy.defenseGauge -= ParryGaugeCost;
+            _enemy.defenseGauge *= 0.5f;
             _enemyPhase = EnemyPhase.Parrying;
             _enemyPhaseEnds = Time.time + AttackWindup + 0.48f;
             SetMotion(_enemy, Motion.Parry, AttackWindup + 0.48f);
@@ -420,9 +431,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
         else if (_enemyPhase == EnemyPhase.Waiting &&
                  reaction < parryChance + guardChance &&
-                 _enemy.defenseGauge >= GuardGaugeCost)
+                 _enemy.defenseGauge > 0f)
         {
-            _enemy.defenseGauge -= GuardGaugeCost;
             _enemyPhase = EnemyPhase.Guarding;
             _enemyPhaseEnds = Time.time + AttackWindup + 0.85f;
             SetMotion(_enemy, Motion.Guard, AttackWindup + 0.85f);
@@ -483,14 +493,14 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void PlayerParry()
     {
-        if (!CanPlayerAct() || _player.defenseGauge < ParryGaugeCost)
+        if (!CanPlayerAct() || _player.defenseGauge <= ParryMinGauge)
         {
             _banner = "NO PARRY GAUGE";
-            _detail = "Parry requires 0.5 defense gauge.";
+            _detail = "Parry burns half your defense gauge — not enough saved up.";
             return;
         }
 
-        _player.defenseGauge -= ParryGaugeCost;
+        _player.defenseGauge *= 0.5f;
         _playerParryUses++;
         _playerParryEnds = Time.time + ParryWindow;
         SetMotion(_player, Motion.Parry, ParryWindow);
@@ -509,12 +519,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void RecoverDefenseGauges()
     {
-        if (_player != null && _player.motion != Motion.Guard && _player.motion != Motion.Parry)
-            _player.defenseGauge = Mathf.Min(MaxDefenseGauge,
-                _player.defenseGauge + GaugeRecoveryPerSecond * Time.deltaTime);
-        if (_enemy != null && _enemy.motion != Motion.Guard && _enemy.motion != Motion.Parry)
-            _enemy.defenseGauge = Mathf.Min(MaxDefenseGauge,
-                _enemy.defenseGauge + GaugeRecoveryPerSecond * Time.deltaTime);
+        UpdateDefenseGauge(_player);
+        UpdateDefenseGauge(_enemy);
+    }
+
+    private static void UpdateDefenseGauge(Fighter fighter)
+    {
+        if (fighter == null)
+            return;
+
+        if (fighter.motion == Motion.Guard)
+        {
+            // Reinhardt shield: holding basic guard up continuously drains the gauge.
+            fighter.defenseGauge = Mathf.Max(0f,
+                fighter.defenseGauge - GuardDrainPerSecond * Time.deltaTime);
+        }
+        else if (fighter.motion != Motion.Parry)
+        {
+            // Only refills once the shield is fully down — not guarding, not mid-parry.
+            fighter.defenseGauge = Mathf.Min(MaxDefenseGauge,
+                fighter.defenseGauge + GaugeRecoveryPerSecond * Time.deltaTime);
+        }
     }
 
     private bool CanPlayerAct()
@@ -2378,7 +2403,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         GUI.DrawTexture(new Rect(width * 0.5f - 385f, referenceHeight - 92f, 770f, 56f), Texture2D.whiteTexture);
         GUI.color = Color.white;
         GUI.Label(new Rect(width * 0.5f - 380f, referenceHeight - 87f, 760f, 26f),
-            "J HORIZONTAL   K VERTICAL   L KICK   SPACE GUARD (1.0)   F PARRY (0.5)", _smallStyle);
+            "J HORIZONTAL   K VERTICAL   L KICK   SPACE GUARD (drains/sec)   F PARRY (half of current gauge)", _smallStyle);
         GUI.Label(new Rect(width * 0.5f - 380f, referenceHeight - 63f, 760f, 22f),
             "S CROUCH DODGE   A / D SIDE DODGE   •   R RESTART", _smallStyle);
 
