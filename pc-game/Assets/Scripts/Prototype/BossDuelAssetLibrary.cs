@@ -5,11 +5,11 @@ public sealed class BossDuelAssetLibrary : ScriptableObject
 {
     public GameObject fighterPrefab;
     public RuntimeAnimatorController combatController;
-    // Sci-fi modular corridor pieces (formerly Kenney dungeon set).
-    public GameObject dungeonRoom;
-    public GameObject dungeonGate;
-    public GameObject dungeonCorridor;
-    public GameObject arenaFloorLight;
+    // Low Poly Environment - Nature Free (Polytope Studio, free) - scattered around
+    // the duel platform for an outdoor look instead of a built arena.
+    public GameObject natureTreeA;
+    public GameObject natureTreeB;
+    public GameObject natureRock;
     public Material skyboxMaterial;
     public Sprite slashSprite;
     public Sprite impactSprite;
@@ -17,10 +17,10 @@ public sealed class BossDuelAssetLibrary : ScriptableObject
     public Sprite parrySprite;
     public GameObject slashVfxHorizontal;
     public GameObject slashVfxVertical;
-    // Left null on purpose so sword/shield fall back to the procedural
-    // emissive energy-weapon primitives built in BossDuelPrototype.
-    public GameObject kevinSwordPrefab;
-    public GameObject kevinShieldPrefab;
+    // Game-ready medieval sword/shield meshes (Danvil "Sword and Shield", free). Null
+    // falls back to the procedural emissive energy-weapon primitives in BossDuelPrototype.
+    public GameObject swordPrefab;
+    public GameObject shieldPrefab;
     public AudioClip swordSlice;
     public AudioClip swordSliceHeavy;
     public AudioClip swordDraw;

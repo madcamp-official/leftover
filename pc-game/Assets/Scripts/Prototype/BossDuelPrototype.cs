@@ -140,6 +140,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private Material _enemyMaterial;
     private Material _stoneDark;
     private Material _stoneLight;
+    private Material _groundMaterial;
     private Material _goldMaterial;
     private Material _dangerMaterial;
     private Material _parryMaterial;
@@ -1205,13 +1206,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         mount.transform.localPosition = new Vector3(0f, 0.05f, 0.03f);
         mount.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
         fighter.shieldPivot = mount.transform;
-        if (_assetLibrary != null && _assetLibrary.kevinShieldPrefab != null)
+        if (_assetLibrary != null && _assetLibrary.shieldPrefab != null)
         {
-            GameObject shield = Instantiate(_assetLibrary.kevinShieldPrefab, mount.transform);
-            shield.name = "Kevin Iglesias Shield";
+            GameObject shield = Instantiate(_assetLibrary.shieldPrefab, mount.transform);
+            shield.name = "Medieval Shield";
             shield.transform.localPosition = Vector3.zero;
-            shield.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            shield.transform.localScale = Vector3.one * 1.12f;
+            shield.transform.localRotation = Quaternion.identity;
+            shield.transform.localScale = Vector3.one;
             Renderer[] renderers = shield.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers, teamMaterial.color);
             fighter.shieldRenderer = renderers.Length > 0 ? renderers[0] : null;
@@ -1245,15 +1246,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         mount.localRotation = Quaternion.identity;
         fighter.swordPivot = mount;
 
-        if (_assetLibrary != null && _assetLibrary.kevinSwordPrefab != null)
+        if (_assetLibrary != null && _assetLibrary.swordPrefab != null)
         {
-            GameObject sword = Instantiate(_assetLibrary.kevinSwordPrefab, mount);
-            sword.name = "Kevin Iglesias Sword";
-            sword.transform.localPosition = new Vector3(0f, 0.10f, 0f);
-            // Kevin's sword mesh is authored along local X, while the constrained
-            // combat rig treats local Y as the blade axis.
-            sword.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            sword.transform.localScale = Vector3.one * 1.18f;
+            GameObject sword = Instantiate(_assetLibrary.swordPrefab, mount);
+            sword.name = "Medieval Sword";
+            sword.transform.localPosition = Vector3.zero;
+            sword.transform.localRotation = Quaternion.identity;
+            sword.transform.localScale = Vector3.one;
             Renderer[] renderers = sword.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers,
                 fighter.facesRight ? new Color(0.18f, 0.62f, 1f) :
@@ -1615,88 +1614,75 @@ public sealed class BossDuelPrototype : MonoBehaviour
         var arena = new GameObject("Arena").transform;
         arena.SetParent(transform);
 
-        if (_assetLibrary != null && _assetLibrary.dungeonGate != null)
-        {
-            GameObject gate = Instantiate(_assetLibrary.dungeonGate, arena);
-            gate.name = "Kenney CC0 Dungeon Gate";
-            gate.transform.localPosition = new Vector3(2.25f, 0f, 4.05f);
-            gate.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            gate.transform.localScale = Vector3.one * 1.08f;
-            ConvertDungeonMaterials(gate.GetComponentsInChildren<Renderer>(true));
-        }
+        // Just open outdoor ground with a light scatter of the Low Poly Nature pack's
+        // trees/rocks around the duel - no built structure, no platform disc, per
+        // feedback that the enclosed dungeon/SF sets and floor disc were unwanted
+        // clutter. First pass: place the fight straight on the field.
+        CreatePrimitive(PrimitiveType.Plane, "Ground", arena,
+            Vector3.zero, new Vector3(6f, 1f, 6f), _groundMaterial);
 
-        CreatePrimitive(PrimitiveType.Cylinder, "Duel Platform", arena,
-            new Vector3(0f, -0.15f, 0f), new Vector3(5.6f, 0.28f, 5.6f), _stoneDark);
-        CreatePrimitive(PrimitiveType.Cylinder, "Platform Inlay", arena,
-            new Vector3(0f, 0.03f, 0f), new Vector3(4.75f, 0.06f, 4.75f), _stoneLight);
-
-        for (int i = 0; i < 12; i++)
-        {
-            float angle = i * Mathf.PI * 2f / 12f;
-            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.2f, 0.08f, Mathf.Sin(angle) * 4.2f);
-            Transform tile = CreatePrimitive(PrimitiveType.Cube, "Ring Tile", arena, point,
-                new Vector3(1.15f, 0.08f, 0.38f), i % 2 == 0 ? _goldMaterial : _stoneDark);
-            tile.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
-        }
-
-        for (int i = -1; i <= 1; i += 2)
-        {
-            CreatePrimitive(PrimitiveType.Cylinder, "Pillar", arena,
-                new Vector3(6.6f * i, 1.4f, 3.6f), new Vector3(0.55f, 1.4f, 0.55f), _stoneDark);
-            CreatePrimitive(PrimitiveType.Sphere, "Pillar Flame", arena,
-                new Vector3(6.6f * i, 3.05f, 3.6f), new Vector3(0.3f, 0.45f, 0.3f),
-                i < 0 ? _playerMaterial : _enemyMaterial);
-        }
-
-        CreatePrimitive(PrimitiveType.Cube, "Back Wall", arena,
-            new Vector3(0f, 1.75f, 4.2f), new Vector3(13f, 3.5f, 0.35f), _stoneDark);
-        for (int i = -5; i <= 5; i += 2)
-        {
-            CreatePrimitive(PrimitiveType.Cube, "Wall Accent", arena,
-                new Vector3(i, 2.1f, 3.98f), new Vector3(0.16f, 2.1f, 0.08f), _goldMaterial);
-        }
+        GameObject treeA = _assetLibrary != null ? _assetLibrary.natureTreeA : null;
+        GameObject treeB = _assetLibrary != null ? _assetLibrary.natureTreeB : null;
+        GameObject rock = _assetLibrary != null ? _assetLibrary.natureRock : null;
+        ScatterNatureProp(treeA, arena, new Vector3(-7.5f, 0f, 3.5f), 60f);
+        ScatterNatureProp(treeB, arena, new Vector3(7.5f, 0f, 4f), -40f);
+        ScatterNatureProp(treeA, arena, new Vector3(-8f, 0f, -3f), 160f);
+        ScatterNatureProp(treeB, arena, new Vector3(8.5f, 0f, -4.5f), 200f);
+        ScatterNatureProp(rock, arena, new Vector3(-4.5f, 0f, 6f), 20f);
+        ScatterNatureProp(rock, arena, new Vector3(5f, 0f, -6.5f), 100f);
     }
 
-    private void ConvertDungeonMaterials(Renderer[] renderers)
+    private static void ScatterNatureProp(GameObject prefab, Transform parent, Vector3 position, float yaw)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
+        if (prefab == null)
+            return;
+        GameObject instance = Instantiate(prefab, parent);
+        instance.transform.localPosition = position;
+        instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+        ConvertNaturePropMaterialsToUrp(instance.GetComponentsInChildren<Renderer>(true));
+    }
+
+    // The nature pack's custom Built-in RP shaders render magenta ("missing shader") under
+    // URP unless its separate URP sub-package is imported too. Rebuild each instance's
+    // materials as URP/Lit instead - but unlike the fighter materials, these source
+    // materials carry no usable _Color/_MainTex (the pack paints trunk/foliage color via
+    // per-vertex color that a plain URP/Lit shader never samples), so blending toward a
+    // light hint color leaves everything flat white. Infer a plausible tint from the
+    // material name instead.
+    private static void ConvertNaturePropMaterialsToUrp(Renderer[] renderers)
+    {
+        Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+        if (litShader == null)
             return;
 
+        var converted = new System.Collections.Generic.Dictionary<Material, Material>();
         foreach (Renderer renderer in renderers)
         {
             Material[] materials = renderer.materials;
             for (int i = 0; i < materials.Length; i++)
             {
                 Material source = materials[i];
-                var replacement = new Material(shader);
-                Texture texture = source != null && source.HasProperty("_MainTex")
-                    ? source.mainTexture : null;
-                if (texture != null && replacement.HasProperty("_BaseMap"))
-                    replacement.SetTexture("_BaseMap", texture);
-                // Keep the sci-fi pack's own tint/metal/gloss instead of a
-                // flat gray recolor, so its panel and emissive detailing survives
-                // the Standard -> URP shader swap.
-                Color sourceColor = source != null && source.HasProperty("_Color")
-                    ? source.color : new Color(0.6f, 0.66f, 0.74f);
-                if (replacement.HasProperty("_BaseColor"))
-                    replacement.SetColor("_BaseColor", sourceColor);
-                float sourceMetallic = source != null && source.HasProperty("_Metallic")
-                    ? source.GetFloat("_Metallic") : 0.55f;
-                float sourceSmoothness = source != null && source.HasProperty("_Glossiness")
-                    ? source.GetFloat("_Glossiness") : 0.5f;
-                replacement.SetFloat("_Metallic", sourceMetallic);
-                replacement.SetFloat("_Smoothness", sourceSmoothness);
-                if (source != null && source.HasProperty("_EmissionColor"))
+                if (source == null)
+                    continue;
+
+                if (!converted.TryGetValue(source, out Material replacement))
                 {
-                    Color emission = source.GetColor("_EmissionColor");
-                    if (emission.maxColorComponent > 0f)
-                    {
-                        replacement.EnableKeyword("_EMISSION");
-                        replacement.globalIlluminationFlags =
-                            MaterialGlobalIlluminationFlags.RealtimeEmissive;
-                        replacement.SetColor("_EmissionColor", emission);
-                    }
+                    replacement = new Material(litShader) { name = source.name + " Duel URP" };
+                    string n = source.name.ToLowerInvariant();
+                    Color tint = n.Contains("leaf") || n.Contains("leaves") || n.Contains("foliage")
+                        ? new Color(0.28f, 0.5f, 0.16f)
+                        : n.Contains("trunk") || n.Contains("bark")
+                            ? new Color(0.35f, 0.24f, 0.14f)
+                            : n.Contains("rock")
+                                ? new Color(0.45f, 0.44f, 0.42f)
+                                : new Color(0.6f, 0.6f, 0.6f);
+                    if (replacement.HasProperty("_BaseColor"))
+                        replacement.SetColor("_BaseColor", tint);
+                    if (replacement.HasProperty("_Color"))
+                        replacement.SetColor("_Color", tint);
+                    if (replacement.HasProperty("_Smoothness"))
+                        replacement.SetFloat("_Smoothness", 0.1f);
+                    converted[source] = replacement;
                 }
                 materials[i] = replacement;
             }
@@ -2079,6 +2065,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         // Dark gunmetal hull plating instead of stone.
         _stoneDark = CreateMaterial(new Color(0.045f, 0.05f, 0.065f), 0.75f, 0.55f);
         _stoneLight = CreateMaterial(new Color(0.14f, 0.16f, 0.2f), 0.7f, 0.6f);
+        _groundMaterial = CreateMaterial(new Color(0.24f, 0.42f, 0.16f), 0f, 0.15f);
         // Amber energy trim, glowing, in place of the old flat gold accent.
         _goldMaterial = CreateMaterial(new Color(1f, 0.62f, 0.1f), 0.4f, 0.85f,
             new Color(1f, 0.5f, 0.05f) * 2.2f);

@@ -43,8 +43,13 @@ public static class BossDuelAssetLibraryBuilder
         "Knight - Sword And Shield Impact - Unblocked (Hit-Stagger).fbx",
         "Knight - Sword And Shield Death - Falling Back (Dead).fbx"
     };
-    private const string DungeonFolder =
-        "Assets/ThirdParty/KenneyModularDungeon/Models/FBX format/";
+    // Danvil "Sword and Shield" (free) - a single game-ready medieval weapon set,
+    // replacing the procedural energy-weapon primitives.
+    private const string SwordShieldFolder = "Assets/Danvil/Kit01SwordAndShield/Prefabs/";
+    // Polytope Studio "Low Poly Environment - Nature Free" (free) - scattered around
+    // the duel platform for an outdoor look, replacing the built dungeon arena.
+    private const string NatureTreeFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Trees/";
+    private const string NatureRockFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Rocks/";
     private const string ParticleFolder =
         "Assets/ThirdParty/KenneyParticlePack/PNG/";
     private const string SlashVfxFolder =
@@ -184,13 +189,14 @@ public static class BossDuelAssetLibraryBuilder
 
         library.fighterPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(FighterPath);
         library.combatController = controller;
-        // Back to the medieval dungeon kit + a plain default sky, per feedback that the
-        // SF modular set/space skybox didn't fit and the arena needs a visible floor again.
-        library.dungeonGate =
-            AssetDatabase.LoadAssetAtPath<GameObject>(DungeonFolder + "gate-door.fbx");
-        library.dungeonRoom = null;
-        library.dungeonCorridor = null;
-        library.arenaFloorLight = null;
+        // Outdoor nature setting + plain default sky, per feedback that the built
+        // dungeon/SF arenas were unwanted clutter - just place the duel on open ground.
+        library.natureTreeA =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NatureTreeFolder + "PT_Fruit_Tree_01_green.prefab");
+        library.natureTreeB =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NatureTreeFolder + "PT_Pine_Tree_03_green.prefab");
+        library.natureRock =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NatureRockFolder + "PT_Generic_Rock_01.prefab");
         library.skyboxMaterial = null;
         library.slashSprite = LoadParticleSprite("slash_02.png");
         library.impactSprite = LoadParticleSprite("star_03.png");
@@ -200,10 +206,10 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<GameObject>(SlashVfxFolder + "white-blue bolder.prefab");
         library.slashVfxVertical =
             AssetDatabase.LoadAssetAtPath<GameObject>(SlashVfxFolder + "slash-green bolder.prefab");
-        // Null on purpose: BossDuelPrototype falls back to procedural
-        // emissive energy blade/shield primitives when these are unset.
-        library.kevinSwordPrefab = null;
-        library.kevinShieldPrefab = null;
+        library.swordPrefab =
+            AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalSword.prefab");
+        library.shieldPrefab =
+            AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalShield.prefab");
         // Dedicated finished whoosh clips (not a raw build-up layer) for a
         // punchier swing sound.
         library.swordSlice = AssetDatabase.LoadAssetAtPath<AudioClip>(
