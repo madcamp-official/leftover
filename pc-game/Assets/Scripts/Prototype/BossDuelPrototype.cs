@@ -75,11 +75,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
         public Renderer[] renderers;
         public Color[] rendererBaseColors;
         public GroundedFighterRig groundedRig;
-        public AssetShieldFollower shieldFollower;
-        public AssetSwordFollower swordFollower;
         public TrailRenderer swordTrail;
         public Transform kickTarget;
         public float dodgeDirection = -1f;
+        // Gauge burned by the parry currently in its judging window. Refunded in full if the
+        // parry actually blocks an attack; stays spent if the window whiffs.
+        public float pendingParryCost;
     }
 
     private enum EffectKind
@@ -103,13 +104,17 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private const float PlayerAttackDamage = 18f;
     private const float EnemyAttackDamage = 22f;
     private const float MaxDefenseGauge = 3f;
-    private const float GuardGaugeCost = 1f;
-    private const float ParryGaugeCost = 0.5f;
-    private const float GaugeRecoveryPerSecond = 0.38f;
+    // Reinhardt shield model: holding basic guard continuously drains the gauge instead of a
+    // flat activation cost, and it only refills while the shield is down (not guarding or
+    // mid-parry). Parry has no flat cost either — it burns half of whatever is currently
+    // banked, so it stays available but a full-gauge parry costs more than a low-gauge one.
+    private const float GuardDrainPerSecond = 0.3f;
+    private const float GaugeRecoveryPerSecond = 0.19f;
+    private const float ParryMinGauge = 0.2f;
     private const float ParryWindow = 0.42f;
-    // Long enough to read which attack is coming (see AssetSwordFollower's
-    // explicit prepare pose and the blade telegraph tint in AnimateAssetFighter),
-    // short enough to still demand a fast reaction.
+    // Long enough to read which attack is coming (the windup clip itself plus the
+    // blade telegraph tint in AnimateAssetFighter), short enough to still demand a
+    // fast reaction.
     private const float AttackWindup = 0.36f;
 
     private Fighter _player;
@@ -135,6 +140,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private Material _enemyMaterial;
     private Material _stoneDark;
     private Material _stoneLight;
+    private Material _groundMaterial;
     private Material _goldMaterial;
     private Material _dangerMaterial;
     private Material _parryMaterial;
@@ -261,6 +267,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _enemy.hp = MaxHealth;
         _player.defenseGauge = MaxDefenseGauge;
         _enemy.defenseGauge = MaxDefenseGauge;
+        _player.pendingParryCost = 0f;
+        _enemy.pendingParryCost = 0f;
         _player.motion = Motion.Idle;
         _enemy.motion = Motion.Idle;
         _player.root.localScale = _player.baseScale;
@@ -318,20 +326,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
         {
             if (_player.motion != Motion.Guard)
             {
-                if (_player.defenseGauge < GuardGaugeCost)
+                if (_player.defenseGauge <= 0f)
                 {
                     _banner = "NO GUARD GAUGE";
                     _detail = "Wait for the defense gauge to recover.";
                     return;
                 }
-                _player.defenseGauge -= GuardGaugeCost;
                 SetMotion(_player, Motion.Guard, 0.12f);
             }
             return;
         }
 
-        if (_player.motion == Motion.Guard && (_input == null || !_input.IsGuarding))
+        if (_player.motion == Motion.Guard &&
+            (_input == null || !_input.IsGuarding || _player.defenseGauge <= 0f))
+        {
+            if (_player.defenseGauge <= 0f)
+            {
+                _banner = "SHIELD DEPLETED";
+                _detail = "Out of defense gauge — the shield drops.";
+            }
             SetMotion(_player, Motion.Idle, 0.2f);
+        }
 
         ResolveAttackIfNeeded(_player, true);
 
@@ -408,9 +423,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
         float dodgeChance = 0.24f + familiarity * 0.08f;
         float reaction = UnityEngine.Random.value;
         if (_enemyPhase == EnemyPhase.Waiting && reaction < parryChance &&
-            _enemy.defenseGauge >= ParryGaugeCost)
+            _enemy.defenseGauge > ParryMinGauge)
         {
-            _enemy.defenseGauge -= ParryGaugeCost;
+            float enemyParryCost = _enemy.defenseGauge * 0.5f;
+            _enemy.defenseGauge -= enemyParryCost;
+            _enemy.pendingParryCost = enemyParryCost;
             _enemyPhase = EnemyPhase.Parrying;
             _enemyPhaseEnds = Time.time + AttackWindup + 0.48f;
             SetMotion(_enemy, Motion.Parry, AttackWindup + 0.48f);
@@ -420,9 +437,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
         else if (_enemyPhase == EnemyPhase.Waiting &&
                  reaction < parryChance + guardChance &&
-                 _enemy.defenseGauge >= GuardGaugeCost)
+                 _enemy.defenseGauge > 0f)
         {
-            _enemy.defenseGauge -= GuardGaugeCost;
             _enemyPhase = EnemyPhase.Guarding;
             _enemyPhaseEnds = Time.time + AttackWindup + 0.85f;
             SetMotion(_enemy, Motion.Guard, AttackWindup + 0.85f);
@@ -483,14 +499,16 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void PlayerParry()
     {
-        if (!CanPlayerAct() || _player.defenseGauge < ParryGaugeCost)
+        if (!CanPlayerAct() || _player.defenseGauge <= ParryMinGauge)
         {
             _banner = "NO PARRY GAUGE";
-            _detail = "Parry requires 0.5 defense gauge.";
+            _detail = "Parry burns half your defense gauge — not enough saved up.";
             return;
         }
 
-        _player.defenseGauge -= ParryGaugeCost;
+        float parryCost = _player.defenseGauge * 0.5f;
+        _player.defenseGauge -= parryCost;
+        _player.pendingParryCost = parryCost;
         _playerParryUses++;
         _playerParryEnds = Time.time + ParryWindow;
         SetMotion(_player, Motion.Parry, ParryWindow);
@@ -509,12 +527,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void RecoverDefenseGauges()
     {
-        if (_player != null && _player.motion != Motion.Guard && _player.motion != Motion.Parry)
-            _player.defenseGauge = Mathf.Min(MaxDefenseGauge,
-                _player.defenseGauge + GaugeRecoveryPerSecond * Time.deltaTime);
-        if (_enemy != null && _enemy.motion != Motion.Guard && _enemy.motion != Motion.Parry)
-            _enemy.defenseGauge = Mathf.Min(MaxDefenseGauge,
-                _enemy.defenseGauge + GaugeRecoveryPerSecond * Time.deltaTime);
+        UpdateDefenseGauge(_player);
+        UpdateDefenseGauge(_enemy);
+    }
+
+    private static void UpdateDefenseGauge(Fighter fighter)
+    {
+        if (fighter == null)
+            return;
+
+        if (fighter.motion == Motion.Guard)
+        {
+            // Reinhardt shield: holding basic guard up continuously drains the gauge.
+            fighter.defenseGauge = Mathf.Max(0f,
+                fighter.defenseGauge - GuardDrainPerSecond * Time.deltaTime);
+        }
+        else if (fighter.motion != Motion.Parry)
+        {
+            // Only refills once the shield is fully down — not guarding, not mid-parry.
+            fighter.defenseGauge = Mathf.Min(MaxDefenseGauge,
+                fighter.defenseGauge + GaugeRecoveryPerSecond * Time.deltaTime);
+        }
     }
 
     private bool CanPlayerAct()
@@ -552,9 +585,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         if (parried)
         {
+            defender.defenseGauge = Mathf.Min(MaxDefenseGauge,
+                defender.defenseGauge + defender.pendingParryCost);
+            defender.pendingParryCost = 0f;
             StaggerAttacker(attacker, playerAttacking, 1.2f);
             _banner = playerAttacking ? "RIVAL PARRIED" : "PERFECT PARRY";
-            _detail = "Parry beats every attack. The attacker is staggered.";
+            _detail = "Parry beats every attack. The gauge spent on it is refunded.";
             SpawnActionEffect(Vector3.Lerp(attacker.root.position, defender.root.position, 0.5f) +
                 Vector3.up * 1.35f, ParryEffectFor(attacker.motion), 1.45f);
             PlayParrySound(attacker.motion);
@@ -1131,7 +1167,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
         CreateAssetShield(fighter, leftHand, root, teamMaterial);
         CreateAssetSword(fighter, rightHand, root);
-        fighter.groundedRig.ConfigureCombatHands(fighter.swordPivot, fighter.shieldPivot);
 
         fighter.renderers = model.GetComponentsInChildren<Renderer>(true);
         fighter.rendererBaseColors = new Color[fighter.renderers.Length];
@@ -1163,20 +1198,21 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (leftHand == null)
             return;
 
+        // Parented directly to the hand bone (not a procedurally-driven pivot) so the
+        // shield simply follows whatever the real animation clip (Idle/Guard/Parry) is
+        // doing this frame.
         var mount = new GameObject("Left Hand Shield");
-        mount.transform.SetParent(fighterRoot);
-        AssetShieldFollower follower = mount.AddComponent<AssetShieldFollower>();
-        follower.Configure(leftHand, fighterRoot);
-        fighter.shieldFollower = follower;
-
+        mount.transform.SetParent(leftHand);
+        mount.transform.localPosition = new Vector3(0f, 0.05f, 0.03f);
+        mount.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
         fighter.shieldPivot = mount.transform;
-        if (_assetLibrary != null && _assetLibrary.kevinShieldPrefab != null)
+        if (_assetLibrary != null && _assetLibrary.shieldPrefab != null)
         {
-            GameObject shield = Instantiate(_assetLibrary.kevinShieldPrefab, mount.transform);
-            shield.name = "Kevin Iglesias Shield";
+            GameObject shield = Instantiate(_assetLibrary.shieldPrefab, mount.transform);
+            shield.name = "Medieval Shield";
             shield.transform.localPosition = Vector3.zero;
-            shield.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            shield.transform.localScale = Vector3.one * 1.12f;
+            shield.transform.localRotation = Quaternion.identity;
+            shield.transform.localScale = Vector3.one;
             Renderer[] renderers = shield.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers, teamMaterial.color);
             fighter.shieldRenderer = renderers.Length > 0 ? renderers[0] : null;
@@ -1201,22 +1237,22 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (rightHand == null)
             return;
 
-        Transform mount = new GameObject("Right Hand Sword (Constrained)").transform;
-        mount.SetParent(fighterRoot);
-        AssetSwordFollower follower = mount.gameObject.AddComponent<AssetSwordFollower>();
-        follower.Configure(rightHand, fighterRoot);
-        fighter.swordFollower = follower;
+        // Parented directly to the hand bone (not a procedurally-driven pivot) so the
+        // sword simply follows whatever the real animation clip (Idle/slash/etc) is
+        // doing this frame.
+        Transform mount = new GameObject("Right Hand Sword").transform;
+        mount.SetParent(rightHand);
+        mount.localPosition = new Vector3(0f, 0.05f, 0f);
+        mount.localRotation = Quaternion.identity;
         fighter.swordPivot = mount;
 
-        if (_assetLibrary != null && _assetLibrary.kevinSwordPrefab != null)
+        if (_assetLibrary != null && _assetLibrary.swordPrefab != null)
         {
-            GameObject sword = Instantiate(_assetLibrary.kevinSwordPrefab, mount);
-            sword.name = "Kevin Iglesias Sword";
-            sword.transform.localPosition = new Vector3(0f, 0.10f, 0f);
-            // Kevin's sword mesh is authored along local X, while the constrained
-            // combat rig treats local Y as the blade axis.
-            sword.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
-            sword.transform.localScale = Vector3.one * 1.18f;
+            GameObject sword = Instantiate(_assetLibrary.swordPrefab, mount);
+            sword.name = "Medieval Sword";
+            sword.transform.localPosition = Vector3.zero;
+            sword.transform.localRotation = Quaternion.identity;
+            sword.transform.localScale = Vector3.one;
             Renderer[] renderers = sword.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers,
                 fighter.facesRight ? new Color(0.18f, 0.62f, 1f) :
@@ -1238,10 +1274,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _bladeCoreMaterial);
         }
 
-        // A trail on the blade tip traces whatever arc the sword actually
-        // swings through - horizontal cuts read as a horizontal streak,
-        // vertical cuts as a vertical one, for free from the real motion
-        // (see AssetSwordFollower) instead of a separate canned effect.
+        // A trail on the blade tip traces whatever arc the sword actually swings
+        // through - horizontal cuts read as a horizontal streak, vertical cuts as a
+        // vertical one, for free from the real animation clip's hand motion instead
+        // of a separate canned effect.
         Transform tip = new GameObject("Sword Blade Tip").transform;
         tip.SetParent(mount);
         tip.localPosition = new Vector3(0f, 1.68f, 0f);
@@ -1385,34 +1421,18 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 (0.22f + kickDrive * 1.02f) + fighter.root.right * 0.16f;
         }
         UpdateBladeTelegraph(fighter);
-        SwordPose swordPose = fighter.motion switch
-        {
-            Motion.PrepareHorizontal => SwordPose.PrepareHorizontal,
-            Motion.PrepareVertical => SwordPose.PrepareVertical,
-            Motion.HorizontalSlash => SwordPose.StrikeHorizontal,
-            Motion.VerticalSlash => SwordPose.StrikeVertical,
-            _ => SwordPose.Idle
-        };
-        if (fighter.swordFollower != null)
-            fighter.swordFollower.SetPose(swordPose, t);
+        // Sword/shield are bone-parented to the actual hand transforms (see
+        // CreateAssetSword/CreateAssetShield), so they simply move with whatever
+        // the Mixamo clip's real arm animation is doing this frame - no procedural
+        // hand IK override, no separate pose follower.
+        bool swordActive = fighter.motion == Motion.PrepareHorizontal ||
+            fighter.motion == Motion.PrepareVertical ||
+            fighter.motion == Motion.HorizontalSlash ||
+            fighter.motion == Motion.VerticalSlash;
         if (fighter.swordTrail != null)
-            fighter.swordTrail.emitting = swordPose != SwordPose.Idle;
-        if (fighter.shieldFollower != null)
-            fighter.shieldFollower.SetPose(
-                fighter.motion == Motion.Guard,
-                fighter.motion == Motion.Parry,
-                t);
+            fighter.swordTrail.emitting = swordActive;
         if (fighter.groundedRig != null)
         {
-            // The sword hand is IK-driven (via AssetSwordFollower's explicit
-            // pose) only while winding up or striking, so the readable
-            // horizontal/vertical geometry actually reaches the visible
-            // blade instead of whatever the authored clip's hand does.
-            fighter.groundedRig.lockRightHand = swordPose != SwordPose.Idle;
-            // The shield mount is always the left-hand target, keeping the
-            // shield attached while resting outside the torso as well as
-            // during the guard-to-parry extension.
-            fighter.groundedRig.lockLeftHand = fighter.shieldFollower != null;
             fighter.groundedRig.kickActive = fighter.motion == Motion.Kick;
             fighter.groundedRig.crouchWeight = fighter.motion == Motion.DodgeCrouch
                 ? Mathf.Sin(t * Mathf.PI) : 0f;
@@ -1462,15 +1482,19 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         if (motion == Motion.Idle)
         {
-            fighter.animator.speed = 1f;
+            // A held, motionless pose instead of a perpetually-looping mocap clip -
+            // even subtle idle sway reads as constant jitter once the fighter is
+            // otherwise still, so freeze on the clip's first frame.
             if (fighter.animator.layerCount > 1)
                 fighter.animator.SetLayerWeight(1, 0f);
             fighter.animator.Play(Animator.StringToHash("Idle"), 0, 0f);
+            fighter.animator.speed = 1f;
+            fighter.animator.Update(0f);
+            fighter.animator.speed = 0f;
             return;
         }
 
-        if (motion == Motion.PrepareKick || motion == Motion.Kick ||
-            motion == Motion.Guard)
+        if (motion == Motion.PrepareKick || motion == Motion.Kick)
         {
             fighter.animator.speed = 1f;
             if (fighter.animator.layerCount > 1)
@@ -1478,7 +1502,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             return;
         }
 
-        bool preparing = IsPrepareMotion(motion);
+        // Horizontal/vertical slash each have one continuous swing clip covering
+        // both the windup and the strike - only (re)start it when entering the
+        // windup (PrepareHorizontal/PrepareVertical). The follow-up
+        // HorizontalSlash/VerticalSlash motion just lets that same clip keep
+        // playing, so the swing reads as one motion instead of rewinding to
+        // frame 0 partway through.
         Motion clipMotion = motion == Motion.PrepareHorizontal ? Motion.HorizontalSlash
             : motion == Motion.PrepareVertical ? Motion.VerticalSlash
             : motion;
@@ -1486,19 +1515,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (fighter.animator.layerCount > 1 && fighter.animator.HasState(1, state))
         {
             fighter.animator.SetLayerWeight(1, 1f);
-            if (preparing || IsAttackMotion(motion))
-            {
-                // Attack poses are sampled deterministically in
-                // SampleAuthoredSwordAnimation for authored anticipation,
-                // acceleration and recovery timing.
-                fighter.animator.speed = 0f;
-                fighter.animator.Play(state, 1, preparing ? 0.02f : 0.18f);
-            }
-            else
-            {
-                fighter.animator.speed = 1f;
+            fighter.animator.speed = 1f;
+            bool continuesWindup = motion == Motion.HorizontalSlash || motion == Motion.VerticalSlash;
+            if (!continuesWindup)
                 fighter.animator.Play(state, 1, 0f);
-            }
         }
     }
 
@@ -1553,22 +1573,22 @@ public sealed class BossDuelPrototype : MonoBehaviour
             cameraObject.AddComponent<AudioListener>();
         }
 
-        // Player-side over-the-shoulder view: the blue fighter stays in the
-        // foreground while the rival and its attack telegraphs remain readable.
-        camera.transform.position = new Vector3(-6.4f, 3.15f, -3.25f);
-        camera.transform.LookAt(new Vector3(1.15f, 1.28f, 0f));
-        camera.fieldOfView = 58f;
-        camera.backgroundColor = new Color(0.025f, 0.035f, 0.06f);
+        // Pokemon-battle style framing: camera sits close behind/beside the player so
+        // only their upper body looms in the lower-left foreground, while the rival
+        // stands further off to the right, fully visible and looking larger/closer
+        // than the old wide establishing shot.
+        camera.transform.position = new Vector3(-4.4f, 2.0f, -1.9f);
+        camera.transform.LookAt(new Vector3(1.7f, 1.0f, 0.3f));
+        camera.fieldOfView = 42f;
+        camera.backgroundColor = new Color(0.53f, 0.7f, 0.87f);
+        // Ordinary sky: always clear to the skybox, but only override RenderSettings.skybox
+        // when the library supplies a custom one. Otherwise this leaves whatever skybox the
+        // Scene's own Lighting settings already have (Unity's default procedural sky), rather
+        // than forcing a specific look here.
         Material skybox = _assetLibrary != null ? _assetLibrary.skyboxMaterial : null;
+        camera.clearFlags = CameraClearFlags.Skybox;
         if (skybox != null)
-        {
             RenderSettings.skybox = skybox;
-            camera.clearFlags = CameraClearFlags.Skybox;
-        }
-        else
-        {
-            camera.clearFlags = CameraClearFlags.SolidColor;
-        }
         _mainCamera = camera;
         _cameraRestPosition = camera.transform.position;
 
@@ -1594,124 +1614,75 @@ public sealed class BossDuelPrototype : MonoBehaviour
         var arena = new GameObject("Arena").transform;
         arena.SetParent(transform);
 
-        if (_assetLibrary != null && _assetLibrary.dungeonGate != null)
-        {
-            GameObject gate = Instantiate(_assetLibrary.dungeonGate, arena);
-            gate.name = "Sci-Fi Modular Door";
-            gate.transform.localPosition = new Vector3(2.25f, 0f, 4.05f);
-            gate.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            gate.transform.localScale = Vector3.one * 1.4f;
-            ConvertDungeonMaterials(gate.GetComponentsInChildren<Renderer>(true));
-        }
+        // Just open outdoor ground with a light scatter of the Low Poly Nature pack's
+        // trees/rocks around the duel - no built structure, no platform disc, per
+        // feedback that the enclosed dungeon/SF sets and floor disc were unwanted
+        // clutter. First pass: place the fight straight on the field.
+        CreatePrimitive(PrimitiveType.Plane, "Ground", arena,
+            Vector3.zero, new Vector3(6f, 1f, 6f), _groundMaterial);
 
-        if (_assetLibrary != null && _assetLibrary.dungeonRoom != null)
-        {
-            for (int i = -1; i <= 1; i += 2)
-            {
-                GameObject wall = Instantiate(_assetLibrary.dungeonRoom, arena);
-                wall.name = "Sci-Fi Modular Backdrop";
-                wall.transform.localPosition = new Vector3(5.4f * i, 0f, 2.6f);
-                wall.transform.localRotation = Quaternion.Euler(0f, i < 0 ? 200f : 160f, 0f);
-                wall.transform.localScale = Vector3.one * 1.6f;
-                ConvertDungeonMaterials(wall.GetComponentsInChildren<Renderer>(true));
-            }
-        }
-
-        if (_assetLibrary != null && _assetLibrary.dungeonCorridor != null)
-        {
-            GameObject floor = Instantiate(_assetLibrary.dungeonCorridor, arena);
-            floor.name = "Sci-Fi Modular Approach Floor";
-            floor.transform.localPosition = new Vector3(0f, -0.16f, 4.6f);
-            floor.transform.localScale = new Vector3(5.5f, 1f, 2.4f);
-            ConvertDungeonMaterials(floor.GetComponentsInChildren<Renderer>(true));
-        }
-
-        CreatePrimitive(PrimitiveType.Cylinder, "Duel Platform", arena,
-            new Vector3(0f, -0.15f, 0f), new Vector3(5.6f, 0.28f, 5.6f), _stoneDark);
-        CreatePrimitive(PrimitiveType.Cylinder, "Platform Inlay", arena,
-            new Vector3(0f, 0.03f, 0f), new Vector3(4.75f, 0.06f, 4.75f), _stoneLight);
-
-        // Real sci-fi light props ring the platform instead of the old
-        // primitive gold/black bars.
-        GameObject floorLightPrefab = _assetLibrary != null ? _assetLibrary.arenaFloorLight : null;
-        for (int i = 0; i < 8; i++)
-        {
-            float angle = i * Mathf.PI * 2f / 8f;
-            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.6f, 0.05f, Mathf.Sin(angle) * 4.6f);
-            if (floorLightPrefab != null)
-            {
-                GameObject prop = Instantiate(floorLightPrefab, arena);
-                prop.name = "Sci-Fi Modular Floor Light";
-                prop.transform.localPosition = point;
-                prop.transform.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
-                prop.transform.localScale = Vector3.one * 0.8f;
-                ConvertDungeonMaterials(prop.GetComponentsInChildren<Renderer>(true));
-            }
-            else
-            {
-                CreatePrimitive(PrimitiveType.Cylinder, "Arena Floor Marker", arena,
-                    point, new Vector3(0.22f, 0.05f, 0.22f), _parryMaterial);
-            }
-        }
-
-        for (int i = -1; i <= 1; i += 2)
-        {
-            CreatePrimitive(PrimitiveType.Cylinder, "Pillar", arena,
-                new Vector3(6.6f * i, 1.4f, 3.6f), new Vector3(0.55f, 1.4f, 0.55f), _stoneDark);
-            CreatePrimitive(PrimitiveType.Sphere, "Pillar Flame", arena,
-                new Vector3(6.6f * i, 3.05f, 3.6f), new Vector3(0.3f, 0.45f, 0.3f),
-                i < 0 ? _playerMaterial : _enemyMaterial);
-        }
-
-        CreatePrimitive(PrimitiveType.Cube, "Back Wall", arena,
-            new Vector3(0f, 1.75f, 4.2f), new Vector3(13f, 3.5f, 0.35f), _stoneDark);
-        for (int i = -5; i <= 5; i += 2)
-        {
-            CreatePrimitive(PrimitiveType.Cube, "Wall Accent", arena,
-                new Vector3(i, 2.1f, 3.98f), new Vector3(0.16f, 2.1f, 0.08f), _goldMaterial);
-        }
+        GameObject treeA = _assetLibrary != null ? _assetLibrary.natureTreeA : null;
+        GameObject treeB = _assetLibrary != null ? _assetLibrary.natureTreeB : null;
+        GameObject rock = _assetLibrary != null ? _assetLibrary.natureRock : null;
+        ScatterNatureProp(treeA, arena, new Vector3(-7.5f, 0f, 3.5f), 60f);
+        ScatterNatureProp(treeB, arena, new Vector3(7.5f, 0f, 4f), -40f);
+        ScatterNatureProp(treeA, arena, new Vector3(-8f, 0f, -3f), 160f);
+        ScatterNatureProp(treeB, arena, new Vector3(8.5f, 0f, -4.5f), 200f);
+        ScatterNatureProp(rock, arena, new Vector3(-4.5f, 0f, 6f), 20f);
+        ScatterNatureProp(rock, arena, new Vector3(5f, 0f, -6.5f), 100f);
     }
 
-    private void ConvertDungeonMaterials(Renderer[] renderers)
+    private static void ScatterNatureProp(GameObject prefab, Transform parent, Vector3 position, float yaw)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
+        if (prefab == null)
+            return;
+        GameObject instance = Instantiate(prefab, parent);
+        instance.transform.localPosition = position;
+        instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+        ConvertNaturePropMaterialsToUrp(instance.GetComponentsInChildren<Renderer>(true));
+    }
+
+    // The nature pack's custom Built-in RP shaders render magenta ("missing shader") under
+    // URP unless its separate URP sub-package is imported too. Rebuild each instance's
+    // materials as URP/Lit instead - but unlike the fighter materials, these source
+    // materials carry no usable _Color/_MainTex (the pack paints trunk/foliage color via
+    // per-vertex color that a plain URP/Lit shader never samples), so blending toward a
+    // light hint color leaves everything flat white. Infer a plausible tint from the
+    // material name instead.
+    private static void ConvertNaturePropMaterialsToUrp(Renderer[] renderers)
+    {
+        Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+        if (litShader == null)
             return;
 
+        var converted = new System.Collections.Generic.Dictionary<Material, Material>();
         foreach (Renderer renderer in renderers)
         {
             Material[] materials = renderer.materials;
             for (int i = 0; i < materials.Length; i++)
             {
                 Material source = materials[i];
-                var replacement = new Material(shader);
-                Texture texture = source != null && source.HasProperty("_MainTex")
-                    ? source.mainTexture : null;
-                if (texture != null && replacement.HasProperty("_BaseMap"))
-                    replacement.SetTexture("_BaseMap", texture);
-                // Keep the sci-fi pack's own tint/metal/gloss instead of a
-                // flat gray recolor, so its panel and emissive detailing survives
-                // the Standard -> URP shader swap.
-                Color sourceColor = source != null && source.HasProperty("_Color")
-                    ? source.color : new Color(0.6f, 0.66f, 0.74f);
-                if (replacement.HasProperty("_BaseColor"))
-                    replacement.SetColor("_BaseColor", sourceColor);
-                float sourceMetallic = source != null && source.HasProperty("_Metallic")
-                    ? source.GetFloat("_Metallic") : 0.55f;
-                float sourceSmoothness = source != null && source.HasProperty("_Glossiness")
-                    ? source.GetFloat("_Glossiness") : 0.5f;
-                replacement.SetFloat("_Metallic", sourceMetallic);
-                replacement.SetFloat("_Smoothness", sourceSmoothness);
-                if (source != null && source.HasProperty("_EmissionColor"))
+                if (source == null)
+                    continue;
+
+                if (!converted.TryGetValue(source, out Material replacement))
                 {
-                    Color emission = source.GetColor("_EmissionColor");
-                    if (emission.maxColorComponent > 0f)
-                    {
-                        replacement.EnableKeyword("_EMISSION");
-                        replacement.globalIlluminationFlags =
-                            MaterialGlobalIlluminationFlags.RealtimeEmissive;
-                        replacement.SetColor("_EmissionColor", emission);
-                    }
+                    replacement = new Material(litShader) { name = source.name + " Duel URP" };
+                    string n = source.name.ToLowerInvariant();
+                    Color tint = n.Contains("leaf") || n.Contains("leaves") || n.Contains("foliage")
+                        ? new Color(0.28f, 0.5f, 0.16f)
+                        : n.Contains("trunk") || n.Contains("bark")
+                            ? new Color(0.35f, 0.24f, 0.14f)
+                            : n.Contains("rock")
+                                ? new Color(0.45f, 0.44f, 0.42f)
+                                : new Color(0.6f, 0.6f, 0.6f);
+                    if (replacement.HasProperty("_BaseColor"))
+                        replacement.SetColor("_BaseColor", tint);
+                    if (replacement.HasProperty("_Color"))
+                        replacement.SetColor("_Color", tint);
+                    if (replacement.HasProperty("_Smoothness"))
+                        replacement.SetFloat("_Smoothness", 0.1f);
+                    converted[source] = replacement;
                 }
                 materials[i] = replacement;
             }
@@ -2094,6 +2065,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         // Dark gunmetal hull plating instead of stone.
         _stoneDark = CreateMaterial(new Color(0.045f, 0.05f, 0.065f), 0.75f, 0.55f);
         _stoneLight = CreateMaterial(new Color(0.14f, 0.16f, 0.2f), 0.7f, 0.6f);
+        _groundMaterial = CreateMaterial(new Color(0.24f, 0.42f, 0.16f), 0f, 0.15f);
         // Amber energy trim, glowing, in place of the old flat gold accent.
         _goldMaterial = CreateMaterial(new Color(1f, 0.62f, 0.1f), 0.4f, 0.85f,
             new Color(1f, 0.5f, 0.05f) * 2.2f);
@@ -2378,7 +2350,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         GUI.DrawTexture(new Rect(width * 0.5f - 385f, referenceHeight - 92f, 770f, 56f), Texture2D.whiteTexture);
         GUI.color = Color.white;
         GUI.Label(new Rect(width * 0.5f - 380f, referenceHeight - 87f, 760f, 26f),
-            "J HORIZONTAL   K VERTICAL   L KICK   SPACE GUARD (1.0)   F PARRY (0.5)", _smallStyle);
+            "J HORIZONTAL   K VERTICAL   L KICK   SPACE GUARD (drains/sec)   F PARRY (half of current gauge)", _smallStyle);
         GUI.Label(new Rect(width * 0.5f - 380f, referenceHeight - 63f, 760f, 22f),
             "S CROUCH DODGE   A / D SIDE DODGE   •   R RESTART", _smallStyle);
 
@@ -2567,15 +2539,9 @@ public sealed class GroundedFighterRig : MonoBehaviour
     private Transform _rightFoot;
     private Vector3 _leftFootAnchor;
     private Vector3 _rightFootAnchor;
-    private Quaternion _leftFootRotation;
-    private Quaternion _rightFootRotation;
     private bool _ready;
-    private Transform _rightHandTarget;
-    private Transform _leftHandTarget;
     private Transform _kickFootTarget;
     public bool lockFeet = true;
-    public bool lockRightHand;
-    public bool lockLeftHand;
     public bool kickActive;
     public float crouchWeight;
     public float lateralWeight;
@@ -2587,12 +2553,6 @@ public sealed class GroundedFighterRig : MonoBehaviour
         _fighterRoot = fighterRoot;
     }
 
-    public void ConfigureCombatHands(Transform rightHandTarget, Transform leftHandTarget)
-    {
-        _rightHandTarget = rightHandTarget;
-        _leftHandTarget = leftHandTarget;
-    }
-
     public void ConfigureKickFoot(Transform kickFootTarget)
     {
         _kickFootTarget = kickFootTarget;
@@ -2600,18 +2560,28 @@ public sealed class GroundedFighterRig : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (_ready || _animator == null || !_animator.isHuman || _fighterRoot == null)
+        if (_animator == null || !_animator.isHuman || _fighterRoot == null)
             return;
 
-        _leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
-        _rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
         if (_leftFoot == null || _rightFoot == null)
-            return;
+        {
+            _leftFoot = _animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+            _rightFoot = _animator.GetBoneTransform(HumanBodyBones.RightFoot);
+            if (_leftFoot == null || _rightFoot == null)
+                return;
+        }
 
-        _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
-        _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
-        _leftFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _leftFoot.rotation;
-        _rightFootRotation = Quaternion.Inverse(_fighterRoot.rotation) * _rightFoot.rotation;
+        // Keep tracking the live animated foot pose while standing normally, instead of
+        // freezing a single snapshot forever — a one-time snapshot fights the continuously
+        // looping Idle clip's natural leg motion (feet pinned while hips/knees keep moving
+        // per the clip), which reads as floating/bent legs on more dynamic mocap sources.
+        // Only hold the anchor still while a body-offset pose (crouch/dodge) is active, so
+        // the hip can shift relative to planted feet without them sliding across the floor.
+        if (Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
+        {
+            _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
+            _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
+        }
         _ready = true;
     }
 
@@ -2620,14 +2590,16 @@ public sealed class GroundedFighterRig : MonoBehaviour
         if (!_ready || !lockFeet || _animator == null || _fighterRoot == null)
             return;
 
+        // Only the foot POSITION is IK-driven (for grounding during the crouch/dodge hip
+        // offset below). Rotation is intentionally left to the Animator — continuously
+        // reading a live foot rotation back into IK the same frame it was applied created
+        // a feedback loop that showed up as the ankle spinning in place.
         _animator.SetIKPositionWeight(AvatarIKGoal.LeftFoot, 1f);
-        _animator.SetIKRotationWeight(AvatarIKGoal.LeftFoot, 1f);
+        _animator.SetIKRotationWeight(AvatarIKGoal.LeftFoot, 0f);
         _animator.SetIKPositionWeight(AvatarIKGoal.RightFoot, 1f);
-        _animator.SetIKRotationWeight(AvatarIKGoal.RightFoot, 1f);
+        _animator.SetIKRotationWeight(AvatarIKGoal.RightFoot, 0f);
         _animator.SetIKPosition(AvatarIKGoal.LeftFoot, _fighterRoot.TransformPoint(_leftFootAnchor));
         _animator.SetIKPosition(AvatarIKGoal.RightFoot, _fighterRoot.TransformPoint(_rightFootAnchor));
-        _animator.SetIKRotation(AvatarIKGoal.LeftFoot, _fighterRoot.rotation * _leftFootRotation);
-        _animator.SetIKRotation(AvatarIKGoal.RightFoot, _fighterRoot.rotation * _rightFootRotation);
         if (kickActive && _kickFootTarget != null)
         {
             _animator.SetIKPositionWeight(AvatarIKGoal.RightFoot, 1f);
@@ -2639,185 +2611,6 @@ public sealed class GroundedFighterRig : MonoBehaviour
         bodyPosition -= _fighterRoot.up * (0.42f * crouchWeight);
         bodyPosition += _fighterRoot.right * (0.28f * lateralWeight * lateralDirection);
         _animator.bodyPosition = bodyPosition;
-
-        float rightHandWeight = lockRightHand ? 1f : 0f;
-        float leftHandWeight = lockLeftHand ? 1f : 0f;
-        if (_rightHandTarget != null)
-        {
-            _animator.SetIKPositionWeight(AvatarIKGoal.RightHand, rightHandWeight);
-            _animator.SetIKRotationWeight(AvatarIKGoal.RightHand, rightHandWeight);
-            _animator.SetIKPosition(AvatarIKGoal.RightHand, _rightHandTarget.position);
-            _animator.SetIKRotation(AvatarIKGoal.RightHand, _rightHandTarget.rotation);
-        }
-        if (_leftHandTarget != null)
-        {
-            _animator.SetIKPositionWeight(AvatarIKGoal.LeftHand, leftHandWeight);
-            _animator.SetIKRotationWeight(AvatarIKGoal.LeftHand, leftHandWeight);
-            _animator.SetIKPosition(AvatarIKGoal.LeftHand, _leftHandTarget.position);
-            _animator.SetIKRotation(AvatarIKGoal.LeftHand, _leftHandTarget.rotation);
-        }
     }
 }
 
-public enum SwordPose { Idle, PrepareHorizontal, PrepareVertical, StrikeHorizontal, StrikeVertical }
-
-// Drives the sword pivot explicitly from the fighter's own axes - the same
-// approach AssetShieldFollower uses for the shield - instead of sampling an
-// imported clip's hand track. That's what makes the two attacks readable as
-// distinct shapes: horizontal is a full left-to-right sweep, vertical is a
-// straight overhead raise followed by a downward chop.
-public sealed class AssetSwordFollower : MonoBehaviour
-{
-    private Transform _fighterRoot;
-    private SwordPose _pose;
-    private float _progress;
-
-    public void Configure(Transform hand, Transform fighterRoot)
-    {
-        _fighterRoot = fighterRoot;
-    }
-
-    public void SetPose(SwordPose pose, float progress)
-    {
-        _pose = pose;
-        _progress = Mathf.Clamp01(progress);
-    }
-
-    private void LateUpdate()
-    {
-        if (_fighterRoot == null)
-            return;
-
-        Vector3 forward = _fighterRoot.forward;
-        Vector3 up = _fighterRoot.up;
-        Vector3 right = _fighterRoot.right;
-
-        // Blade rest position/pointing when nothing is happening - hangs at
-        // the hip, angled forward-down.
-        Vector3 position = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
-        Vector3 bladeDirection = (up * 0.4f - forward * 0.6f).normalized;
-
-        switch (_pose)
-        {
-            case SwordPose.PrepareHorizontal:
-            {
-                // Wind up by pulling the blade all the way out to the
-                // fighter's own left, roughly level with the chest.
-                float wind = Mathf.SmoothStep(0f, 1f, _progress);
-                Vector3 restPos = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
-                Vector3 leftPos = _fighterRoot.position + up * 1.3f - right * 0.95f + forward * 0.3f;
-                position = Vector3.Lerp(restPos, leftPos, wind);
-                bladeDirection = Vector3.Lerp((up * 0.4f - forward * 0.6f).normalized, -right, wind);
-                break;
-            }
-            case SwordPose.StrikeHorizontal:
-            {
-                // Sweep a full 180 degrees from the left extreme through the
-                // center to the right extreme.
-                float swing = _progress;
-                Vector3 leftPos = _fighterRoot.position + up * 1.3f - right * 0.95f + forward * 0.3f;
-                Vector3 rightPos = _fighterRoot.position + up * 1.3f + right * 0.95f + forward * 0.3f;
-                float arc = Mathf.Sin(swing * Mathf.PI) * 0.35f;
-                position = Vector3.Lerp(leftPos, rightPos, swing) + forward * arc;
-                bladeDirection = Vector3.Lerp(-right, right, swing).normalized;
-                break;
-            }
-            case SwordPose.PrepareVertical:
-            {
-                // Raise the blade straight up above the head.
-                float wind = Mathf.SmoothStep(0f, 1f, _progress);
-                Vector3 restPos = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
-                Vector3 overhead = _fighterRoot.position + up * 2.05f + forward * 0.2f;
-                position = Vector3.Lerp(restPos, overhead, wind);
-                bladeDirection = Vector3.Lerp((up * 0.4f - forward * 0.6f).normalized, up, wind);
-                break;
-            }
-            case SwordPose.StrikeVertical:
-            {
-                // Chop straight down from overhead to a forward-low finish.
-                float swing = _progress;
-                Vector3 overhead = _fighterRoot.position + up * 2.05f + forward * 0.2f;
-                Vector3 lowFinish = _fighterRoot.position + up * 0.4f + forward * 1.1f;
-                position = Vector3.Lerp(overhead, lowFinish, swing);
-                bladeDirection = Vector3.Lerp(up, (forward + up * 0.15f).normalized, swing);
-                break;
-            }
-        }
-
-        Quaternion rotation = Quaternion.FromToRotation(Vector3.up, bladeDirection.normalized);
-        float positionSpeed = _pose == SwordPose.Idle ? 20f : 40f;
-        float rotationSpeed = _pose == SwordPose.Idle ? 20f : 46f;
-        transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-positionSpeed * Time.deltaTime));
-        transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-rotationSpeed * Time.deltaTime));
-    }
-}
-
-public sealed class AssetShieldFollower : MonoBehaviour
-{
-    private Transform _hand;
-    private Transform _fighterRoot;
-    private bool _guarding;
-    private bool _parrying;
-    private float _progress;
-
-    public void Configure(Transform hand, Transform fighterRoot)
-    {
-        _hand = hand;
-        _fighterRoot = fighterRoot;
-    }
-
-    public void SetPose(bool guarding, bool parrying, float progress)
-    {
-        _guarding = guarding;
-        _parrying = parrying;
-        _progress = progress;
-    }
-
-    private void LateUpdate()
-    {
-        if (_hand == null || _fighterRoot == null)
-            return;
-
-        Vector3 up = _fighterRoot.up;
-        Vector3 forward = _fighterRoot.forward;
-        Vector3 left = -_fighterRoot.right;
-
-        // The shield primitive's flat face normal runs along its local Y
-        // axis, so aligning that with "forward" points the face squarely at
-        // the opponent - the read a block needs.
-        Quaternion faceForward = Quaternion.FromToRotation(Vector3.up, forward);
-
-        Vector3 restPosition = _fighterRoot.position + up * 1.05f - forward * 0.1f + left * 0.42f;
-        Quaternion restRotation = faceForward * Quaternion.AngleAxis(35f, forward);
-
-        Vector3 guardPosition = _fighterRoot.position + up * 1.32f + forward * 0.5f;
-        Quaternion guardRotation = faceForward;
-
-        Vector3 position = restPosition;
-        Quaternion rotation = restRotation;
-
-        if (_guarding)
-        {
-            position = guardPosition;
-            rotation = guardRotation;
-        }
-        else if (_parrying)
-        {
-            // Hold the guard face, then bat it outward with a fast yaw sweep
-            // around the vertical axis - a deflect, not a lunge - and spring
-            // back to guard.
-            float sweep = Mathf.Sin(Mathf.Clamp01(_progress) * Mathf.PI);
-            position = guardPosition + left * (0.55f * sweep) + forward * (0.25f * sweep);
-            rotation = guardRotation * Quaternion.AngleAxis(100f * sweep, up);
-        }
-
-        float positionSpeed = _parrying ? 46f : 30f;
-        float rotationSpeed = _parrying ? 52f : 34f;
-        transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-positionSpeed * Time.deltaTime));
-        transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-rotationSpeed * Time.deltaTime));
-    }
-}
