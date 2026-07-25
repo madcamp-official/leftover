@@ -77,6 +77,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         public GroundedFighterRig groundedRig;
         public AssetShieldFollower shieldFollower;
         public AssetSwordFollower swordFollower;
+        public TrailRenderer swordTrail;
         public Transform kickTarget;
         public float dodgeDirection = -1f;
     }
@@ -106,7 +107,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private const float ParryGaugeCost = 0.5f;
     private const float GaugeRecoveryPerSecond = 0.38f;
     private const float ParryWindow = 0.42f;
-    private const float AttackWindup = 0.2f;
+    // Long enough to read which attack is coming (see AssetSwordFollower's
+    // explicit prepare pose and the blade telegraph tint in AnimateAssetFighter),
+    // short enough to still demand a fast reaction.
+    private const float AttackWindup = 0.36f;
 
     private Fighter _player;
     private Fighter _enemy;
@@ -135,6 +139,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private Material _dangerMaterial;
     private Material _parryMaterial;
     private Material _dodgeMaterial;
+    private Material _bladeCoreMaterial;
     private AudioSource _audioSource;
     private AudioSource _audioLayerA;
     private AudioSource _audioLayerB;
@@ -1078,7 +1083,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         fighter.root = root;
 
         GameObject model = Instantiate(_assetLibrary.fighterPrefab, root);
-        model.name = fighterName + " Model (EEJANAI)";
+        model.name = fighterName + " Model";
         model.transform.localPosition = Vector3.zero;
         model.transform.localRotation = Quaternion.identity;
         model.transform.localScale = Vector3.one;
@@ -1128,13 +1133,15 @@ public sealed class BossDuelPrototype : MonoBehaviour
         ConvertFighterMaterialsToUrp(fighter.renderers, teamColor);
         for (int i = 0; i < fighter.renderers.Length; i++)
         {
+            // ConvertFighterMaterialsToUrp already applied the team hint; read
+            // it back as-is instead of blending a second time (that compounded
+            // into a flat, detail-less team color).
             Material shared = fighter.renderers[i].sharedMaterial;
-            Color original = shared != null && shared.HasProperty("_BaseColor")
+            fighter.rendererBaseColors[i] = shared != null && shared.HasProperty("_BaseColor")
                 ? shared.GetColor("_BaseColor")
                 : shared != null && shared.HasProperty("_Color")
                     ? shared.color
                     : Color.white;
-            fighter.rendererBaseColors[i] = Color.Lerp(original, teamColor, 0.28f);
         }
         fighter.bodyRenderer = fighter.renderers.Length > 0 ? fighter.renderers[0] : null;
         RestoreFighterAppearance(fighter);
@@ -1220,34 +1227,35 @@ public sealed class BossDuelPrototype : MonoBehaviour
             Transform blade = CreatePrimitive(PrimitiveType.Cube, "Sword Blade", mount,
                 new Vector3(0f, 0.98f, 0f), new Vector3(0.10f, 1.34f, 0.055f), bladeMaterial);
             fighter.swordRenderer = blade.GetComponent<Renderer>();
-            CreatePrimitive(PrimitiveType.Cube, "Sword White Core", mount,
+            CreatePrimitive(PrimitiveType.Cube, "Sword Energy Core", mount,
                 new Vector3(0f, 0.98f, -0.03f), new Vector3(0.026f, 1.25f, 0.018f),
-                _stoneLight);
+                _bladeCoreMaterial);
         }
-    }
 
-    private void CreateSwordTrail(Transform model, bool playerSide)
-    {
-        Transform sword = FindTransformContaining(model, "Sword");
-        if (sword == null)
-            return;
-
-        var trailObject = new GameObject("Sword Arc Trail");
-        trailObject.transform.SetParent(sword);
-        trailObject.transform.localPosition = new Vector3(0f, 0.55f, 0f);
-        trailObject.transform.localRotation = Quaternion.identity;
-        TrailRenderer trail = trailObject.AddComponent<TrailRenderer>();
-        trail.time = 0.16f;
-        trail.minVertexDistance = 0.025f;
-        trail.startWidth = 0.13f;
-        trail.endWidth = 0.015f;
-        trail.numCornerVertices = 3;
-        trail.numCapVertices = 2;
+        // A trail on the blade tip traces whatever arc the sword actually
+        // swings through - horizontal cuts read as a horizontal streak,
+        // vertical cuts as a vertical one, for free from the real motion
+        // (see AssetSwordFollower) instead of a separate canned effect.
+        Transform tip = new GameObject("Sword Blade Tip").transform;
+        tip.SetParent(mount);
+        tip.localPosition = new Vector3(0f, 1.68f, 0f);
+        tip.localRotation = Quaternion.identity;
+        TrailRenderer trail = tip.gameObject.AddComponent<TrailRenderer>();
+        trail.time = 0.22f;
+        trail.minVertexDistance = 0.03f;
+        trail.startWidth = 0.18f;
+        trail.endWidth = 0.01f;
+        trail.numCornerVertices = 4;
+        trail.numCapVertices = 4;
         trail.material = new Material(Shader.Find("Sprites/Default"));
-        Color color = playerSide ? new Color(0.15f, 0.75f, 1f, 0.92f) :
-            new Color(1f, 0.22f, 0.08f, 0.92f);
-        trail.startColor = color;
-        trail.endColor = new Color(color.r, color.g, color.b, 0f);
+        trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        trail.emitting = false;
+        Color trailColor = fighter.facesRight
+            ? new Color(0.15f, 0.85f, 1f, 0.95f)
+            : new Color(1f, 0.28f, 0.1f, 0.95f);
+        trail.startColor = trailColor;
+        trail.endColor = new Color(trailColor.r, trailColor.g, trailColor.b, 0f);
+        fighter.swordTrail = trail;
     }
 
     private static Transform FindTransformContaining(Transform root, string text)
@@ -1297,7 +1305,10 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     Color sourceColor = source.HasProperty("_BaseColor")
                         ? source.GetColor("_BaseColor")
                         : source.HasProperty("_Color") ? source.color : Color.white;
-                    Color finalColor = Color.Lerp(sourceColor, teamColor, 0.32f);
+                    // Light hint only - a strong blend here (plus the old second
+                    // blend in CreateAssetFighter) washed the source texture out
+                    // into a flat team-colored blob.
+                    Color finalColor = Color.Lerp(sourceColor, teamColor, 0.1f);
                     if (replacement.HasProperty("_BaseColor"))
                         replacement.SetColor("_BaseColor", finalColor);
                     if (replacement.HasProperty("_Color"))
@@ -1367,9 +1378,19 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 (0.24f + kickDrive * 0.62f) + fighter.root.forward *
                 (0.22f + kickDrive * 1.02f) + fighter.root.right * 0.16f;
         }
-        SampleAuthoredSwordAnimation(fighter, t);
+        UpdateBladeTelegraph(fighter);
+        SwordPose swordPose = fighter.motion switch
+        {
+            Motion.PrepareHorizontal => SwordPose.PrepareHorizontal,
+            Motion.PrepareVertical => SwordPose.PrepareVertical,
+            Motion.HorizontalSlash => SwordPose.StrikeHorizontal,
+            Motion.VerticalSlash => SwordPose.StrikeVertical,
+            _ => SwordPose.Idle
+        };
         if (fighter.swordFollower != null)
-            fighter.swordFollower.SetPose(0, t);
+            fighter.swordFollower.SetPose(swordPose, t);
+        if (fighter.swordTrail != null)
+            fighter.swordTrail.emitting = swordPose != SwordPose.Idle;
         if (fighter.shieldFollower != null)
             fighter.shieldFollower.SetPose(
                 fighter.motion == Motion.Guard,
@@ -1377,10 +1398,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 t);
         if (fighter.groundedRig != null)
         {
-            // Sword attacks come from the authored humanoid clips. Only the
-            // shield arm is constrained during guard/parry, so the sword hand
-            // can never inherit the shield sweep and spin around the body.
-            fighter.groundedRig.lockRightHand = false;
+            // The sword hand is IK-driven (via AssetSwordFollower's explicit
+            // pose) only while winding up or striking, so the readable
+            // horizontal/vertical geometry actually reaches the visible
+            // blade instead of whatever the authored clip's hand does.
+            fighter.groundedRig.lockRightHand = swordPose != SwordPose.Idle;
             // The shield mount is always the left-hand target, keeping the
             // shield attached while resting outside the torso as well as
             // during the guard-to-parry extension.
@@ -1397,48 +1419,33 @@ public sealed class BossDuelPrototype : MonoBehaviour
             RestoreFighterAppearance(fighter);
     }
 
-    private static void SampleAuthoredSwordAnimation(Fighter fighter, float motionProgress)
+    private static readonly Color TelegraphHorizontalColor = new Color(1f, 0.55f, 0.08f);
+    private static readonly Color TelegraphVerticalColor = new Color(0.55f, 0.2f, 1f);
+
+    // Beyond the pose itself (see SampleAuthoredSwordAnimation), the blade's
+    // own glow color/pulse tells the opponent which attack is charging —
+    // amber for the horizontal cut, violet for the vertical one — so the
+    // read doesn't depend entirely on catching a subtle animation difference.
+    private static void UpdateBladeTelegraph(Fighter fighter)
     {
-        if (fighter.animator == null || fighter.animator.layerCount < 2)
+        if (fighter.swordRenderer == null)
             return;
 
-        bool horizontal = fighter.motion == Motion.PrepareHorizontal ||
-                          fighter.motion == Motion.HorizontalSlash;
-        bool vertical = fighter.motion == Motion.PrepareVertical ||
-                        fighter.motion == Motion.VerticalSlash;
-        if (!horizontal && !vertical)
-            return;
-
-        bool preparing = IsPrepareMotion(fighter.motion);
-        float authoredTime;
-        if (preparing)
+        if (fighter.motion == Motion.PrepareHorizontal || fighter.motion == Motion.PrepareVertical)
         {
-            // Slowly reveal the actual clip's anticipation pose during the
-            // readable 0.2 second wind-up.
-            authoredTime = Mathf.Lerp(0.02f, 0.18f,
-                Mathf.SmoothStep(0f, 1f, motionProgress));
-        }
-        else if (motionProgress < 0.18f)
-        {
-            authoredTime = Mathf.Lerp(0.18f, 0.26f,
-                Mathf.SmoothStep(0f, 1f, motionProgress / 0.18f));
-        }
-        else if (motionProgress < 0.62f)
-        {
-            // The authored strike crosses most of its timeline quickly,
-            // producing a sharp, readable hit instead of a dragged IK hand.
-            authoredTime = Mathf.Lerp(0.26f, 0.84f,
-                Mathf.SmoothStep(0f, 1f, (motionProgress - 0.18f) / 0.44f));
+            Color tint = fighter.motion == Motion.PrepareHorizontal
+                ? TelegraphHorizontalColor
+                : TelegraphVerticalColor;
+            float pulse = 0.7f + 0.3f * Mathf.Sin(Time.time * 16f);
+            var block = new MaterialPropertyBlock();
+            fighter.swordRenderer.GetPropertyBlock(block);
+            block.SetColor("_EmissionColor", tint * (2.6f * pulse));
+            fighter.swordRenderer.SetPropertyBlock(block);
         }
         else
         {
-            authoredTime = Mathf.Lerp(0.84f, 0.98f,
-                Mathf.SmoothStep(0f, 1f, (motionProgress - 0.62f) / 0.38f));
+            fighter.swordRenderer.SetPropertyBlock(null);
         }
-
-        int state = Animator.StringToHash(
-            horizontal ? Motion.HorizontalSlash.ToString() : Motion.VerticalSlash.ToString());
-        fighter.animator.Play(state, 1, authoredTime);
     }
 
     private void PlayAssetAnimation(Fighter fighter, Motion motion)
@@ -1457,7 +1464,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
 
         if (motion == Motion.PrepareKick || motion == Motion.Kick ||
-            motion == Motion.Guard || motion == Motion.Parry)
+            motion == Motion.Guard)
         {
             fighter.animator.speed = 1f;
             if (fighter.animator.layerCount > 1)
@@ -1546,7 +1553,16 @@ public sealed class BossDuelPrototype : MonoBehaviour
         camera.transform.LookAt(new Vector3(1.15f, 1.28f, 0f));
         camera.fieldOfView = 58f;
         camera.backgroundColor = new Color(0.025f, 0.035f, 0.06f);
-        camera.clearFlags = CameraClearFlags.SolidColor;
+        Material skybox = _assetLibrary != null ? _assetLibrary.skyboxMaterial : null;
+        if (skybox != null)
+        {
+            RenderSettings.skybox = skybox;
+            camera.clearFlags = CameraClearFlags.Skybox;
+        }
+        else
+        {
+            camera.clearFlags = CameraClearFlags.SolidColor;
+        }
         _mainCamera = camera;
         _cameraRestPosition = camera.transform.position;
 
@@ -1575,11 +1591,33 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (_assetLibrary != null && _assetLibrary.dungeonGate != null)
         {
             GameObject gate = Instantiate(_assetLibrary.dungeonGate, arena);
-            gate.name = "Kenney CC0 Dungeon Gate";
+            gate.name = "Sci-Fi Modular Door";
             gate.transform.localPosition = new Vector3(2.25f, 0f, 4.05f);
             gate.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            gate.transform.localScale = Vector3.one * 1.08f;
+            gate.transform.localScale = Vector3.one * 1.4f;
             ConvertDungeonMaterials(gate.GetComponentsInChildren<Renderer>(true));
+        }
+
+        if (_assetLibrary != null && _assetLibrary.dungeonRoom != null)
+        {
+            for (int i = -1; i <= 1; i += 2)
+            {
+                GameObject wall = Instantiate(_assetLibrary.dungeonRoom, arena);
+                wall.name = "Sci-Fi Modular Backdrop";
+                wall.transform.localPosition = new Vector3(5.4f * i, 0f, 2.6f);
+                wall.transform.localRotation = Quaternion.Euler(0f, i < 0 ? 200f : 160f, 0f);
+                wall.transform.localScale = Vector3.one * 1.6f;
+                ConvertDungeonMaterials(wall.GetComponentsInChildren<Renderer>(true));
+            }
+        }
+
+        if (_assetLibrary != null && _assetLibrary.dungeonCorridor != null)
+        {
+            GameObject floor = Instantiate(_assetLibrary.dungeonCorridor, arena);
+            floor.name = "Sci-Fi Modular Approach Floor";
+            floor.transform.localPosition = new Vector3(0f, -0.16f, 4.6f);
+            floor.transform.localScale = new Vector3(5.5f, 1f, 2.4f);
+            ConvertDungeonMaterials(floor.GetComponentsInChildren<Renderer>(true));
         }
 
         CreatePrimitive(PrimitiveType.Cylinder, "Duel Platform", arena,
@@ -1587,13 +1625,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
         CreatePrimitive(PrimitiveType.Cylinder, "Platform Inlay", arena,
             new Vector3(0f, 0.03f, 0f), new Vector3(4.75f, 0.06f, 4.75f), _stoneLight);
 
-        for (int i = 0; i < 12; i++)
+        // Real sci-fi light props ring the platform instead of the old
+        // primitive gold/black bars.
+        GameObject floorLightPrefab = _assetLibrary != null ? _assetLibrary.arenaFloorLight : null;
+        for (int i = 0; i < 8; i++)
         {
-            float angle = i * Mathf.PI * 2f / 12f;
-            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.2f, 0.08f, Mathf.Sin(angle) * 4.2f);
-            Transform tile = CreatePrimitive(PrimitiveType.Cube, "Ring Tile", arena, point,
-                new Vector3(1.15f, 0.08f, 0.38f), i % 2 == 0 ? _goldMaterial : _stoneDark);
-            tile.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
+            float angle = i * Mathf.PI * 2f / 8f;
+            Vector3 point = new Vector3(Mathf.Cos(angle) * 4.6f, 0.05f, Mathf.Sin(angle) * 4.6f);
+            if (floorLightPrefab != null)
+            {
+                GameObject prop = Instantiate(floorLightPrefab, arena);
+                prop.name = "Sci-Fi Modular Floor Light";
+                prop.transform.localPosition = point;
+                prop.transform.localRotation = Quaternion.Euler(0f, -angle * Mathf.Rad2Deg, 0f);
+                prop.transform.localScale = Vector3.one * 0.8f;
+                ConvertDungeonMaterials(prop.GetComponentsInChildren<Renderer>(true));
+            }
+            else
+            {
+                CreatePrimitive(PrimitiveType.Cylinder, "Arena Floor Marker", arena,
+                    point, new Vector3(0.22f, 0.05f, 0.22f), _parryMaterial);
+            }
         }
 
         for (int i = -1; i <= 1; i += 2)
@@ -1631,10 +1683,30 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     ? source.mainTexture : null;
                 if (texture != null && replacement.HasProperty("_BaseMap"))
                     replacement.SetTexture("_BaseMap", texture);
+                // Keep the sci-fi pack's own tint/metal/gloss instead of a
+                // flat gray recolor, so its panel and emissive detailing survives
+                // the Standard -> URP shader swap.
+                Color sourceColor = source != null && source.HasProperty("_Color")
+                    ? source.color : new Color(0.6f, 0.66f, 0.74f);
                 if (replacement.HasProperty("_BaseColor"))
-                    replacement.SetColor("_BaseColor", new Color(0.54f, 0.58f, 0.64f));
-                replacement.SetFloat("_Metallic", 0.08f);
-                replacement.SetFloat("_Smoothness", 0.28f);
+                    replacement.SetColor("_BaseColor", sourceColor);
+                float sourceMetallic = source != null && source.HasProperty("_Metallic")
+                    ? source.GetFloat("_Metallic") : 0.55f;
+                float sourceSmoothness = source != null && source.HasProperty("_Glossiness")
+                    ? source.GetFloat("_Glossiness") : 0.5f;
+                replacement.SetFloat("_Metallic", sourceMetallic);
+                replacement.SetFloat("_Smoothness", sourceSmoothness);
+                if (source != null && source.HasProperty("_EmissionColor"))
+                {
+                    Color emission = source.GetColor("_EmissionColor");
+                    if (emission.maxColorComponent > 0f)
+                    {
+                        replacement.EnableKeyword("_EMISSION");
+                        replacement.globalIlluminationFlags =
+                            MaterialGlobalIlluminationFlags.RealtimeEmissive;
+                        replacement.SetColor("_EmissionColor", emission);
+                    }
+                }
                 materials[i] = replacement;
             }
             renderer.materials = materials;
@@ -1862,14 +1934,31 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void SpawnDirectionalSlash(Fighter attacker, bool horizontal)
     {
-        Sprite slashSprite = _assetLibrary != null ? _assetLibrary.slashSprite : null;
         Color color = attacker.facesRight
             ? new Color(0.12f, 0.82f, 1f, 1f)
             : new Color(1f, 0.20f, 0.06f, 1f);
-        Vector3 center = attacker.facesRight
-            ? new Vector3(0.9f, 1.42f, 0.18f)
-            : new Vector3(-0.9f, 1.42f, 0.18f);
+        float side = attacker.facesRight ? 1f : -1f;
+        // Anchored to the attacker's actual position; the old fixed
+        // world-space offsets only lined up by coincidence near the origin.
+        Vector3 center = attacker.root.position + new Vector3(0.9f * side, 1.42f, 0.18f);
 
+        GameObject prefab = _assetLibrary != null
+            ? (horizontal ? _assetLibrary.slashVfxHorizontal : _assetLibrary.slashVfxVertical)
+            : null;
+        if (prefab != null)
+        {
+            Quaternion facing = _mainCamera != null
+                ? Quaternion.LookRotation(_mainCamera.transform.forward)
+                : Quaternion.identity;
+            Quaternion rotation = facing * Quaternion.Euler(0f, 0f, horizontal ? 0f : 90f);
+            GameObject vfx = Instantiate(prefab, center, rotation, transform);
+            vfx.transform.localScale = Vector3.one * 1.15f;
+            Destroy(vfx, 1.2f);
+            return;
+        }
+
+        // Fallback if the stylized slash prefabs are missing from the library.
+        Sprite slashSprite = _assetLibrary != null ? _assetLibrary.slashSprite : null;
         Vector3 start = horizontal ? new Vector3(0.8f, 0.18f, 1f) : new Vector3(0.18f, 0.8f, 1f);
         Vector3 end = horizontal ? new Vector3(4.2f, 0.75f, 1f) : new Vector3(0.75f, 4.2f, 1f);
         SpawnAnimeSprite(slashSprite, center, color,
@@ -1994,14 +2083,21 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void CreateMaterials()
     {
-        _playerMaterial = CreateMaterial(new Color(0.05f, 0.42f, 1f), 0.25f, 0.65f);
-        _enemyMaterial = CreateMaterial(new Color(0.92f, 0.08f, 0.07f), 0.25f, 0.65f);
-        _stoneDark = CreateMaterial(new Color(0.055f, 0.065f, 0.09f), 0.05f, 0.35f);
-        _stoneLight = CreateMaterial(new Color(0.16f, 0.18f, 0.23f), 0.05f, 0.4f);
-        _goldMaterial = CreateMaterial(new Color(1f, 0.56f, 0.08f), 0.65f, 0.86f);
-        _dangerMaterial = CreateMaterial(new Color(1f, 0.06f, 0.02f), 0.1f, 0.7f);
-        _parryMaterial = CreateMaterial(new Color(0.1f, 1f, 1f), 0.5f, 0.9f);
-        _dodgeMaterial = CreateMaterial(new Color(0.35f, 1f, 0.58f), 0.1f, 0.65f);
+        _playerMaterial = CreateMaterial(new Color(0.05f, 0.42f, 1f), 0.55f, 0.75f);
+        _enemyMaterial = CreateMaterial(new Color(0.92f, 0.08f, 0.07f), 0.55f, 0.75f);
+        // Dark gunmetal hull plating instead of stone.
+        _stoneDark = CreateMaterial(new Color(0.045f, 0.05f, 0.065f), 0.75f, 0.55f);
+        _stoneLight = CreateMaterial(new Color(0.14f, 0.16f, 0.2f), 0.7f, 0.6f);
+        // Amber energy trim, glowing, in place of the old flat gold accent.
+        _goldMaterial = CreateMaterial(new Color(1f, 0.62f, 0.1f), 0.4f, 0.85f,
+            new Color(1f, 0.5f, 0.05f) * 2.2f);
+        _dangerMaterial = CreateMaterial(new Color(1f, 0.1f, 0.05f), 0.3f, 0.85f,
+            new Color(1f, 0.08f, 0.02f) * 2.4f);
+        _parryMaterial = CreateMaterial(new Color(0.1f, 1f, 1f), 0.3f, 0.9f,
+            new Color(0.1f, 1f, 1f) * 2.4f);
+        _dodgeMaterial = CreateMaterial(new Color(0.35f, 1f, 0.58f), 0.2f, 0.75f,
+            new Color(0.3f, 1f, 0.5f) * 1.8f);
+        _bladeCoreMaterial = CreateMaterial(Color.white, 0.1f, 0.95f, Color.white * 3f);
     }
 
     private void CreateAudio()
@@ -2179,7 +2275,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         PlayOnLayer(_audioSource, _hitSound, 0.58f, 1f);
     }
 
-    private static Material CreateMaterial(Color color, float metallic, float smoothness)
+    private static Material CreateMaterial(
+        Color color, float metallic, float smoothness, Color? emission = null)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
         if (shader == null)
@@ -2194,6 +2291,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             material.SetFloat("_Metallic", metallic);
         if (material.HasProperty("_Smoothness"))
             material.SetFloat("_Smoothness", smoothness);
+        if (emission.HasValue && material.HasProperty("_EmissionColor"))
+        {
+            material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            material.SetColor("_EmissionColor", emission.Value);
+        }
         return material;
     }
 
@@ -2550,20 +2653,25 @@ public sealed class GroundedFighterRig : MonoBehaviour
     }
 }
 
+public enum SwordPose { Idle, PrepareHorizontal, PrepareVertical, StrikeHorizontal, StrikeVertical }
+
+// Drives the sword pivot explicitly from the fighter's own axes - the same
+// approach AssetShieldFollower uses for the shield - instead of sampling an
+// imported clip's hand track. That's what makes the two attacks readable as
+// distinct shapes: horizontal is a full left-to-right sweep, vertical is a
+// straight overhead raise followed by a downward chop.
 public sealed class AssetSwordFollower : MonoBehaviour
 {
-    private Transform _hand;
     private Transform _fighterRoot;
-    private int _pose;
+    private SwordPose _pose;
     private float _progress;
 
     public void Configure(Transform hand, Transform fighterRoot)
     {
-        _hand = hand;
         _fighterRoot = fighterRoot;
     }
 
-    public void SetPose(int pose, float progress)
+    public void SetPose(SwordPose pose, float progress)
     {
         _pose = pose;
         _progress = Mathf.Clamp01(progress);
@@ -2571,46 +2679,72 @@ public sealed class AssetSwordFollower : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (_hand == null || _fighterRoot == null)
+        if (_fighterRoot == null)
             return;
 
-        Vector3 position = _hand.position;
-        Quaternion rotation = _hand.rotation;
         Vector3 forward = _fighterRoot.forward;
         Vector3 up = _fighterRoot.up;
         Vector3 right = _fighterRoot.right;
-        float strike = Mathf.SmoothStep(0f, 1f, _progress);
+
+        // Blade rest position/pointing when nothing is happening - hangs at
+        // the hip, angled forward-down.
+        Vector3 position = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
+        Vector3 bladeDirection = (up * 0.4f - forward * 0.6f).normalized;
 
         switch (_pose)
         {
-            case 1: // horizontal wind-up
-                position = _fighterRoot.position + up * 1.42f + forward * 0.42f -
-                           right * 0.62f;
-                rotation = Quaternion.FromToRotation(
-                    Vector3.up, (up + forward * 0.16f).normalized);
+            case SwordPose.PrepareHorizontal:
+            {
+                // Wind up by pulling the blade all the way out to the
+                // fighter's own left, roughly level with the chest.
+                float wind = Mathf.SmoothStep(0f, 1f, _progress);
+                Vector3 restPos = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
+                Vector3 leftPos = _fighterRoot.position + up * 1.3f - right * 0.95f + forward * 0.3f;
+                position = Vector3.Lerp(restPos, leftPos, wind);
+                bladeDirection = Vector3.Lerp((up * 0.4f - forward * 0.6f).normalized, -right, wind);
                 break;
-            case 2: // exact horizontal travel
-                position = _fighterRoot.position + up * 1.42f + forward * 0.42f +
-                           right * Mathf.Lerp(-0.62f, 0.72f, strike);
-                rotation = Quaternion.FromToRotation(
-                    Vector3.up, (up + forward * 0.16f).normalized) *
-                           Quaternion.AngleAxis(Mathf.Lerp(-18f, 24f, strike), forward);
+            }
+            case SwordPose.StrikeHorizontal:
+            {
+                // Sweep a full 180 degrees from the left extreme through the
+                // center to the right extreme.
+                float swing = _progress;
+                Vector3 leftPos = _fighterRoot.position + up * 1.3f - right * 0.95f + forward * 0.3f;
+                Vector3 rightPos = _fighterRoot.position + up * 1.3f + right * 0.95f + forward * 0.3f;
+                float arc = Mathf.Sin(swing * Mathf.PI) * 0.35f;
+                position = Vector3.Lerp(leftPos, rightPos, swing) + forward * arc;
+                bladeDirection = Vector3.Lerp(-right, right, swing).normalized;
                 break;
-            case 3: // vertical wind-up
-                position = _fighterRoot.position + up * 2.02f + forward * 0.36f;
-                rotation = Quaternion.FromToRotation(Vector3.up, up);
+            }
+            case SwordPose.PrepareVertical:
+            {
+                // Raise the blade straight up above the head.
+                float wind = Mathf.SmoothStep(0f, 1f, _progress);
+                Vector3 restPos = _fighterRoot.position + up * 0.95f + right * 0.32f - forward * 0.05f;
+                Vector3 overhead = _fighterRoot.position + up * 2.05f + forward * 0.2f;
+                position = Vector3.Lerp(restPos, overhead, wind);
+                bladeDirection = Vector3.Lerp((up * 0.4f - forward * 0.6f).normalized, up, wind);
                 break;
-            case 4: // exact vertical travel
-                position = _fighterRoot.position +
-                           up * Mathf.Lerp(2.02f, 0.72f, strike) + forward * 0.36f;
-                rotation = Quaternion.FromToRotation(Vector3.up, up);
+            }
+            case SwordPose.StrikeVertical:
+            {
+                // Chop straight down from overhead to a forward-low finish.
+                float swing = _progress;
+                Vector3 overhead = _fighterRoot.position + up * 2.05f + forward * 0.2f;
+                Vector3 lowFinish = _fighterRoot.position + up * 0.4f + forward * 1.1f;
+                position = Vector3.Lerp(overhead, lowFinish, swing);
+                bladeDirection = Vector3.Lerp(up, (forward + up * 0.15f).normalized, swing);
                 break;
+            }
         }
 
+        Quaternion rotation = Quaternion.FromToRotation(Vector3.up, bladeDirection.normalized);
+        float positionSpeed = _pose == SwordPose.Idle ? 20f : 40f;
+        float rotationSpeed = _pose == SwordPose.Idle ? 20f : 46f;
         transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-64f * Time.deltaTime));
+            1f - Mathf.Exp(-positionSpeed * Time.deltaTime));
         transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-72f * Time.deltaTime));
+            1f - Mathf.Exp(-rotationSpeed * Time.deltaTime));
     }
 }
 
@@ -2640,17 +2774,23 @@ public sealed class AssetShieldFollower : MonoBehaviour
         if (_hand == null || _fighterRoot == null)
             return;
 
+        Vector3 up = _fighterRoot.up;
+        Vector3 forward = _fighterRoot.forward;
         Vector3 left = -_fighterRoot.right;
-        Vector3 arenaOutward = -_fighterRoot.forward;
-        Vector3 guardPosition = _fighterRoot.position + _fighterRoot.up * 1.34f +
-                                _fighterRoot.forward * 0.52f + left * 0.08f;
-        Quaternion guardRotation =
-            Quaternion.LookRotation(_fighterRoot.up, -_fighterRoot.forward) *
-            Quaternion.Euler(90f, 0f, 0f);
-        Vector3 position = _fighterRoot.position + _fighterRoot.up * 1.18f +
-                           arenaOutward * 0.42f + left * 0.34f;
-        Quaternion rotation = guardRotation *
-                              Quaternion.AngleAxis(-24f, _fighterRoot.forward);
+
+        // The shield primitive's flat face normal runs along its local Y
+        // axis, so aligning that with "forward" points the face squarely at
+        // the opponent - the read a block needs.
+        Quaternion faceForward = Quaternion.FromToRotation(Vector3.up, forward);
+
+        Vector3 restPosition = _fighterRoot.position + up * 1.05f - forward * 0.1f + left * 0.42f;
+        Quaternion restRotation = faceForward * Quaternion.AngleAxis(35f, forward);
+
+        Vector3 guardPosition = _fighterRoot.position + up * 1.32f + forward * 0.5f;
+        Quaternion guardRotation = faceForward;
+
+        Vector3 position = restPosition;
+        Quaternion rotation = restRotation;
 
         if (_guarding)
         {
@@ -2659,19 +2799,19 @@ public sealed class AssetShieldFollower : MonoBehaviour
         }
         else if (_parrying)
         {
-            // Start from the exact guard pose, extend the shield and the left
-            // arm toward the fighter's outside-left, then recover to guard.
+            // Hold the guard face, then bat it outward with a fast yaw sweep
+            // around the vertical axis - a deflect, not a lunge - and spring
+            // back to guard.
             float sweep = Mathf.Sin(Mathf.Clamp01(_progress) * Mathf.PI);
-            position = guardPosition + arenaOutward * (0.68f * sweep) +
-                       left * (0.46f * sweep) +
-                       _fighterRoot.up * (0.10f * sweep);
-            rotation = guardRotation *
-                       Quaternion.AngleAxis(-68f * sweep, _fighterRoot.forward);
+            position = guardPosition + left * (0.55f * sweep) + forward * (0.25f * sweep);
+            rotation = guardRotation * Quaternion.AngleAxis(100f * sweep, up);
         }
 
+        float positionSpeed = _parrying ? 46f : 30f;
+        float rotationSpeed = _parrying ? 52f : 34f;
         transform.position = Vector3.Lerp(transform.position, position,
-            1f - Mathf.Exp(-34f * Time.deltaTime));
+            1f - Mathf.Exp(-positionSpeed * Time.deltaTime));
         transform.rotation = Quaternion.Slerp(transform.rotation, rotation,
-            1f - Mathf.Exp(-38f * Time.deltaTime));
+            1f - Mathf.Exp(-rotationSpeed * Time.deltaTime));
     }
 }
