@@ -56,6 +56,7 @@ MODEL_PATH = (
 )
 
 # PoseLandmark 인덱스 (BlazePose 33 keypoints, MediaPipe가 실제로 리턴하는 raw 라벨)
+_NOSE = 0  # 좌우 구분 없는 단일 랜드마크라 미러 보정 불필요
 _L_SHOULDER, _R_SHOULDER = 11, 12
 _L_ELBOW, _R_ELBOW = 13, 14
 _L_WRIST, _R_WRIST = 15, 16
@@ -79,7 +80,11 @@ SMOOTH_WINDOW = 5
 
 # --- 회피 ---
 SQUAT_DROP_RATIO = 0.35       # torso 길이 대비 이만큼 더 내려가면 앉기
-LATERAL_MOVE_RATIO = 1.1      # 어깨너비 대비 이만큼 벗어나면 좌우 이동 (실측 후 조정, 원래 0.6은 과민했음)
+# 옆으로 허리를 굽히는 "기울이기"(어깨-엉덩이 offset)는 너무 힘들었고, 몸통 회전(어깨
+# z-차이)은 z값 노이즈가 너무 커서 좌우로 계속 깜빡였다. 코(허리 대비 지렛대가 가장
+# 긴 지점) x좌표와 엉덩이 중심 x의 차이로 바꿨다 — 어깨보다 같은 동작에도 훨씬 크게
+# 움직이고, z가 아니라 x라 노이즈도 적다.
+HEAD_LEAN_RATIO = 0.35        # torso 길이 대비 코-엉덩이 x offset이 이만큼 넘으면 회피 (실측 후 조정)
 
 # --- 검: 스윙 (짧은 시간창 안에서의, 몸통 기준 상대적인 손목 이동을 분석) ---
 SWING_WINDOW_SEC = 0.25       # 이 시간 안의 이동을 하나의 "스윙 후보"로 봄
@@ -97,9 +102,9 @@ THRUST_WINDOW_SEC = 0.30
 THRUST_LATERAL_CAP = 0.35     # torso 길이 비. 이 이하로 옆으로 덜 움직여야 스윙과 구분됨
 THRUST_COOLDOWN_SEC = 0.5
 
-# --- 패링: 스윙(_sword_swing)과 완전히 같은 방식, 왼팔에 적용. 캘리브레이션 없이 고정 임계값. ---
+# --- 패링: 몸통 중심에서 바깥쪽으로 뻗을 때만 인정 (왼팔). 캘리브레이션 없이 고정 임계값. ---
 PARRY_WINDOW_SEC = 0.25
-PARRY_DIST_RATIO = 0.5        # torso 길이 대비 이만큼 이상 움직여야 패링 (실측 후 조정)
+PARRY_OUTWARD_RATIO = 0.5     # torso 길이 대비 중심에서 이만큼 이상 "더 멀어져야" 패링 (실측 후 조정)
 PARRY_COOLDOWN_SEC = 0.5
 
 # --- 찌르기 전용: 실측 샘플 기반 캘리브레이션 (현재 _thrust 자체가 비활성화라 이 값들도 미사용) ---
@@ -138,16 +143,15 @@ class MotionRecognizer:
     def __init__(self):
         self.baseline_torso_mid_y = None
         self.baseline_torso_len = None
-        self.baseline_center_x = None
         self.torso_len_ema = None  # 캘리브레이션 전에도 분모(torso_len)가 프레임마다 안 흔들리게
 
         self.torso_mid_y_hist = collections.deque(maxlen=SMOOTH_WINDOW)
-        self.torso_mid_x_hist = collections.deque(maxlen=SMOOTH_WINDOW)
+        self.head_offset_hist = collections.deque(maxlen=SMOOTH_WINDOW)  # 코x - 엉덩이중심x
 
         self.sword_hist = collections.deque()        # (t, rel_x, rel_y)
         self.shield_hist = collections.deque()        # (t, x, y)
         self.thrust_hist = collections.deque()        # (t, elbow_angle, rel_x, rel_y)
-        self.parry_swing_hist = collections.deque()   # (t, rel_x, rel_y) - _sword_swing과 동일 방식
+        self.parry_swing_hist = collections.deque()   # (t, rel_x, rel_y) - 몸통 중심 기준 상대좌표
         self.kick_hist = {"L": collections.deque(), "R": collections.deque()}  # (t, knee_angle)
 
         self.guard_held_since = None
@@ -155,6 +159,12 @@ class MotionRecognizer:
         self.last_thrust_event_t = -999.0
         self.last_parry_event_t = -999.0
         self.last_kick_event_t = -999.0
+
+        # 레벨 상태 전환(시작/종료) 로그용 — 상태 자체는 매 프레임 유지되지만, 로그는
+        # PROTOCOL.md의 "상태 이벤트"처럼 바뀌는 시점에만 찍는다 (매 프레임 찍으면 스팸).
+        self.prev_squat = False
+        self.prev_lateral = None
+        self.prev_guard = False
 
         # 찌르기 전용 캘리브레이션 상태 (현재 _thrust 비활성화라 미사용, 재활성화 대비 보존)
         self.thrust_samples = []
@@ -166,15 +176,16 @@ class MotionRecognizer:
         self.active_events = {}
 
     def calibrate(self, landmarks):
-        """서 있는 기준 자세 (앉기/좌우이동 기준선). 찌르기/패링 캘리브레이션과는 별개."""
+        """서 있는 기준 자세 (앉기 기준선). 기울임은 어깨-엉덩이 offset 기반이라 별도
+        기준선이 필요 없다 (똑바로 서면 offset이 자연스럽게 0에 가까움). 찌르기/패링
+        캘리브레이션과도 별개."""
         sh_mid = mid(landmarks[PHYS_L_SHOULDER], landmarks[PHYS_R_SHOULDER])
         hip_mid = mid(landmarks[PHYS_L_HIP], landmarks[PHYS_R_HIP])
         self.baseline_torso_mid_y = (sh_mid[1] + hip_mid[1]) / 2
         self.baseline_torso_len = dist(sh_mid, hip_mid)
-        self.baseline_center_x = (sh_mid[0] + hip_mid[0]) / 2
         print(
             f"[calibrate] baseline_y={self.baseline_torso_mid_y:.3f} "
-            f"torso_len={self.baseline_torso_len:.3f} center_x={self.baseline_center_x:.3f}"
+            f"torso_len={self.baseline_torso_len:.3f}"
         )
 
     def start_thrust_capture(self, t):
@@ -208,19 +219,22 @@ class MotionRecognizer:
         return sh_mid, hip_mid, torso_len
 
     def _dodge(self, landmarks, t):
-        """앉기 / 좌우 이동 (레벨 상태)."""
+        """앉기(레벨) / 좌우 회피(레벨).
+
+        어깨-엉덩이 offset(너무 힘듦), 어깨 z-차이 회전(노이즈로 계속 깜빡임)을 시도했다가
+        **코 x좌표와 엉덩이 중심 x의 차이**로 바꿨다. 코는 엉덩이(허리) 기준 지렛대가
+        가장 긴 지점이라 목만 살짝 기울여도 어깨 기준보다 훨씬 큰 offset이 나오고, z가
+        아니라 x좌표라 노이즈도 적다. 발을 옮겨도 "허리 대비 고개가 얼마나 빠져나갔는지"만
+        보므로 계속 유지되고, 고개가 몸 중심으로 돌아오면 바로 해제된다.
+        """
         sh_mid, hip_mid, torso_len = self._torso(landmarks)
-        shoulder_width = dist(
-            (landmarks[PHYS_L_SHOULDER].x, landmarks[PHYS_L_SHOULDER].y),
-            (landmarks[PHYS_R_SHOULDER].x, landmarks[PHYS_R_SHOULDER].y),
-        )
 
         torso_mid_y = (sh_mid[1] + hip_mid[1]) / 2
-        torso_mid_x = (sh_mid[0] + hip_mid[0]) / 2
+        head_offset = landmarks[_NOSE].x - hip_mid[0]
         self.torso_mid_y_hist.append(torso_mid_y)
-        self.torso_mid_x_hist.append(torso_mid_x)
+        self.head_offset_hist.append(head_offset)
         smoothed_y = sum(self.torso_mid_y_hist) / len(self.torso_mid_y_hist)
-        smoothed_x = sum(self.torso_mid_x_hist) / len(self.torso_mid_x_hist)
+        smoothed_head = sum(self.head_offset_hist) / len(self.head_offset_hist)
 
         squat = False
         lateral = None  # None | "LEFT" | "RIGHT"
@@ -228,10 +242,11 @@ class MotionRecognizer:
             drop = smoothed_y - self.baseline_torso_mid_y
             squat = drop > SQUAT_DROP_RATIO * self.baseline_torso_len
 
-            dx = smoothed_x - self.baseline_center_x
-            if shoulder_width and abs(dx) > LATERAL_MOVE_RATIO * shoulder_width:
-                # 이미지가 거울모드라 화면상 왼쪽(-x)이 사용자 입장에서도 왼쪽으로 보임
-                lateral = "LEFT" if dx < 0 else "RIGHT"
+        if torso_len:
+            head_ratio = smoothed_head / torso_len
+            if abs(head_ratio) > HEAD_LEAN_RATIO:
+                # 이미지가 거울모드라 화면상 왼쪽이 사용자 입장에서도 왼쪽으로 보임
+                lateral = "LEFT" if head_ratio < 0 else "RIGHT"
 
         return squat, lateral
 
@@ -272,6 +287,9 @@ class MotionRecognizer:
         # 스윙 중간에 팔이 펴지는 순간을 찌르기가 별개로 잡아버리는 걸 막기 위해
         # 스윙이 발동하면 잠깐 찌르기 판정도 같이 쉬게 한다 (반대 방향도 _thrust에서 동일하게 처리).
         self.last_thrust_event_t = t
+        # 오른손으로 스윙할 때 반동/균형으로 왼팔도 같이 흔들려서 패링이 같이 잡히는 문제가
+        # 있었다. 스윙이 발동하면 잠깐 패링도 같이 쉬게 한다 (반대도 _shield_parry에서 처리).
+        self.last_parry_event_t = t
 
     def _shield_guard(self, landmarks, t):
         """기본 방어 (레벨 상태)."""
@@ -349,9 +367,10 @@ class MotionRecognizer:
             self._fire("찌르기", t)
 
     def _shield_parry(self, landmarks, t):
-        """패링 (순간 이벤트). _sword_swing과 완전히 같은 방식(몸통 기준 상대좌표, 고정
-        임계값, 캘리브레이션 없음)을 왼팔(SHIELD_WRIST)에 적용한 것 — 방향 구분 없이
-        "팔이 몸통 기준으로 크게 뻗어나가는 동작"이면 패링으로 인정한다."""
+        """패링 (순간 이벤트). 왼쪽 손목을 몸통 중심 기준 상대좌표로 추적하되, "몸통
+        중심에서 얼마나 더 멀어졌는지"(바깥으로 뻗는 정도)만 본다 — 단순히 손목이 많이
+        움직였다고 인정하면 좌우로 왔다갔다하는 동작도 걸리기 때문에, 반드시 안쪽(중심에
+        가까운 지점)에서 시작해 바깥쪽(중심에서 먼 지점)으로 끝나야 한다."""
         sh_mid, hip_mid, torso_len = self._torso(landmarks)
         if not torso_len:
             return
@@ -361,20 +380,23 @@ class MotionRecognizer:
         wrist = landmarks[SHIELD_WRIST]
         rel_x = (wrist.x - center_x) / torso_len
         rel_y = (wrist.y - center_y) / torso_len
+        outward = math.hypot(rel_x, rel_y)
 
-        self.parry_swing_hist.append((t, rel_x, rel_y))
+        self.parry_swing_hist.append((t, outward))
         self._prune(self.parry_swing_hist, t, PARRY_WINDOW_SEC)
 
         if t - self.last_parry_event_t < PARRY_COOLDOWN_SEC or len(self.parry_swing_hist) < 3:
             return
 
-        t0, rel_x0, rel_y0 = self.parry_swing_hist[0]
-        total_dist = math.hypot(rel_x - rel_x0, rel_y - rel_y0)
+        t0, outward0 = self.parry_swing_hist[0]
+        outward_delta = outward - outward0  # 양수면 중심에서 멀어지는 중(바깥으로 뻗음)
 
-        if total_dist < PARRY_DIST_RATIO:
-            return  # 별로 안 움직임
+        if outward_delta < PARRY_OUTWARD_RATIO:
+            return  # 안쪽에서 바깥쪽으로 뻗는 움직임이 아님
 
         self.last_parry_event_t = t
+        # 패링 반동으로 오른팔도 같이 흔들려 스윙이 같이 잡히는 걸 막기 위해 스윙도 잠깐 쉬게 함
+        self.last_sword_event_t = t
         self._fire("패링", t)
 
     def _kick(self, landmarks, t):
@@ -402,6 +424,23 @@ class MotionRecognizer:
                 self._fire("발차기", t)
                 return  # 한 프레임에 양다리 중복 판정 방지
 
+    def _log_state_transitions(self, squat, lateral, guard_up, t):
+        """레벨 상태(앉기/좌우회피/방어)는 매 프레임 유지되지만, 로그는 PROTOCOL.md의
+        "상태 이벤트"처럼 바뀌는 시점(시작/종료)에만 찍는다 — 매 프레임 찍으면 스팸이지만,
+        시작/종료 타임스탬프만 있으면 "그 사이엔 계속 그 상태였다"는 걸 재구성할 수 있다."""
+        if squat != self.prev_squat:
+            print(f"[state] 앉기 {'시작' if squat else '종료'}  t={t:.2f}")
+            self.prev_squat = squat
+        if lateral != self.prev_lateral:
+            if lateral:
+                print(f"[state] 좌우회피-{lateral} 시작  t={t:.2f}")
+            elif self.prev_lateral:
+                print(f"[state] 좌우회피-{self.prev_lateral} 종료  t={t:.2f}")
+            self.prev_lateral = lateral
+        if guard_up != self.prev_guard:
+            print(f"[state] 방어 {'시작' if guard_up else '종료'}  t={t:.2f}")
+            self.prev_guard = guard_up
+
     def update(self, landmarks, t):
         """한 프레임 처리. 화면에 그릴 상태 dict를 리턴."""
         squat, lateral = self._dodge(landmarks, t)
@@ -411,6 +450,7 @@ class MotionRecognizer:
         # self._thrust(landmarks, t)
         self._shield_parry(landmarks, t)
         self._kick(landmarks, t)
+        self._log_state_transitions(squat, lateral, guard_up, t)
 
         # 만료된 순간 이벤트 정리
         self.active_events = {name: until for name, until in self.active_events.items() if until > t}
@@ -481,7 +521,7 @@ def main():
             if state["squat"]:
                 level_parts.append("SQUAT")
             if state["lateral"]:
-                level_parts.append(f"MOVE-{state['lateral']}")
+                level_parts.append(f"DODGE-{state['lateral']}")
             if state["guard_up"]:
                 level_parts.append("GUARD")
             lines = [
