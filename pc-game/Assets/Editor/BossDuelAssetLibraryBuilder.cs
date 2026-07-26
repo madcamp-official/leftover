@@ -50,10 +50,18 @@ public static class BossDuelAssetLibraryBuilder
     // the duel platform for an outdoor look, replacing the built dungeon arena.
     private const string NatureTreeFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Trees/";
     private const string NatureRockFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Rocks/";
+    private const string NaturePlantFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Plants/";
+    private const string NatureShrubFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Shrubs/";
+    private const string NatureFlowerFolder = "Assets/Polytope Studio/Lowpoly_Environments/Prefabs/Flowers/";
     private const string ParticleFolder =
         "Assets/ThirdParty/KenneyParticlePack/PNG/";
     private const string SlashVfxFolder =
         "Assets/slash5-HungNguyen/prefab/slash/";
+    // Travis Game Assets "Hit Impact Effects FREE" (Asset Store, free) - richer
+    // particle-based impact bursts (shockwave/light rays/smoke) layered on top of
+    // the flat Kenney sprite hits for a punchier, less prototype-y look.
+    private const string HitImpactFolder =
+        "Assets/Travis Game Assets/Hit Impact Effects/Prefabs/";
     // Kenney CC0 audio (kenney.nl) - public domain, safe to commit and redistribute,
     // replacing a sci-fi laser/energy-shield set (TII_SoundLibrary_3Steps, Laser
     // Weapons Sound Pack) that never matched this medieval reskin thematically.
@@ -204,6 +212,17 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<GameObject>(NatureTreeFolder + "PT_Pine_Tree_03_green.prefab");
         library.natureRock =
             AssetDatabase.LoadAssetAtPath<GameObject>(NatureRockFolder + "PT_Generic_Rock_01.prefab");
+        // A second rock silhouette plus grass/shrub/flower detail from the same pack,
+        // scattered in the mid-ground per feedback that the arena read as too bare -
+        // same art style as the trees/rock above, so nothing clashes.
+        library.natureRockB =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NatureRockFolder + "PT_River_Rock_Pile_02.prefab");
+        library.natureGrass =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NaturePlantFolder + "PT_Grass_02.prefab");
+        library.natureShrub =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NatureShrubFolder + "PT_Generic_Shrub_01_green.prefab");
+        library.natureFlower =
+            AssetDatabase.LoadAssetAtPath<GameObject>(NatureFlowerFolder + "PT_Poppy_02.prefab");
         library.skyboxMaterial = null;
         library.slashSprite = LoadParticleSprite("slash_02.png");
         library.impactSprite = LoadParticleSprite("star_03.png");
@@ -213,6 +232,17 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<GameObject>(SlashVfxFolder + "white-blue bolder.prefab");
         library.slashVfxVertical =
             AssetDatabase.LoadAssetAtPath<GameObject>(SlashVfxFolder + "slash-green bolder.prefab");
+        // Broad circular shockwave for the wide horizontal cut, a sharper directional
+        // light-ray burst for the downward vertical cut, a smoky punch-flash for the
+        // kick, and the pack's own guard-trail glow for blocks.
+        library.hitImpactHorizontal =
+            AssetDatabase.LoadAssetAtPath<GameObject>(HitImpactFolder + "Hits/Hit_03.prefab");
+        library.hitImpactVertical =
+            AssetDatabase.LoadAssetAtPath<GameObject>(HitImpactFolder + "Hits/Hit_04.prefab");
+        library.hitImpactKick =
+            AssetDatabase.LoadAssetAtPath<GameObject>(HitImpactFolder + "Hits/Hit_01.prefab");
+        library.guardImpactVfx =
+            AssetDatabase.LoadAssetAtPath<GameObject>(HitImpactFolder + "Guards/Guard_01.prefab");
         library.swordPrefab =
             AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalSword.prefab");
         library.shieldPrefab =

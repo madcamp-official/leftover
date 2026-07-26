@@ -1713,6 +1713,27 @@ public sealed class BossDuelPrototype : MonoBehaviour
         ScatterNatureProp(treeB, arena, new Vector3(8.5f, 0f, -4.5f), 200f);
         ScatterNatureProp(rock, arena, new Vector3(-4.5f, 0f, 6f), 20f);
         ScatterNatureProp(rock, arena, new Vector3(5f, 0f, -6.5f), 100f);
+
+        // More set-dressing from the same pack (same art style, so nothing clashes) in
+        // the mid-ground ring between the tree line and the fight itself - that band
+        // read as bare open ground per a prior QA pass. Kept outside roughly a 2.5m
+        // radius of the origin so nothing overlaps the fighters or the camera framing.
+        GameObject rockB = _assetLibrary != null ? _assetLibrary.natureRockB : null;
+        GameObject grass = _assetLibrary != null ? _assetLibrary.natureGrass : null;
+        GameObject shrub = _assetLibrary != null ? _assetLibrary.natureShrub : null;
+        GameObject flower = _assetLibrary != null ? _assetLibrary.natureFlower : null;
+        ScatterNatureProp(rockB, arena, new Vector3(6.5f, 0f, 2f), 75f);
+        ScatterNatureProp(rockB, arena, new Vector3(-6f, 0f, -5.5f), 200f);
+        ScatterNatureProp(shrub, arena, new Vector3(-3.5f, 0f, -2.6f), 15f);
+        ScatterNatureProp(shrub, arena, new Vector3(3.8f, 0f, 2.6f), 95f);
+        ScatterNatureProp(shrub, arena, new Vector3(-6.5f, 0f, 1.8f), 250f);
+        ScatterNatureProp(grass, arena, new Vector3(-2.6f, 0f, 3.4f), 10f);
+        ScatterNatureProp(grass, arena, new Vector3(3.2f, 0f, -3.6f), 140f);
+        ScatterNatureProp(grass, arena, new Vector3(-4.2f, 0f, 0.6f), 60f);
+        ScatterNatureProp(grass, arena, new Vector3(4.6f, 0f, 0.9f), 300f);
+        ScatterNatureProp(grass, arena, new Vector3(0.4f, 0f, 5.4f), 190f);
+        ScatterNatureProp(flower, arena, new Vector3(-2.2f, 0f, -3.4f), 40f);
+        ScatterNatureProp(flower, arena, new Vector3(2.8f, 0f, 3.1f), 220f);
     }
 
     private static void ScatterNatureProp(GameObject prefab, Transform parent, Vector3 position, float yaw)
@@ -1752,13 +1773,16 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 {
                     replacement = new Material(litShader) { name = source.name + " Duel URP" };
                     string n = source.name.ToLowerInvariant();
-                    Color tint = n.Contains("leaf") || n.Contains("leaves") || n.Contains("foliage")
+                    Color tint = n.Contains("leaf") || n.Contains("leaves") || n.Contains("foliage") ||
+                                 n.Contains("grass") || n.Contains("shrub")
                         ? new Color(0.28f, 0.5f, 0.16f)
                         : n.Contains("trunk") || n.Contains("bark")
                             ? new Color(0.35f, 0.24f, 0.14f)
                             : n.Contains("rock")
                                 ? new Color(0.45f, 0.44f, 0.42f)
-                                : new Color(0.6f, 0.6f, 0.6f);
+                                : n.Contains("poppy") || n.Contains("flower")
+                                    ? new Color(0.78f, 0.16f, 0.14f)
+                                    : new Color(0.6f, 0.6f, 0.6f);
                     if (replacement.HasProperty("_BaseColor"))
                         replacement.SetColor("_BaseColor", tint);
                     if (replacement.HasProperty("_Color"))
@@ -1830,6 +1854,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 SpawnSparkFan(spark, position, new Color(1f, 0.42f, 0.08f, 1f),
                     12, 4.8f, -28f, 28f, size * 0.22f);
                 SpawnEnergyRing(position, _dangerMaterial, size * 1.2f, 0.24f);
+                SpawnHitImpactPrefab(_assetLibrary != null ? _assetLibrary.hitImpactHorizontal : null,
+                    position, new Color(1f, 0.75f, 0.18f, 1f), size * 1.5f);
                 break;
 
             case EffectKind.VerticalHit:
@@ -1843,6 +1869,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 SpawnSparkFan(spark, position, new Color(0.72f, 0.42f, 1f, 1f),
                     12, 5.2f, 62f, 118f, size * 0.22f);
                 SpawnEnergyRing(position, _parryMaterial, size * 1.25f, 0.25f);
+                SpawnHitImpactPrefab(_assetLibrary != null ? _assetLibrary.hitImpactVertical : null,
+                    position + Vector3.up * 0.08f, new Color(1f, 0.38f, 0.84f, 1f), size * 1.5f);
                 break;
 
             case EffectKind.KickHit:
@@ -1855,6 +1883,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 SpawnSparkFan(spark, position, new Color(1f, 0.70f, 0.16f, 1f),
                     16, 4.4f, 155f, 385f, size * 0.20f);
                 SpawnEnergyRing(position, _goldMaterial, size * 1.45f, 0.28f);
+                SpawnHitImpactPrefab(_assetLibrary != null ? _assetLibrary.hitImpactKick : null,
+                    position, new Color(1f, 0.56f, 0.04f, 1f), size * 1.7f);
                 break;
 
             case EffectKind.GuardHorizontal:
@@ -1872,6 +1902,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     14, 4.2f, vertical ? 22f : -68f, vertical ? 158f : 68f,
                     size * 0.18f);
                 SpawnEnergyRing(position, _goldMaterial, size * 1.5f, 0.34f);
+                SpawnHitImpactPrefab(_assetLibrary != null ? _assetLibrary.guardImpactVfx : null,
+                    position, new Color(1f, 0.68f, 0.10f, 0.92f), size * 1.3f);
                 break;
             }
 
@@ -1886,6 +1918,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
                     22, 6.0f, 0f, 360f, size * 0.24f);
                 SpawnEnergyRing(position, _dangerMaterial, size * 1.8f, 0.30f);
                 SpawnEnergyRing(position, _goldMaterial, size * 1.3f, 0.20f);
+                SpawnHitImpactPrefab(_assetLibrary != null ? _assetLibrary.guardImpactVfx : null,
+                    position, new Color(1f, 0.10f, 0.02f, 0.90f), size * 2.0f);
                 break;
 
             case EffectKind.ParryHorizontal:
@@ -2026,6 +2060,29 @@ public sealed class BossDuelPrototype : MonoBehaviour
         SpawnAnimeSprite(slashSprite, center + Vector3.forward * 0.04f,
             Color.Lerp(color, Color.white, 0.72f),
             start * 0.72f, end * 0.78f, horizontal ? 0f : 90f, 0.18f);
+    }
+
+    // Layers a real particle-based burst (Travis Game Assets "Hit Impact Effects
+    // FREE") on top of the flat SpawnAnimeSprite quads below - those alone read as
+    // a single flat decal, this adds actual volumetric smoke/shockwave/light-ray
+    // particles for a much less prototype-y hit. Tinted to the same color already
+    // used for that hit kind so the amber-horizontal/violet-vertical coding holds.
+    private void SpawnHitImpactPrefab(GameObject prefab, Vector3 position, Color tint, float scale, float life = 1.3f)
+    {
+        if (prefab == null)
+            return;
+
+        Quaternion facing = _mainCamera != null
+            ? Quaternion.LookRotation(_mainCamera.transform.forward)
+            : Quaternion.identity;
+        GameObject vfx = Instantiate(prefab, position, facing, transform);
+        vfx.transform.localScale = Vector3.one * scale;
+        foreach (ParticleSystem particles in vfx.GetComponentsInChildren<ParticleSystem>())
+        {
+            ParticleSystem.MainModule main = particles.main;
+            main.startColor = new ParticleSystem.MinMaxGradient(tint);
+        }
+        Destroy(vfx, life);
     }
 
     private void SpawnAnimeSprite(
