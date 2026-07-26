@@ -1187,6 +1187,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         Transform leftHand = fighter.animator.isHuman
             ? fighter.animator.GetBoneTransform(HumanBodyBones.LeftHand)
             : FindTransformContaining(model.transform, "LeftHand");
+        // The forearm bone (elbow-to-wrist), not the hand/wrist bone. Rounds 3-4
+        // both mounted the shield on LeftHand and only ever adjusted its position -
+        // see the much longer explanation in CreateAssetShield for why that was
+        // never going to fully solve this, and why the mount now lives here instead.
+        Transform leftForearm = fighter.animator.isHuman
+            ? fighter.animator.GetBoneTransform(HumanBodyBones.LeftLowerArm)
+            : FindTransformContaining(model.transform, "LeftForeArm");
         Transform rightHand = fighter.animator.isHuman
             ? fighter.animator.GetBoneTransform(HumanBodyBones.RightHand)
             : FindTransformContaining(model.transform, "RightHand");
@@ -1196,7 +1203,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
             foreach (Renderer swordPart in originalSword.GetComponentsInChildren<Renderer>(true))
                 swordPart.enabled = false;
         }
-        CreateAssetShield(fighter, leftHand, root, teamMaterial);
+        CreateAssetShield(fighter, leftForearm != null ? leftForearm : leftHand, root, teamMaterial);
         CreateAssetSword(fighter, rightHand, root);
 
         fighter.renderers = bodyRenderers;
@@ -1231,25 +1238,57 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
     private void CreateAssetShield(
         Fighter fighter,
-        Transform leftHand,
+        Transform leftForearm,
         Transform fighterRoot,
         Material teamMaterial)
     {
-        if (leftHand == null)
+        if (leftForearm == null)
             return;
 
-        // Parented directly to the hand bone (not a procedurally-driven pivot) so the
-        // shield simply follows whatever the real animation clip (Idle/Guard/Parry) is
-        // doing this frame.
+        // Rounds 3 and 4 both mounted this on LeftHand (the wrist bone) and only
+        // ever moved the mount's POSITION - first with an idle-yaw rotation that
+        // had to be reverted, then by nudging the mount 0.24 up the wrist's local Y
+        // and scaling the shield 1.15x. The user kept seeing the elbow poke through
+        // after both. Measured live in Play mode this round (Idle pose, both
+        // fighters, front/3-4/profile camera angles): the actual bug was never
+        // position or size, it was ORIENTATION. The shield mesh's flat face-normal
+        // is its local Z axis (its MeshRenderer.localBounds is ~1.17 x 1.17 x 0.13 -
+        // the Z size is the thin one). With the old ShieldBaseRotation, that Z axis
+        // ended up pointing almost exactly along world Z (sideways, ~93% Z / ~36%
+        // forward) - i.e. the shield was edge-on to a camera looking down the duel's
+        // forward axis, and only ever showed its full face from a near-pure side
+        // angle. From the front (and from the game's actual side-behind duel
+        // camera, which looks mostly down that same forward axis) it rendered as a
+        // near-invisible sliver, so no amount of repositioning or upscaling the OLD
+        // orientation could have covered the elbow from the angles that matter -
+        // confirmed by screenshotting the live "DUEL START" Idle frame with the
+        // BossDuelPrototype component briefly disabled (so the fixed duel camera
+        // doesn't reassert itself every frame) and the Main Camera relocated to
+        // front/3-4/profile vantage points around each fighter's own root.
+        //
+        // The fix has two parts:
+        //  1) Mount on LeftLowerArm (the forearm bone, elbow-to-wrist) instead of
+        //     LeftHand (the wrist). The old wrist-relative position offset was
+        //     also moving in the WRONG direction - the hand bone's local +Y (the
+        //     axis the 0.24f offset was added along) points from wrist toward
+        //     fingers, not back up the arm, so round 4's "raise it toward the
+        //     elbow" fix actually nudged the shield further away from the elbow.
+        //     Mounting on the forearm bone sidesteps that sign error entirely: its
+        //     origin already sits at the elbow, and a small local offset toward the
+        //     hand is all that is needed.
+        //  2) Rotate so the mesh's face-normal (local Z) points forward-and-out
+        //     (a blend of the character's forward axis and the old sideways axis)
+        //     instead of pure sideways, so the shield reads as a broad face - not
+        //     a sliver - from front, 3/4, AND profile alike. A rotation aimed
+        //     purely at the front looked comically huge and covered the whole
+        //     torso/head at any reasonable scale (a flat disc that fully faces the
+        //     front camera is nearly edge-on from the side), so this is a deliberate
+        //     45-70 degree compromise, re-tuned at this new bone, verified at 0.55x
+        //     scale (down from 1.15x - no longer needed once the face actually
+        //     points at the viewer) on both PLAYER and RIVAL.
         var mount = new GameObject("Left Hand Shield");
-        mount.transform.SetParent(leftHand);
-        // Was (0, 0.05, 0.03), which centered the shield right at the wrist - close
-        // enough to the actual grip, but it left the elbow sticking out past the
-        // shield's upper-left edge in every stance (confirmed via close-up Idle/
-        // Guard/Parry screenshots). Raising the mount along the hand bone's local Y
-        // shifts the shield's center up toward the elbow instead, so the disc's
-        // radius actually covers it from a front-facing camera.
-        mount.transform.localPosition = new Vector3(0f, 0.24f, 0.02f);
+        mount.transform.SetParent(leftForearm);
+        mount.transform.localPosition = new Vector3(0f, 0.05f, 0.02f);
         mount.transform.localRotation = ShieldBaseRotation;
         fighter.shieldPivot = mount.transform;
         if (_assetLibrary != null && _assetLibrary.shieldPrefab != null)
@@ -1258,7 +1297,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
             shield.name = "Medieval Shield";
             shield.transform.localPosition = Vector3.zero;
             shield.transform.localRotation = Quaternion.identity;
-            shield.transform.localScale = Vector3.one * 1.15f;
+            shield.transform.localScale = Vector3.one * 0.55f;
             Renderer[] renderers = shield.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers, teamMaterial.color);
             fighter.shieldRenderer = renderers.Length > 0 ? renderers[0] : null;
@@ -1267,7 +1306,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
         {
             Transform shield = CreatePrimitive(PrimitiveType.Cylinder, "Shield Face", mount.transform,
                 Vector3.zero, new Vector3(0.43f, 0.065f, 0.43f), teamMaterial);
-            shield.localRotation = Quaternion.identity;
+            // The primitive cylinder's face-normal is its local Y (it's squashed
+            // flat on Y), not Z like the asset mesh above, so it needs its own
+            // extra 90-degree correction to line its face up with the same
+            // ShieldBaseRotation direction instead of appearing edge-on.
+            shield.localRotation = Quaternion.Euler(90f, 0f, 0f);
             fighter.shieldRenderer = shield.GetComponent<Renderer>();
 
             Transform rim = CreatePrimitive(PrimitiveType.Cylinder, "Shield Rim", mount.transform,
@@ -1528,7 +1571,14 @@ public sealed class BossDuelPrototype : MonoBehaviour
             RestoreFighterAppearance(fighter);
     }
 
-    private static readonly Quaternion ShieldBaseRotation = Quaternion.Euler(0f, 0f, 90f);
+    // Z=90 keeps the shield's rim/boss upright (rotating around the mesh's own
+    // face-normal doesn't change which way the disc faces). X=-70 is the part that
+    // actually fixes the elbow bug: it tilts the face-normal off the forearm
+    // bone's local Z (world-sideways in the Idle pose) toward its local Y
+    // (world-forward-ish in the Idle pose), landing on a forward-and-out blend
+    // that reads as a full face rather than a sliver from front, 3/4, and profile
+    // alike. See the long comment in CreateAssetShield for how this was measured.
+    private static readonly Quaternion ShieldBaseRotation = Quaternion.Euler(-70f, 0f, 90f);
 
     private static readonly Color TelegraphHorizontalColor = new Color(1f, 0.55f, 0.08f);
     private static readonly Color TelegraphVerticalColor = new Color(0.55f, 0.2f, 1f);
