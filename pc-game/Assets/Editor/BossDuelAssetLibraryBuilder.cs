@@ -67,6 +67,19 @@ public static class BossDuelAssetLibraryBuilder
     // Weapons Sound Pack) that never matched this medieval reskin thematically.
     private const string ImpactAudioFolder = "Assets/KenneyAudio/ImpactSounds/";
     private const string RpgAudioFolder = "Assets/KenneyAudio/RPGAudio/";
+    // freesound.org CC0 clips (public domain), each individually picked for its exact
+    // combat role - a real sword unsheathe, a "Metal_Sword_Parry_Impact_Hit" hit
+    // specifically tagged for parries, a "shield guard" block, etc - instead of the
+    // Kenney set's more generic RPG/impact foley. The round that tried the Unity
+    // Asset Store's "Middle Age - Medieval Action Sound FX Pack" (mariobastos) could
+    // not get past a stuck in-app browser to actually license/import it, so this is a
+    // CC0 fallback per that round's own instructions. See ATTRIBUTION.txt in this
+    // folder for the author/source/license link of every clip (all CC0, attribution
+    // not required but kept for traceability). Downloaded via each sound's public
+    // "-hq" preview stream (128kbps mp3, no login required) rather than the original
+    // uploaded master, since fetching the original does require a Freesound account
+    // login this session did not have.
+    private const string FreesoundMedievalFolder = "Assets/FreesoundAudio/Medieval/";
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
@@ -247,28 +260,40 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalSword.prefab");
         library.shieldPrefab =
             AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalShield.prefab");
-        // Kenney CC0 medieval/RPG foley + impact clips, replacing a sci-fi laser/
-        // energy-shield set left over from the original SF theme pass - it never
-        // matched this medieval reskin thematically.
+        // freesound.org CC0 clips, each picked for its specific combat role (see the
+        // FreesoundMedievalFolder comment above and ATTRIBUTION.txt for sources).
+        // swordHit, shieldBlock/Heavy, bodyImpactHeavy/Medium previously used Kenney's
+        // generic impact set and still fall back to it here if a freesound file is
+        // ever missing (e.g. a teammate's checkout is missing the new folder).
         library.swordSlice = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            RpgAudioFolder + "knifeSlice.ogg");
+            FreesoundMedievalFolder + "507466_swordSlice_swoosh.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "knifeSlice.ogg");
         library.swordSliceHeavy = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            RpgAudioFolder + "knifeSlice2.ogg");
+            FreesoundMedievalFolder + "733891_swordSliceHeavy_whooshTriple.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "knifeSlice2.ogg");
         library.swordDraw = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            RpgAudioFolder + "drawKnife1.ogg");
+            FreesoundMedievalFolder + "107589_swordDraw_unsheathe.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "drawKnife1.ogg");
         library.swordHit = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            ImpactAudioFolder + "impactMetal_light_000.ogg");
+            FreesoundMedievalFolder + "334169_swordHit_clash.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_light_000.ogg");
         library.shieldBlock = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            ImpactAudioFolder + "impactPlate_medium_000.ogg");
+            FreesoundMedievalFolder + "370203_shieldBlock_guard.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPlate_medium_000.ogg");
         library.shieldBlockHeavy = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            ImpactAudioFolder + "impactPlate_heavy_000.ogg");
+            FreesoundMedievalFolder + "636103_shieldBlockHeavy_hit1.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPlate_heavy_000.ogg");
         library.parryBell = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            ImpactAudioFolder + "impactBell_heavy_000.ogg");
+            FreesoundMedievalFolder + "760636_parryBell_metalParry.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactBell_heavy_000.ogg");
         library.guardBreak = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            ImpactAudioFolder + "impactMetal_heavy_002.ogg");
-        library.bodyImpactHeavy =
+            FreesoundMedievalFolder + "653750_guardBreak_titanMetal.mp3") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_heavy_002.ogg");
+        library.bodyImpactHeavy = AssetDatabase.LoadAssetAtPath<AudioClip>(
+            FreesoundMedievalFolder + "517744_bodyImpactHeavy_punch.mp3") ??
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_heavy_000.ogg");
-        library.bodyImpactMedium =
+        library.bodyImpactMedium = AssetDatabase.LoadAssetAtPath<AudioClip>(
+            FreesoundMedievalFolder + "276600_bodyImpactMedium_bodyHit.mp3") ??
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_medium_000.ogg");
         EditorUtility.SetDirty(controller);
         EditorUtility.SetDirty(upperBodyMask);
