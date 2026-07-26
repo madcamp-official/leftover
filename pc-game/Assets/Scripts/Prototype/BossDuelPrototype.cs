@@ -149,7 +149,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private AudioSource _audioSource;
     private AudioSource _audioLayerA;
     private AudioSource _audioLayerB;
-    private AudioSource _audioLayerAnnouncer;
     private AudioClip _slashSound;
     private AudioClip _guardSound;
     private AudioClip _parrySound;
@@ -168,6 +167,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private int _enemyComboPressure;
     private Camera _mainCamera;
     private Vector3 _cameraRestPosition;
+    private Quaternion _cameraRestRotation;
     private float _cameraShakeEnds;
     private float _cameraShakeStrength;
     private float _screenFlashEnds;
@@ -296,8 +296,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _crouchWasPressed = false;
         _previousLateralPosition = LateralPosition.Center;
         _roundEndedAt = 0f;
-        if (_assetLibrary != null && _audioLayerAnnouncer != null)
-            PlayOnLayer(_audioLayerAnnouncer, _assetLibrary.announcerFight, 1f, 1f);
         _banner = "DUEL START";
         _detail = "J/K: slash  L: kick  Space: guard  F: parry  S/A: dodge";
     }
@@ -767,15 +765,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _enemyPhase = EnemyPhase.Dead;
                 _banner = "VICTORY";
                 _detail = "Press R to duel again.";
-                if (_assetLibrary != null && _audioLayerAnnouncer != null)
-                    PlayOnLayer(_audioLayerAnnouncer, _assetLibrary.announcerWin, 1f, 1f);
             }
             else
             {
                 _banner = "DEFEAT";
                 _detail = "Press R to try again.";
-                if (_assetLibrary != null && _audioLayerAnnouncer != null)
-                    PlayOnLayer(_audioLayerAnnouncer, _assetLibrary.announcerLose, 1f, 1f);
             }
             _roundEndedAt = Time.time;
             return;
@@ -1679,6 +1673,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
             RenderSettings.skybox = skybox;
         _mainCamera = camera;
         _cameraRestPosition = camera.transform.position;
+        _cameraRestRotation = camera.transform.rotation;
 
         Light[] lights = FindObjectsByType<Light>();
         foreach (Light light in lights)
@@ -2120,6 +2115,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
             return;
 
         Vector3 targetPosition = _cameraRestPosition;
+        Quaternion targetRotation = _cameraRestRotation;
         bool matchOver = _player.motion == Motion.Dead || _enemy.motion == Motion.Dead;
         if (matchOver)
         {
@@ -2129,9 +2125,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             // up clipped right against the lens instead of the fall being visible.
             // Pull back to a wide, centered view for the last moment of the duel.
             float pullback = Mathf.Clamp01((Time.time - _roundEndedAt) / 0.8f);
+            float blend = Mathf.SmoothStep(0f, 1f, pullback);
             Vector3 deathCameraPosition = new Vector3(0f, 3.2f, -6.5f);
-            targetPosition = Vector3.Lerp(_cameraRestPosition, deathCameraPosition,
-                Mathf.SmoothStep(0f, 1f, pullback));
+            targetPosition = Vector3.Lerp(_cameraRestPosition, deathCameraPosition, blend);
+            Quaternion deathLookRotation = Quaternion.LookRotation(
+                new Vector3(0f, 0.6f, 0f) - deathCameraPosition);
+            targetRotation = Quaternion.Slerp(_cameraRestRotation, deathLookRotation, blend);
         }
 
         if (Time.time < _cameraShakeEnds)
@@ -2146,8 +2145,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             _mainCamera.transform.position = targetPosition;
         }
 
-        if (matchOver)
-            _mainCamera.transform.LookAt(new Vector3(0f, 0.6f, 0f));
+        // Always explicitly set rotation (even to the same rest value) instead of
+        // only touching it while matchOver - leaving it untouched the rest of the
+        // time meant that once a death LookAt fired, the camera stayed aimed at
+        // that death framing forever afterward, including into the next restarted
+        // round, since nothing ever pointed it back at the normal rest orientation.
+        _mainCamera.transform.rotation = targetRotation;
     }
 
     private void SpawnImpact(Vector3 position, Material material, float size)
@@ -2189,7 +2192,6 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _audioSource = CreateAudioLayer(0.78f);
         _audioLayerA = CreateAudioLayer(0.92f);
         _audioLayerB = CreateAudioLayer(0.72f);
-        _audioLayerAnnouncer = CreateAudioLayer(1f);
 
         // These low layers sit under the real CC0 foley clips and add weight.
         _slashSound = CreateProceduralSound("Slash Low Air", 185f, 52f, 0.28f, 0.52f, 0.66f);
@@ -2261,20 +2263,25 @@ public sealed class BossDuelPrototype : MonoBehaviour
     {
         if (motion == Motion.HorizontalSlash)
         {
+            // Pitched down from the source recording's natural pitch - these are
+            // small foley knife sounds by origin, and playing them back near their
+            // recorded pitch reads as a thin/small blade rather than a two-handed
+            // sword. The procedural sub-bass layer underneath is also turned up to
+            // compensate with more low-end weight than the real clip has on its own.
             PlayOnLayer(_audioLayerA, _assetLibrary != null ? _assetLibrary.swordSlice : null,
-                0.92f, 1f);
+                0.66f, 1f);
             PlayOnLayer(_audioLayerB, _assetLibrary != null ? _assetLibrary.swordDraw : null,
-                0.78f, 0.58f);
-            PlayOnLayer(_audioSource, _slashSound, 0.86f, 0.72f);
+                0.58f, 0.58f);
+            PlayOnLayer(_audioSource, _slashSound, 0.86f, 0.9f);
         }
         else if (motion == Motion.VerticalSlash)
         {
             PlayOnLayer(_audioLayerA,
                 _assetLibrary != null ? _assetLibrary.swordSliceHeavy : null,
-                0.82f, 1f);
+                0.6f, 1f);
             PlayOnLayer(_audioLayerB, _assetLibrary != null ? _assetLibrary.swordDraw : null,
-                0.66f, 0.62f);
-            PlayOnLayer(_audioSource, _slashSound, 0.70f, 0.86f);
+                0.5f, 0.62f);
+            PlayOnLayer(_audioSource, _slashSound, 0.70f, 1f);
         }
         else
         {

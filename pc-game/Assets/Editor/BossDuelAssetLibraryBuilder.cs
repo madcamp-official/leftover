@@ -59,7 +59,6 @@ public static class BossDuelAssetLibraryBuilder
     // Weapons Sound Pack) that never matched this medieval reskin thematically.
     private const string ImpactAudioFolder = "Assets/KenneyAudio/ImpactSounds/";
     private const string RpgAudioFolder = "Assets/KenneyAudio/RPGAudio/";
-    private const string VoiceoverAudioFolder = "Assets/KenneyAudio/VoiceoverFighter/";
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
@@ -241,13 +240,6 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_heavy_000.ogg");
         library.bodyImpactMedium =
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_medium_000.ogg");
-        // Fighting-game-style announcer lines (Kenney "Voiceover Pack (Fighter)").
-        library.announcerFight = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            VoiceoverAudioFolder + "fight.ogg");
-        library.announcerWin = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            VoiceoverAudioFolder + "you_win.ogg");
-        library.announcerLose = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            VoiceoverAudioFolder + "you_lose.ogg");
         EditorUtility.SetDirty(controller);
         EditorUtility.SetDirty(upperBodyMask);
         EditorUtility.SetDirty(library);

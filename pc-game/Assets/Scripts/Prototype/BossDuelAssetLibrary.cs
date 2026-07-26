@@ -31,8 +31,4 @@ public sealed class BossDuelAssetLibrary : ScriptableObject
     public AudioClip guardBreak;
     public AudioClip bodyImpactHeavy;
     public AudioClip bodyImpactMedium;
-    // Fighting-game-style announcer lines (Kenney "Voiceover Pack (Fighter)", CC0).
-    public AudioClip announcerFight;
-    public AudioClip announcerWin;
-    public AudioClip announcerLose;
 }
