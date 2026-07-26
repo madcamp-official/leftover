@@ -149,6 +149,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
     private AudioSource _audioSource;
     private AudioSource _audioLayerA;
     private AudioSource _audioLayerB;
+    private AudioSource _audioLayerAnnouncer;
     private AudioClip _slashSound;
     private AudioClip _guardSound;
     private AudioClip _parrySound;
@@ -295,6 +296,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _crouchWasPressed = false;
         _previousLateralPosition = LateralPosition.Center;
         _roundEndedAt = 0f;
+        if (_assetLibrary != null && _audioLayerAnnouncer != null)
+            PlayOnLayer(_audioLayerAnnouncer, _assetLibrary.announcerFight, 1f, 1f);
         _banner = "DUEL START";
         _detail = "J/K: slash  L: kick  Space: guard  F: parry  S/A: dodge";
     }
@@ -764,11 +767,15 @@ public sealed class BossDuelPrototype : MonoBehaviour
                 _enemyPhase = EnemyPhase.Dead;
                 _banner = "VICTORY";
                 _detail = "Press R to duel again.";
+                if (_assetLibrary != null && _audioLayerAnnouncer != null)
+                    PlayOnLayer(_audioLayerAnnouncer, _assetLibrary.announcerWin, 1f, 1f);
             }
             else
             {
                 _banner = "DEFEAT";
                 _detail = "Press R to try again.";
+                if (_assetLibrary != null && _audioLayerAnnouncer != null)
+                    PlayOnLayer(_audioLayerAnnouncer, _assetLibrary.announcerLose, 1f, 1f);
             }
             _roundEndedAt = Time.time;
             return;
@@ -1592,8 +1599,12 @@ public sealed class BossDuelPrototype : MonoBehaviour
             fighter.animator.SetLayerWeight(1, 1f);
             fighter.animator.speed = 1f;
             bool continuesWindup = motion == Motion.HorizontalSlash || motion == Motion.VerticalSlash;
+            // A short blend into the new clip instead of a hard frame-0 cut - these
+            // are all real-time, speed=1 clips (unlike the frozen Idle hold or the
+            // IK-driven Kick), so blending source→destination pose over a few frames
+            // is safe here and removes the pose "pop" between combat states.
             if (!continuesWindup)
-                fighter.animator.Play(state, 1, 0f);
+                fighter.animator.CrossFadeInFixedTime(state, 0.08f, 1, 0f);
         }
     }
 
@@ -2108,17 +2119,35 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (_mainCamera == null)
             return;
 
+        Vector3 targetPosition = _cameraRestPosition;
+        bool matchOver = _player.motion == Motion.Dead || _enemy.motion == Motion.Dead;
+        if (matchOver)
+        {
+            // The close "Pokemon battle" rest camera sits right behind/beside the
+            // player, and the death fall tips the whole fighter (shield included)
+            // over toward roughly that side - without this the falling shield ends
+            // up clipped right against the lens instead of the fall being visible.
+            // Pull back to a wide, centered view for the last moment of the duel.
+            float pullback = Mathf.Clamp01((Time.time - _roundEndedAt) / 0.8f);
+            Vector3 deathCameraPosition = new Vector3(0f, 3.2f, -6.5f);
+            targetPosition = Vector3.Lerp(_cameraRestPosition, deathCameraPosition,
+                Mathf.SmoothStep(0f, 1f, pullback));
+        }
+
         if (Time.time < _cameraShakeEnds)
         {
             float fade = Mathf.InverseLerp(_cameraShakeEnds, _cameraShakeEnds - 0.12f, Time.time);
             Vector3 shake = UnityEngine.Random.insideUnitSphere * (_cameraShakeStrength * fade);
             shake.z *= 0.35f;
-            _mainCamera.transform.position = _cameraRestPosition + shake;
+            _mainCamera.transform.position = targetPosition + shake;
         }
         else
         {
-            _mainCamera.transform.position = _cameraRestPosition;
+            _mainCamera.transform.position = targetPosition;
         }
+
+        if (matchOver)
+            _mainCamera.transform.LookAt(new Vector3(0f, 0.6f, 0f));
     }
 
     private void SpawnImpact(Vector3 position, Material material, float size)
@@ -2160,6 +2189,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _audioSource = CreateAudioLayer(0.78f);
         _audioLayerA = CreateAudioLayer(0.92f);
         _audioLayerB = CreateAudioLayer(0.72f);
+        _audioLayerAnnouncer = CreateAudioLayer(1f);
 
         // These low layers sit under the real CC0 foley clips and add weight.
         _slashSound = CreateProceduralSound("Slash Low Air", 185f, 52f, 0.28f, 0.52f, 0.66f);
@@ -2658,7 +2688,13 @@ public sealed class GroundedFighterRig : MonoBehaviour
         // IK-driven raised position as the new "standing" anchor, and since that anchor then
         // drives next frame's IK too, the raised pose becomes self-reinforcing and the foot
         // never comes back down once a kick gets interrupted mid-swing (e.g. by taking a hit).
-        if (!kickActive && Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
+        // Also hold it while lockFeet is off (Dead): without this, the death-fall rotation
+        // keeps recapturing the feet's LOCAL offset from the tilting root every frame, so by
+        // the time the character finishes falling the "standing" anchor has been overwritten
+        // with a fallen-pose offset. Restarting then re-enables lockFeet and immediately
+        // re-plants both feet using that stale fallen-pose anchor - legs snap into a
+        // crouched/forward pose instead of the actual Idle stance.
+        if (lockFeet && !kickActive && Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
         {
             _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
             _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);

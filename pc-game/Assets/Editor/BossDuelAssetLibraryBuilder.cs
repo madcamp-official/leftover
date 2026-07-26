@@ -54,14 +54,12 @@ public static class BossDuelAssetLibraryBuilder
         "Assets/ThirdParty/KenneyParticlePack/PNG/";
     private const string SlashVfxFolder =
         "Assets/slash5-HungNguyen/prefab/slash/";
-    private const string LaserAudioFolder =
-        "Assets/Laser Weapons Sound Pack/Free/";
-    private const string SciFiWeaponAudioFolder =
-        "Assets/TII_SoundLibrary_3Steps/SCI-FI/Weapons/";
-    private const string SciFiShieldAudioFolder =
-        "Assets/TII_SoundLibrary_3Steps/SCI-FI/Shield/";
-    private const string SciFiWhooshAudioFolder =
-        "Assets/TII_SoundLibrary_3Steps/SCI-FI/Whooshs/";
+    // Kenney CC0 audio (kenney.nl) - public domain, safe to commit and redistribute,
+    // replacing a sci-fi laser/energy-shield set (TII_SoundLibrary_3Steps, Laser
+    // Weapons Sound Pack) that never matched this medieval reskin thematically.
+    private const string ImpactAudioFolder = "Assets/KenneyAudio/ImpactSounds/";
+    private const string RpgAudioFolder = "Assets/KenneyAudio/RPGAudio/";
+    private const string VoiceoverAudioFolder = "Assets/KenneyAudio/VoiceoverFighter/";
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
@@ -220,28 +218,36 @@ public static class BossDuelAssetLibraryBuilder
             AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalSword.prefab");
         library.shieldPrefab =
             AssetDatabase.LoadAssetAtPath<GameObject>(SwordShieldFolder + "MedievalShield.prefab");
-        // Dedicated finished whoosh clips (not a raw build-up layer) for a
-        // punchier swing sound.
+        // Kenney CC0 medieval/RPG foley + impact clips, replacing a sci-fi laser/
+        // energy-shield set left over from the original SF theme pass - it never
+        // matched this medieval reskin thematically.
         library.swordSlice = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiWhooshAudioFolder + "TII_DSGNWhsh_SCIFIScratchWhoosh_Normal_DESIGNED_01.wav");
+            RpgAudioFolder + "knifeSlice.ogg");
         library.swordSliceHeavy = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiWhooshAudioFolder + "TII_DSGNWhsh_SCIFIScratchWhoosh_Normal_DESIGNED_08.wav");
+            RpgAudioFolder + "knifeSlice2.ogg");
         library.swordDraw = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiWeaponAudioFolder + "Mix Samples/TII_SCIWeap_BeamSaber_Simple_MixDown_DESIGNED.wav");
+            RpgAudioFolder + "drawKnife1.ogg");
         library.swordHit = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiWeaponAudioFolder + "Step3/TII_SCIWeap_LaserHit_Simple_Step3_DESIGNED_01.wav");
+            ImpactAudioFolder + "impactMetal_light_000.ogg");
         library.shieldBlock = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiShieldAudioFolder + "Mix Samples/TII_SCIEnrg_EnergyShield_Normal_MixDown_DESIGNED_01.wav");
+            ImpactAudioFolder + "impactPlate_medium_000.ogg");
         library.shieldBlockHeavy = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiShieldAudioFolder + "Mix Samples/TII_SCIEnrg_EnergyShield_Normal_MixDown_DESIGNED_02.wav");
+            ImpactAudioFolder + "impactPlate_heavy_000.ogg");
         library.parryBell = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiShieldAudioFolder + "Step3/TII_SCIEnrg_EnergyShieldImpact_Normal_Step3_DESIGNED_01.wav");
+            ImpactAudioFolder + "impactBell_heavy_000.ogg");
         library.guardBreak = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            SciFiShieldAudioFolder + "Step3/TII_SCIEnrg_EnergyShieldDown_Normal_Step3_DESIGNED_01.wav");
+            ImpactAudioFolder + "impactMetal_heavy_002.ogg");
         library.bodyImpactHeavy =
-            AssetDatabase.LoadAssetAtPath<AudioClip>(LaserAudioFolder + "heavy_blast_001.wav");
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_heavy_000.ogg");
         library.bodyImpactMedium =
-            AssetDatabase.LoadAssetAtPath<AudioClip>(LaserAudioFolder + "light_blast_1.wav");
+            AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactPunch_medium_000.ogg");
+        // Fighting-game-style announcer lines (Kenney "Voiceover Pack (Fighter)").
+        library.announcerFight = AssetDatabase.LoadAssetAtPath<AudioClip>(
+            VoiceoverAudioFolder + "fight.ogg");
+        library.announcerWin = AssetDatabase.LoadAssetAtPath<AudioClip>(
+            VoiceoverAudioFolder + "you_win.ogg");
+        library.announcerLose = AssetDatabase.LoadAssetAtPath<AudioClip>(
+            VoiceoverAudioFolder + "you_lose.ogg");
         EditorUtility.SetDirty(controller);
         EditorUtility.SetDirty(upperBodyMask);
         EditorUtility.SetDirty(library);
