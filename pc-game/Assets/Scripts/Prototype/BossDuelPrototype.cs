@@ -1147,6 +1147,22 @@ public sealed class BossDuelPrototype : MonoBehaviour
         fighter.body = model.transform;
         fighter.head = model.transform;
 
+        // Captured now, before the shield/sword get parented onto the hand bones
+        // below, so this only ever contains the 3 body submeshes the Mixamo model
+        // actually ships (Body/Head_Hands/Lower_Armor - confirmed via the live
+        // SkinnedMeshRenderers in Play mode; there is no separate cape/cloak mesh).
+        // GetComponentsInChildren called *after* CreateAssetShield/CreateAssetSword
+        // would also sweep up the shield and sword meshes, and the recolor loop
+        // further down would then flatten their own steel/wood materials to the
+        // same tone as the torso - the actual cause of the "everything looks
+        // brown-cloth-tinted" report, since the shield/sword names don't contain
+        // "lower" or "head" and fell into that loop's default case. It also meant
+        // the shield/sword (and the sword-tip TrailRenderer) were being converted to
+        // URP/Lit *twice* - once here, once already in CreateAssetShield/
+        // CreateAssetSword - which is wasted work and, for the trail's translucent
+        // material, actively wrong.
+        Renderer[] bodyRenderers = model.GetComponentsInChildren<Renderer>(true);
+
         Animator[] animators = model.GetComponentsInChildren<Animator>(true);
         foreach (Animator candidate in animators)
         {
@@ -1183,25 +1199,30 @@ public sealed class BossDuelPrototype : MonoBehaviour
         CreateAssetShield(fighter, leftHand, root, teamMaterial);
         CreateAssetSword(fighter, rightHand, root);
 
-        fighter.renderers = model.GetComponentsInChildren<Renderer>(true);
+        fighter.renderers = bodyRenderers;
         fighter.rendererBaseColors = new Color[fighter.renderers.Length];
         Color teamColor = facesRight ? new Color(0.18f, 0.55f, 1f) : new Color(1f, 0.23f, 0.18f);
         ConvertFighterMaterialsToUrp(fighter.renderers, teamColor);
         for (int i = 0; i < fighter.renderers.Length; i++)
         {
-            // The Mixamo knight's own material has no real diffuse texture (flat
-            // white either way), so painting a plain 10% team tint over it just
-            // reads as colorless. Give each body part (Body/Head_Hands/
-            // Lower_Armor) a plausible knight tone instead, and lean hard into
-            // the team hue on the torso specifically so it's the color read at
-            // a glance.
+            // Only the "Body" submesh (the torso tabard/cloth - the closest thing
+            // this model has to a separate cape/cloak, since it has no dedicated
+            // cape geometry or material slot at all) carries the team color, and at
+            // full saturation rather than a light wash. Head_Hands (face/hands) and
+            // Lower_Armor (leg plates/boots) get fixed, realistic tones instead -
+            // real skin and real gunmetal steel - with no team-color blend
+            // whatsoever, replacing the old scheme that washed the whole body
+            // (including the shield/sword, before the capture-order fix above) in
+            // the same brown-ish team tint.
             string n = fighter.renderers[i].name.ToLowerInvariant();
-            Color baseTone = n.Contains("lower") ? new Color(0.30f, 0.31f, 0.34f)
-                : n.Contains("head") ? new Color(0.55f, 0.5f, 0.42f)
-                // Body is the tabard/cloth part - brown, not a strong team wash.
-                : new Color(0.36f, 0.24f, 0.14f);
-            float teamBlend = 0.15f;
-            fighter.rendererBaseColors[i] = Color.Lerp(baseTone, teamColor, teamBlend);
+            Color color;
+            if (n.Contains("lower"))
+                color = new Color(0.47f, 0.48f, 0.51f); // realistic gunmetal/steel leg armor
+            else if (n.Contains("head"))
+                color = new Color(0.80f, 0.62f, 0.49f); // realistic human skin tone
+            else
+                color = teamColor; // Body/tabard - the cape-substitute, 100% team color
+            fighter.rendererBaseColors[i] = color;
         }
         fighter.bodyRenderer = fighter.renderers.Length > 0 ? fighter.renderers[0] : null;
         RestoreFighterAppearance(fighter);
@@ -1222,7 +1243,13 @@ public sealed class BossDuelPrototype : MonoBehaviour
         // doing this frame.
         var mount = new GameObject("Left Hand Shield");
         mount.transform.SetParent(leftHand);
-        mount.transform.localPosition = new Vector3(0f, 0.05f, 0.03f);
+        // Was (0, 0.05, 0.03), which centered the shield right at the wrist - close
+        // enough to the actual grip, but it left the elbow sticking out past the
+        // shield's upper-left edge in every stance (confirmed via close-up Idle/
+        // Guard/Parry screenshots). Raising the mount along the hand bone's local Y
+        // shifts the shield's center up toward the elbow instead, so the disc's
+        // radius actually covers it from a front-facing camera.
+        mount.transform.localPosition = new Vector3(0f, 0.24f, 0.02f);
         mount.transform.localRotation = ShieldBaseRotation;
         fighter.shieldPivot = mount.transform;
         if (_assetLibrary != null && _assetLibrary.shieldPrefab != null)
@@ -1231,7 +1258,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
             shield.name = "Medieval Shield";
             shield.transform.localPosition = Vector3.zero;
             shield.transform.localRotation = Quaternion.identity;
-            shield.transform.localScale = Vector3.one;
+            shield.transform.localScale = Vector3.one * 1.15f;
             Renderer[] renderers = shield.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers, teamMaterial.color);
             fighter.shieldRenderer = renderers.Length > 0 ? renderers[0] : null;
@@ -2026,40 +2053,82 @@ public sealed class BossDuelPrototype : MonoBehaviour
         }
     }
 
+    private static Sprite _directionalBarSprite;
+
+    // A large, unambiguous horizontal/vertical streak baked directly into a runtime
+    // texture (a soft-edged bar: a bright band across the middle, feathered top/
+    // bottom and feathered at both ends) instead of relying on a hunted-down "slash
+    // mark" asset. The previously wired prefabs (slash5-HungNguyen "bolder" pack)
+    // read as a small, ambiguous curved mark rather than a clean bar, and no amount
+    // of scale multiplier fixed the *shape* complaint - only authoring the shape
+    // ourselves guarantees "horizontal" and "vertical" are unmistakable. Square
+    // texture with pixelsPerUnit == its own size, so a Sprite at localScale (sx, sy)
+    // is exactly sx by sy world units - the same convention the old fallback sprite
+    // path below used to rely on.
+    private static Sprite GetDirectionalBarSprite()
+    {
+        if (_directionalBarSprite != null)
+            return _directionalBarSprite;
+
+        const int size = 256;
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear
+        };
+        var pixels = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+        {
+            float v = (y + 0.5f) / size;
+            float vFromCenter = Mathf.Abs(v - 0.5f) * 2f;
+            // Bright core band across the middle, feathering to fully transparent
+            // above/below - this is what reads as "a bar" rather than a soft blob.
+            float crossFade = Mathf.Clamp01(1f - Mathf.Pow(vFromCenter / 0.55f, 2.2f));
+            for (int x = 0; x < size; x++)
+            {
+                float u = (x + 0.5f) / size;
+                float endFade = Mathf.Clamp01(Mathf.Min(u, 1f - u) / 0.08f);
+                byte a = (byte)Mathf.RoundToInt(Mathf.Clamp01(crossFade * endFade) * 255f);
+                pixels[y * size + x] = new Color32(255, 255, 255, a);
+            }
+        }
+        texture.SetPixels32(pixels);
+        texture.Apply(false, false);
+        _directionalBarSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size),
+            new Vector2(0.5f, 0.5f), size);
+        return _directionalBarSprite;
+    }
+
     private void SpawnDirectionalSlash(Fighter attacker, bool horizontal, float scale = 1.15f, float life = 1.2f)
     {
-        Color color = attacker.facesRight
-            ? new Color(0.12f, 0.82f, 1f, 1f)
-            : new Color(1f, 0.20f, 0.06f, 1f);
-        float side = attacker.facesRight ? 1f : -1f;
-        // Anchored to the attacker's actual position; the old fixed
-        // world-space offsets only lined up by coincidence near the origin.
-        Vector3 center = attacker.root.position + new Vector3(0.9f * side, 1.42f, 0.18f);
-
-        GameObject prefab = _assetLibrary != null
-            ? (horizontal ? _assetLibrary.slashVfxHorizontal : _assetLibrary.slashVfxVertical)
-            : null;
-        if (prefab != null)
-        {
-            Quaternion facing = _mainCamera != null
-                ? Quaternion.LookRotation(_mainCamera.transform.forward)
-                : Quaternion.identity;
-            Quaternion rotation = facing * Quaternion.Euler(0f, 0f, horizontal ? 0f : 90f);
-            GameObject vfx = Instantiate(prefab, center, rotation, transform);
-            vfx.transform.localScale = Vector3.one * scale;
-            Destroy(vfx, life);
+        if (_mainCamera == null)
             return;
-        }
 
-        // Fallback if the stylized slash prefabs are missing from the library.
-        Sprite slashSprite = _assetLibrary != null ? _assetLibrary.slashSprite : null;
-        Vector3 start = horizontal ? new Vector3(0.8f, 0.18f, 1f) : new Vector3(0.18f, 0.8f, 1f);
-        Vector3 end = horizontal ? new Vector3(4.2f, 0.75f, 1f) : new Vector3(0.75f, 4.2f, 1f);
-        SpawnAnimeSprite(slashSprite, center, color,
-            start, end, horizontal ? 0f : 90f, 0.30f);
-        SpawnAnimeSprite(slashSprite, center + Vector3.forward * 0.04f,
-            Color.Lerp(color, Color.white, 0.72f),
-            start * 0.72f, end * 0.78f, horizontal ? 0f : 90f, 0.18f);
+        Color tint = Color.Lerp(
+            horizontal ? TelegraphHorizontalColor : TelegraphVerticalColor, Color.white, 0.22f);
+        float side = attacker.facesRight ? 1f : -1f;
+        // Centered on the fighter's own torso (not offset out to the side of them,
+        // like the old small hit-spark placement) - a streak this large needs to
+        // actually overlap the body to read as "the character's own swing".
+        Vector3 center = attacker.root.position + new Vector3(0.1f * side, 1.1f, 0.22f);
+
+        // Sized to run from roughly ankle height to well above the head (vertical)
+        // or clear past both shoulders (horizontal) - explicitly large per feedback
+        // that the previous slash mark read as a small localized burst rather than
+        // a cut spanning the whole fighter.
+        float length = 1.35f * scale;
+        float thickness = 0.24f * scale;
+        Vector3 startScale = new Vector3(length * 0.3f, thickness * 0.55f, 1f);
+        Vector3 endScale = new Vector3(length, thickness, 1f);
+        float rotationZ = horizontal ? 0f : 90f;
+
+        Sprite bar = GetDirectionalBarSprite();
+        SpawnAnimeSprite(bar, center, tint, startScale, endScale, rotationZ, life);
+        // A tighter, brighter core streak layered on top for a hot-edge sword-flash
+        // look, using the same bar shape at a smaller/whiter pass.
+        SpawnAnimeSprite(bar, center + new Vector3(0f, 0f, 0.03f),
+            Color.Lerp(tint, Color.white, 0.6f), startScale * 0.55f, endScale * 0.58f,
+            rotationZ, life * 0.75f);
     }
 
     // Layers a real particle-based burst (Travis Game Assets "Hit Impact Effects
