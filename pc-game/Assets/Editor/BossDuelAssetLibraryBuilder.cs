@@ -80,6 +80,19 @@ public static class BossDuelAssetLibraryBuilder
     // uploaded master, since fetching the original does require a Freesound account
     // login this session did not have.
     private const string FreesoundMedievalFolder = "Assets/FreesoundAudio/Medieval/";
+    // Unity Asset Store "Middle Age - Medieval Action Sound FX Pack" (mariobastos,
+    // free) - the round-3 attempt at this exact pack got stuck in the in-app
+    // browser and fell back to the Freesound clips above; this round it imported
+    // cleanly via Package Manager > My Assets. It is a general battle-atmosphere
+    // pack (crowd, arrows, horses, animals, 34 clips total) with no clips
+    // specifically tagged for shield-block/parry/body-impact, but its "Sword
+    // Swish" pair and "Sword 1-7" set are a direct upgrade over the generic
+    // knifeSlice/impactMetal fallbacks for the two roles they actually cover
+    // (swing whoosh, blade-on-blade clash) - see the swordSlice/swordSliceHeavy/
+    // swordHit wiring below. Everything else (draw, shield block, parry bell,
+    // guard break, body impact) has no clear match in this pack and stays on the
+    // curated Freesound CC0 clips.
+    private const string MedievalActionFxFolder = "Assets/Medieval Action - FX Pack 2.0/";
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
@@ -265,17 +278,32 @@ public static class BossDuelAssetLibraryBuilder
         // swordHit, shieldBlock/Heavy, bodyImpactHeavy/Medium previously used Kenney's
         // generic impact set and still fall back to it here if a freesound file is
         // ever missing (e.g. a teammate's checkout is missing the new folder).
+        // Sword Swish 1/2 have a slower, ramping attack (peak ~12-13% into the
+        // clip - a real whoosh building up) versus the Sword 1-7 set's near-
+        // instant attack (peak in the first 0-2%), measured via an RMS envelope
+        // pass over each clip - i.e. these two are actual swing sounds, not
+        // clashes, unlike the flatter single-shot knifeSlice fallback.
         library.swordSlice = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            FreesoundMedievalFolder + "507466_swordSlice_swoosh.mp3") ??
+            MedievalActionFxFolder + "Sword Swish 1.wav") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(
+                FreesoundMedievalFolder + "507466_swordSlice_swoosh.mp3") ??
             AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "knifeSlice.ogg");
         library.swordSliceHeavy = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            FreesoundMedievalFolder + "733891_swordSliceHeavy_whooshTriple.mp3") ??
+            MedievalActionFxFolder + "Sword Swish 2.wav") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(
+                FreesoundMedievalFolder + "733891_swordSliceHeavy_whooshTriple.mp3") ??
             AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "knifeSlice2.ogg");
         library.swordDraw = AssetDatabase.LoadAssetAtPath<AudioClip>(
             FreesoundMedievalFolder + "107589_swordDraw_unsheathe.mp3") ??
             AssetDatabase.LoadAssetAtPath<AudioClip>(RpgAudioFolder + "drawKnife1.ogg");
+        // "Sword 2.wav" - one of a near-identical trio (Sword 1/2/3, peak RMS
+        // within 1% of each other) with the fastest, cleanest single-transient
+        // attack in the pack, i.e. a real blade-on-blade clash rather than the
+        // Kenney generic metal-impact fallback.
         library.swordHit = AssetDatabase.LoadAssetAtPath<AudioClip>(
-            FreesoundMedievalFolder + "334169_swordHit_clash.mp3") ??
+            MedievalActionFxFolder + "Sword 2.wav") ??
+            AssetDatabase.LoadAssetAtPath<AudioClip>(
+                FreesoundMedievalFolder + "334169_swordHit_clash.mp3") ??
             AssetDatabase.LoadAssetAtPath<AudioClip>(ImpactAudioFolder + "impactMetal_light_000.ogg");
         library.shieldBlock = AssetDatabase.LoadAssetAtPath<AudioClip>(
             FreesoundMedievalFolder + "370203_shieldBlock_guard.mp3") ??
