@@ -1621,6 +1621,7 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (fighter.groundedRig != null)
         {
             fighter.groundedRig.kickActive = fighter.motion == Motion.Kick;
+            fighter.groundedRig.nativeFeet = fighter.motion == Motion.Idle;
             fighter.groundedRig.crouchWeight = fighter.motion == Motion.DodgeCrouch
                 ? Mathf.Sin(t * Mathf.PI) : 0f;
             fighter.groundedRig.lateralWeight = fighter.motion == Motion.DodgeLeft
@@ -1669,15 +1670,17 @@ public sealed class BossDuelPrototype : MonoBehaviour
 
         if (motion == Motion.Idle)
         {
-            // A held, motionless pose instead of a perpetually-looping mocap clip -
-            // even subtle idle sway reads as constant jitter once the fighter is
-            // otherwise still, so freeze on the clip's first frame.
+            // Used to freeze on the clip's first frame - a live loop's subtle sway
+            // read as constant jitter, because the position-only foot IK was
+            // re-locking to a fresh anchor every frame (see GroundedFighterRig's
+            // nativeFeet) and lagging a frame behind. With that IK now skipped
+            // entirely for Idle (trusting the ready-stance clip's own planted
+            // feet), the clip can loop live instead - a still photo doesn't read
+            // as "standing," it reads as "paused game."
             if (fighter.animator.layerCount > 1)
                 fighter.animator.SetLayerWeight(1, 0f);
-            fighter.animator.Play(Animator.StringToHash("Idle"), 0, 0f);
             fighter.animator.speed = 1f;
-            fighter.animator.Update(0f);
-            fighter.animator.speed = 0f;
+            fighter.animator.Play(Animator.StringToHash("Idle"), 0, 0f);
             return;
         }
 
@@ -2888,6 +2891,18 @@ public sealed class GroundedFighterRig : MonoBehaviour
     public float crouchWeight;
     public float lateralWeight;
     public float lateralDirection = -1f;
+    // Idle plays its clip live now (see PlayAssetAnimation) instead of frozen on
+    // frame 0, so it needs its own real breathing/weight-shift sway - but the
+    // position-only foot IK below was built for the crouch/dodge hip-offset case
+    // (hold the feet still while the hip moves away from them) and fights a live,
+    // otherwise-unoffset clip instead: re-locking to a fresh per-frame anchor adds
+    // a one-frame lag that reads as jitter once nothing else is moving to mask it,
+    // and locking to a single frozen anchor instead fights the clip's own knee/hip
+    // travel and shows as floating/bent legs. Simplest fix - for Idle specifically,
+    // don't run foot IK at all and trust the clip's own mocap foot placement (a
+    // real "ready stance" take keeps the feet planted on its own); every other
+    // grounded state keeps the existing anchor-tracking IK unchanged.
+    public bool nativeFeet;
 
     public void Configure(Animator animator, Transform fighterRoot)
     {
@@ -2929,7 +2944,8 @@ public sealed class GroundedFighterRig : MonoBehaviour
         // with a fallen-pose offset. Restarting then re-enables lockFeet and immediately
         // re-plants both feet using that stale fallen-pose anchor - legs snap into a
         // crouched/forward pose instead of the actual Idle stance.
-        if (lockFeet && !kickActive && Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
+        if (lockFeet && !kickActive && !nativeFeet &&
+            Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
         {
             _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
             _rightFootAnchor = _fighterRoot.InverseTransformPoint(_rightFoot.position);
@@ -2942,7 +2958,7 @@ public sealed class GroundedFighterRig : MonoBehaviour
         if (_animator == null || _fighterRoot == null)
             return;
 
-        if (!_ready || !lockFeet)
+        if (!_ready || !lockFeet || nativeFeet)
         {
             // IK weights are sticky Animator state, not tied to any clip - if this
             // just stops calling SetIKPositionWeight (e.g. once Dead turns lockFeet

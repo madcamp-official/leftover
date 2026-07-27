@@ -96,8 +96,19 @@ public static class BossDuelAssetLibraryBuilder
 
     private static readonly Dictionary<string, string> StateClipPaths = new()
     {
-        // FighterPath's own FBX already carries the Idle clip alongside the mesh.
-        { "Idle", FighterPath },
+        // FighterPath's own bundled "Idle" clip turned out to have real foot
+        // travel baked in (measured ~18cm of foot drift in well under a second
+        // once it was played live instead of frozen on frame 0) - it's more a
+        // "settle into stance" transition than a stationary loop, which is
+        // exactly why the old frozen-frame hack always looked like a paused
+        // mid-step rather than a standing pose. The Block Idle (Guard) clip is
+        // a real in-place ready stance - measured foot drift of ~5mm/second
+        // (noise-level) with the same subtle live weight-shift/breathing sway -
+        // and reads as a proper sword-and-shield "on guard" stance at rest,
+        // which is exactly the Tekken-style ready-stance look asked for. Reused
+        // as-is rather than sourcing a separate clip since it already covers
+        // both roles well.
+        { "Idle", MixamoFolder + "Knight - Sword And Shield Block Idle (Guard).fbx" },
         { "HorizontalSlash", MixamoFolder + "Knight - Sword And Shield Slash - Cross Slash (Horizontal).fbx" },
         { "VerticalSlash", MixamoFolder + "Knight - Sword And Shield Slash - Downward Slash (Vertical).fbx" },
         { "Kick", MixamoFolder + "Knight - Sword And Shield Kick - Sparta Kick (Kick).fbx" },
@@ -219,6 +230,11 @@ public static class BossDuelAssetLibraryBuilder
         EnsureHumanoidRig(FighterPath);
         foreach (string file in MixamoAnimationFiles)
             EnsureHumanoidRig(MixamoFolder + file);
+        // Idle now plays live instead of freezing on frame 0 (see PlayAssetAnimation),
+        // but Mixamo FBX imports default clips to non-looping - without this it would
+        // just play once and hold on the LAST frame, swapping one frozen pose for
+        // another instead of actually looping the ready-stance sway.
+        EnsureLoopingClip(StateClipPaths["Idle"]);
 
         BossDuelAssetLibrary library =
             AssetDatabase.LoadAssetAtPath<BossDuelAssetLibrary>(LibraryPath);
@@ -411,6 +427,33 @@ public static class BossDuelAssetLibraryBuilder
             return;
 
         importer.animationType = ModelImporterAnimationType.Human;
+        importer.SaveAndReimport();
+    }
+
+    private static void EnsureLoopingClip(string path)
+    {
+        if (AssetImporter.GetAtPath(path) is not ModelImporter importer)
+            return;
+
+        ModelImporterClipAnimation[] clips = importer.clipAnimations;
+        if (clips == null || clips.Length == 0)
+            clips = importer.defaultClipAnimations;
+        if (clips == null || clips.Length == 0)
+            return;
+
+        bool changed = false;
+        for (int i = 0; i < clips.Length; i++)
+        {
+            if (!clips[i].loopTime)
+            {
+                clips[i].loopTime = true;
+                changed = true;
+            }
+        }
+        if (!changed)
+            return;
+
+        importer.clipAnimations = clips;
         importer.SaveAndReimport();
     }
 }
