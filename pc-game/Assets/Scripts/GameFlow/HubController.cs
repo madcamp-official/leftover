@@ -17,7 +17,7 @@ public class HubController : MonoBehaviour
         var titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 40, alignment = TextAnchor.UpperCenter };
         var buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 28 };
 
-        GUI.Label(new Rect(0, 60, Screen.width, 60), "저능아게임", titleStyle);
+        GUI.Label(new Rect(0, 60, Screen.width, 60), "우가우가게임", titleStyle);
 
         if (match == null) return;
 

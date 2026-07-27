@@ -2,7 +2,7 @@
 웹캠 비전 서버 (Python + MediaPipe) -> Unity(PC 게임)로 UDP 연속 스트리밍.
 shared/PROTOCOL.md 참고.
 
-저능아게임(미니게임 6종)은 게임마다 관절 좌표를 다르게 해석해야 해서, 이 서버는 동작을
+우가우가게임(미니게임 6종)은 게임마다 관절 좌표를 다르게 해석해야 해서, 이 서버는 동작을
 분류하지 않는다. 매 프레임 Pose Landmarker가 잡은 두 사람의 상체+하체 관절 13개와,
 Face Landmarker로 계산한 입 벌림/눈 감김 정도(비율값) 두 개만 얹어서 그대로 Unity에
 스트리밍한다 - 분류는 전부 Unity(pc-game/Assets/Scripts/Common/) 쪽 책임.
