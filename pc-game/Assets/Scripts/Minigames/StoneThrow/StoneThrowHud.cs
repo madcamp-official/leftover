@@ -1,6 +1,7 @@
-// 돌던지기 HUD - image/stonethrow/의 v2 네임플레이트/타이머 아트 위에 숫자만 얹는다
+// 돌던지기 HUD - image/games/stone_throw/hud/의 네임플레이트와
+// image/common/ui/hud/의 공용 타이머 아트 위에 숫자만 얹는다.
 // (v2 디자인은 게이지 없이 원형/사각 슬롯에 숫자를 채우는 방식 - hud_received_stones_p1/p2,
-// hud_time_remaining 미리보기 그대로). HubController.BuildStartScreen()과 같은 uGUI 조립
+// time_remaining 미리보기 그대로). HubController.BuildStartScreen()과 같은 uGUI 조립
 // 방식(코드로 Canvas 구성)을 따른다.
 // hud_angle/hud_power/hud_wind는 쓰지 않는다 - 건바운드류 포격 조작 전제로 그려진 것이라
 // 실제 조작(손 들기 자동발사 + 머리 기울여 회피)과 맞지 않아 v2에서 아예 빠졌다.
@@ -9,7 +10,7 @@ using UnityEngine.UI;
 
 public class StoneThrowHud : MonoBehaviour
 {
-    // stonethrow_v2_screen_preview.png 기준 참조 해상도.
+    // image/games/stone_throw/previews/ui_layout.png 기준 참조 해상도.
     private const float RefWidth = 2048f;
     private const float RefHeight = 1152f;
 
