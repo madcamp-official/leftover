@@ -2,18 +2,32 @@
 
 몰입캠프 26s-w4-c2-07 프로젝트 repository
 
-웹캠 모션 인식 보스전 게임 (검 베기/찌르기, 방패 방어/패링, 회피, 발차기 등 8종
-동작을 웹캠 하나로 인식) — 기획서: [보스전_게임_기획서.md](보스전_게임_기획서.md)
+**저능아게임** — 웹캠 한 대 앞에 두 사람이 서서 MediaPipe로 서로의 몸짓을 인식하고, 원시인
+캐릭터로 6개 미니게임(돌던지기, 자세따라하기, 점프해서 과일따기, 머리로 코코넛 깨기, 돌 or
+바나나, 눈빛싸움)에서 1:1로 겨루는 파티 게임. 기획: [저능아게임_기획_프롬프트.md](저능아게임_기획_프롬프트.md)
 
 시작 가이드: [GETTING_STARTED.md](GETTING_STARTED.md)
 
-폰 2대(IMU) 방식은 폐기하고 MediaPipe(웹캠) 단독 인식으로 확정했다 — 기획서 1장 참고.
+> 이전에 있던 3D 검투 게임 컨셉과 관련 코드/에셋/기획서는 전부 정리했다 — 그 작업은
+> `feature/duel-polish-round3` 등 기존 브랜치 히스토리에 남아있지만, 이 방향으로는 더 이상
+> 진행하지 않는다.
 
-## 폴더 구조
+## 폴더 구조 및 분업
 
 | 폴더 | 내용 | 담당 |
 |---|---|---|
-| [`pc-game/`](pc-game/) | 메인 게임 (Unity, Standalone) | 게임/비주얼 |
-| [`vision-server/`](vision-server/) | 웹캠 비전 처리 (Python, MediaPipe) | 인식/판정 엔진 |
-| [`shared/`](shared/) | 통신 프로토콜 스펙 | 공용 |
-| [`prototype/`](prototype/) | Day 1 실험 스파이크 (MediaPipe-only MVP, 폰 IMU 실험 기록) | 참고용 |
+| [`vision-server/`](vision-server/) | 웹캠으로 두 사람의 포즈+표정을 인식해서 UDP로 연속 스트리밍하는 Python 프로세스 | **입력팀** |
+| [`pc-game/Assets/Scripts/Common/`](pc-game/Assets/Scripts/Common/) | UDP 스트림을 받아 정리된 API로 노출하는 공용 계층(`PoseInputHub` 등) - 게임팀이 참조하는 계약 | **입력팀** |
+| [`pc-game/Assets/Scripts/GameFlow/`](pc-game/Assets/Scripts/GameFlow/) | 6판 진행/점수 관리 (`MatchController`, `HubController`) | 공용 |
+| [`pc-game/Assets/Scripts/Minigames/`](pc-game/Assets/Scripts/Minigames/) | 미니게임 6종, 게임별 폴더 분리 - `StaringContest`는 완전히 구현된 예시, 나머지 5개는 스캐폴드 | **게임팀** |
+| [`shared/PROTOCOL.md`](shared/PROTOCOL.md) | 두 팀이 합의하는 통신 규약 - 이거 하나만 지키면 서로 독립적으로 작업 가능 | 공용 |
+
+**분업 원칙**: 입력팀은 `PoseInputHub`의 public API(어떤 값을 어떻게 노출할지)까지만 책임지고,
+게임팀은 그 API를 소비하는 쪽만 작업한다. vision-server가 아직 안 켜져 있어도
+`PoseInputHub.Instance.ApplyFrame(...)`에 직접 가짜 데이터를 넣어보면 미니게임을 독립적으로
+테스트할 수 있으므로, 두 팀이 서로를 기다릴 필요 없이 동시에 진행 가능하다.
+
+## 실행
+
+1. `vision-server/README.md`대로 Python 서버 실행 (`python main.py --pc-ip 127.0.0.1`)
+2. Unity에서 `Hub` 씬을 열고 Play

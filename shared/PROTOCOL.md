@@ -1,188 +1,107 @@
-# 통신 프로토콜 스펙 (v0.3 — Phase 1/2 분리)
+# 통신 프로토콜 스펙 (v1.0 — 저능아게임, 연속 스트리밍)
 
-> **v0.3 변경점**: 개발 순서를 두 단계로 나눴다.
-> - **Phase 1 (지금 구현 대상)**: 폰 없이 MediaPipe(웹캠)만으로 7개 동작 전부 인식. 게임
->   로직을 먼저 완성하고 검증하는 게 목표. 시간 동기화 자체가 필요 없음(PC 프로세스 하나로
->   완결).
-> - **Phase 2 (나중, 인식 정확도/반응속도 개선용)**: 검/방패 인식을 폰 2대 IMU로 옮김.
->   Phase 1에서 Unity 쪽에 만들어둔 이벤트 계약은 그대로 두고 이벤트를 "누가 보내느냐"만
->   바뀐다.
->
-> Unity 게임 로직은 **Phase 1 이벤트 계약 하나만** 알면 된다 — 아래 "Phase 1" 섹션이
-> 지금 당장 구현해야 하는 것이고, "Phase 2" 섹션(구 v0.2 내용)은 나중에 폰을 붙일 때
-> 참고할 레퍼런스로 남겨둔다.
+> 이전 버전(v0.3)은 3D 검투 게임용으로, MediaPipe가 동작을 분류해서 "인식된 동작 이벤트"
+> 하나만 이산적으로 보내는 구조였다. 이번 게임은 미니게임 6종이 저마다 다른 방식으로
+> 관절 좌표를 해석해야 해서(예: 손 든 상태는 돌던지기·돌바나나 둘 다 쓰지만 임계값이 다를 수
+> 있음), 분류를 vision-server가 미리 끝내지 않고 **원시 관절 좌표를 매 프레임 그대로 스트리밍**
+> 하고 Unity 쪽에서 게임별로 해석한다. 눈 감김/입 벌림처럼 게임과 무관하게 보편적인 두 값만
+> vision-server가 미리 계산된 비율로 얹어서 보낸다 (모든 게임이 매번 같은 눈 랜드마크
+> 인덱스/EAR 공식을 다시 구현할 필요가 없도록).
 
----
-
-## Phase 1: MediaPipe 이벤트 프로토콜 (지금 구현 대상)
-
-vision-server(Python, MediaPipe)가 7개 동작을 전부 자체 분류해서 **인식된 동작 이벤트**만
-Unity로 보낸다. 원시 센서 데이터를 Unity로 보내고 Unity가 분류하는 게 아니라, 분류는
-Python 쪽에서 끝내고 Unity는 "무슨 동작이 인식됐다"만 받는다 — 이게 Phase 2(원시 센서
-스트리밍 + PC 측 분류)와 가장 큰 구조적 차이다.
-
-### 포트
+## 포트
 
 | 용도 | 포트 | 방향 |
 |---|---|---|
-| 동작 인식 이벤트 | UDP 9002 | vision-server(Python) → PC(Unity) |
+| 연속 프레임 스트림 (포즈+얼굴) | UDP 9100 | vision-server(Python) → PC(Unity) |
 
-시간 동기화용 포트(9000/9001)는 Phase 1에서는 쓰지 않는다. 같은 PC 안에서 프로세스 두 개가
-로컬호스트로 통신하는 것뿐이라 서로 다른 시계를 맞출 필요가 없다.
+포트 하나로 통일 — 폰 IMU/시간동기화(구 버전의 9000/9001)는 이번 게임에서 쓰지 않는다(웹캠
+단독 인식, 폰 없음).
 
-### 이벤트 종류
+## 좌/우 플레이어 구분
 
-검/방패의 순간 동작(스윙류)은 **트리거 이벤트**로, 방어/앉기/좌우이동처럼 계속 유지되는
-자세는 **상태 이벤트**로 보낸다. Unity 쪽 `CombatInputHub`(`pc-game/Assets/Scripts/Combat/`)가
-이 그대로의 이름으로 메서드를 갖고 있으니 필드명을 임의로 바꾸지 말 것.
+한 프레임에 두 사람이 잡히면, **각 사람의 엉덩이 중심(hip center) x좌표**를 기준으로 작은
+쪽을 `p1`(화면 왼쪽), 큰 쪽을 `p2`(화면 오른쪽)로 라벨링한다. 프레임마다 새로 정렬하므로 사람이
+화면 안에서 완전히 반대편으로 걸어가 넘어가지 않는 한 라벨이 안정적으로 유지된다(일반적인
+미니게임 플레이 중 서 있는 자리 정도의 좌우 이동으로는 안 바뀜).
 
-**아래 표가 유일한 기준 문서다.** `vision-server/main.py`(`EVENT_ACTION_MAP`,
-`_log_state_transitions`)와 `pc-game/Assets/Scripts/Combat/NetworkInputProvider.cs`가
-실제로 주고받는 값 그대로다 — 다른 곳에 이름이 다르게 적혀 있으면 이 표가 맞고 그쪽이 틀린 것.
+## 메시지 포맷
 
-**트리거 이벤트** (동작이 인식된 그 순간 1회 전송, `{"action": "..."}` 형태만 옴)
-
-| 동작 | `action` 값 | 인식 방법 (`vision-server`) |
-|---|---|---|
-| 가로 베기 | `swing_horizontal` | 오른쪽 손목, 몸통 중심 기준 상대좌표가 짧은 시간에 크게 이동 + 수평 성분 우세 |
-| 세로 베기 | `swing_vertical` | 위와 동일하되 수직 성분 우세 |
-| 발차기 | `kick` | 무릎 각도(엉덩이-무릎-발목)가 짧은 시간에 급격히 펴짐. 좌/우 다리 구분 없이 `kick` 하나로 판정 |
-| 패링 | `parry` | 왼쪽 손목이 몸통 중심 기준 "안쪽 → 바깥쪽"으로 뻗는 방향일 때만 인정 (방향 무관하게 크기만 보면 스윙 반동에 오탐돼서 방향성 추가함) |
-| 찌르기 | `thrust` | **현재 전송 안 됨.** 스윙과 자꾸 섞여 잡혀서 `vision-server/main.py`의 `update()`에서 `_thrust()` 호출을 꺼둔 상태 (인식 로직 자체는 남아있음) |
-
-**상태 이벤트** (상태가 바뀌는 시점에만 전송 — 매 프레임 보낼 필요 없음)
-
-| 동작 | `action` 값 | 부가 필드 | 인식 방법 (`vision-server`) |
-|---|---|---|---|
-| 기본 방어 | `guard` | `active: true/false` | 왼쪽 손목이 가슴 높이 근처에서 일정 시간 이상 정지 |
-| 앉기 | `crouch` | `active: true/false` | 어깨-엉덩이 중간 y가 기준 자세보다 일정 비율 이상 내려감 |
-| 좌우 회피 | `lateral` | `position: "left" / "right" / "none"` | 코 x좌표와 엉덩이 중심 x의 차이(offset). 발을 옮겨도 유지되고, 고개가 정면으로 돌아오면 `"none"`으로 해제 |
+매 프레임(웹캠 캡처+추론 루프 속도 그대로, 목표 없음 — 대략 15~30fps) 아래 JSON 하나를
+UDP로 보낸다. 사람이 한 명만 잡히면 `players` 배열에 한 개만, 아예 안 잡히면 빈 배열로 보낸다
+(Unity 쪽은 없는 플레이어의 이전 프레임 값을 유지하되, 일정 시간(기본 0.5초) 이상 안 보이면
+"연결 끊김"으로 취급해야 함).
 
 ```json
-{"action": "swing_horizontal"}
-{"action": "kick"}
-{"action": "guard", "active": true}
-{"action": "crouch", "active": false}
-{"action": "lateral", "position": "left"}
+{
+  "t": 1721234567.123,
+  "players": [
+    {
+      "id": "p1",
+      "pose": {
+        "nose": {"x": 0.31, "y": 0.22},
+        "leftShoulder": {"x": 0.28, "y": 0.35}, "rightShoulder": {"x": 0.40, "y": 0.35},
+        "leftElbow": {"x": 0.22, "y": 0.48}, "rightElbow": {"x": 0.46, "y": 0.48},
+        "leftWrist": {"x": 0.18, "y": 0.30}, "rightWrist": {"x": 0.50, "y": 0.60},
+        "leftHip": {"x": 0.30, "y": 0.62}, "rightHip": {"x": 0.38, "y": 0.62},
+        "leftKnee": {"x": 0.29, "y": 0.80}, "rightKnee": {"x": 0.39, "y": 0.80},
+        "leftAnkle": {"x": 0.28, "y": 0.97}, "rightAnkle": {"x": 0.40, "y": 0.97}
+      },
+      "face": {
+        "mouthOpenRatio": 0.08,
+        "eyeAspectRatio": 0.29
+      }
+    },
+    {
+      "id": "p2",
+      "pose": { "...": "위와 동일한 13개 키" },
+      "face": { "mouthOpenRatio": 0.02, "eyeAspectRatio": 0.30 }
+    }
+  ]
+}
 ```
 
-- `lateral.position`이 `"none"`으로 오면 Unity `NetworkInputProvider`는 `left`/`right`가 아닌
-  모든 값을 `LateralPosition.Center`로 취급하므로 그대로 동작한다 (코드 주석엔 `"center"`로
-  적혀 있지만 실제 비교는 `"left"`/`"right"`만 하고 나머지는 전부 Center로 떨어짐).
-- **트리거 vs 상태**: 트리거는 한 번의 동작을 순간적으로 알리는 것 — 같은 스윙이 여러
-  프레임에 걸쳐 중복 판정되지 않도록 쿨다운을 둔다. 상태는 조건이 유지되는 동안 계속
-  True/값을 유지하는 것 — 판정이 순간적으로 흔들려도 오탐이 안 나도록 홀드 타임을 둔다.
+### `pose` 필드 (13개 관절, 전부 필수)
 
-### Unity 쪽 수신부
+MediaPipe Pose Landmarker의 33개 랜드마크 중 상/하체 게임에 실제로 쓰는 13개만 추린 것.
+좌표는 **MediaPipe 정규화 이미지 좌표** 그대로: `x`는 0(왼쪽)~1(오른쪽), `y`는 0(위)~1(아래).
+Unity 쪽에서 화면/월드 좌표로 변환할 때 y축 방향이 뒤집힌다는 것(이미지는 아래로 증가, Unity
+월드는 보통 위로 증가)을 잊지 말 것. z(깊이)는 노이즈가 커서 이번에도 안 보낸다 — 점프 높이처럼
+깊이가 필요해 보이는 값도 전부 y좌표 변화량으로 근사한다(자세한 계산은 Unity
+`Assets/Scripts/Common/GestureRecognizer.cs` 참고).
 
-`pc-game/Assets/Scripts/Combat/NetworkInputProvider.cs`가 이 포맷을 그대로 파싱해서
-`CombatInputHub`에 꽂아준다. `BossDuelPrototype.ConnectInput()`이 Play 시작 시
-`KeyboardInputProvider`와 `NetworkInputProvider`를 **둘 다** 같은 `CombatInput`
-게임오브젝트에 자동으로 붙인다 — vision-server(`python main.py --pc-ip 127.0.0.1`)를
-켜두면 웹캠 모션으로, 안 켜두면 키보드로(J/K/L=가로베기·세로베기·발차기, Space=방어,
-F=패링, S=앉기, A/D=좌우) 그대로 플레이할 수 있고 둘을 동시에 써도 된다.
-`KeyboardInputProvider`는 자기가 마지막으로 Hub에 보낸 값만 기준으로 변화가 있을 때만
-`SetGuarding`/`SetCrouching`/`SetLateralPosition`을 호출하므로, 키보드를 안 만지는
-동안은 `NetworkInputProvider`가 세팅한 상태를 매 프레임 덮어쓰지 않는다.
-
----
-
-## Phase 2: 폰 2대 원시 센서 스트리밍 (나중, 인식 정확도/반응속도 개선용)
-
-Phase 1으로 게임 로직/밸런스가 검증되고, MediaPipe만으로는 인식 정확도나 반응속도가
-아쉬운 동작(특히 발차기, 방어/패링 타이밍)이 확인되면 해당 동작의 임계값을
-조정하거나 폰 IMU를 보조 입력으로 사용한다.
-이때도 Unity 게임 로직은 그대로 두고, `CombatInputHub`에 이벤트를 꽂아주는 새 Provider
-(`PhoneInputProvider` 같은 이름)만 하나 추가하면 된다 — 굳이 UDP 자체 루프를 안 거치고
-`SensorReceiver`가 분류한 결과를 Hub에 바로 호출해도 됨 (같은 Unity 프로세스 안이므로).
-
-같은 로컬 네트워크(검 폰이 핫스팟을 켜고 방패 폰+PC가 거기 접속)에서 동작한다고 가정.
-Tier 1(임계값 분류)을 우선 구현한다. 페이로드 최적화(바이너리 패킹)는 필요해지면 진행.
-
-### 포트
-
-| 용도 | 포트 | 방향 |
-|---|---|---|
-| 시간 동기화 (ping/pong) | UDP 9001 | PC → 각 폰 (ping), 폰 → PC (pong) |
-| 센서 스트리밍 (가속도/자이로) | UDP 9000 | 각 폰 → PC |
-
-포트는 두 폰이 공용으로 쓴다 (서로 다른 IP의 기기라 충돌 없음). PC 쪽은 검 폰 IP,
-방패 폰 IP를 각각 알고 있어야 하며, 두 IP 모두에 대해 시간 동기화를 독립적으로 수행한다.
-
-### 1. 시간 동기화 (NTP 핑퐁)
-
-기획서 3-1의 알고리즘을 그대로 구현한다. **PC가 클라이언트, 폰이 서버** 역할
-(PC 기준 시각으로 모든 걸 정렬해야 하므로). **검 폰, 방패 폰 각각에 대해 독립적으로
-수행** — 즉 PC는 두 폰의 IP를 각각 알고 있어야 하고, offset도 폰별로 따로 보관한다.
-
-#### PING (PC → 폰, port 9001)
-```json
-{"type": "ping", "device": "sword", "seq": 3, "t1": 1721234567890.123}
-```
-- `device`: 이 ping이 향하는 폰 (`"sword"` 또는 `"shield"`) — 로깅/디버깅용. 실제 라우팅은
-  목적지 IP로 이뤄지므로 필수는 아니지만 있으면 로그 읽기 편함
-- `t1`: PC가 송신하는 순간의 PC 시각 (ms, `double`)
-
-#### PONG (폰 → PC, port 9001, ping 수신 즉시 응답)
-```json
-{"type": "pong", "device": "sword", "seq": 3, "t1": 1721234567890.123, "t2": 1721234567895.500, "t3": 1721234567895.600}
-```
-- `device`: 응답하는 폰이 자기 자신의 역할을 echo (PC가 어느 폰의 pong인지 발신 IP로도
-  구분 가능하지만 필드로도 한 번 더 명시)
-- `t1`: 받은 ping의 t1을 그대로 echo
-- `t2`: 폰이 ping을 수신한 순간의 폰 시각
-- `t3`: 폰이 pong을 송신하는 순간의 폰 시각 (t2와 t3 사이 처리 시간은 최소화)
-
-#### PC 측 계산 (pong 수신 시각 t4 기준)
-```
-RTT          = (t4 - t1) - (t3 - t2)
-Clock Offset = ((t2 - t1) + (t3 - t4)) / 2      # phone_clock = pc_clock + offset
-```
-- 연결 시 폰마다 20회 반복 → offset은 **중앙값(median)** 사용 (평균은 아웃라이어에 취약)
-- 폰별로 offset을 따로 저장 (`offsetSword`, `offsetShield`)
-- 이후 센서 패킷의 폰 타임스탬프를 PC 기준으로 바꿀 때: `pc_time = phone_time - offset[device]`
-- 재연결/네트워크 변화 감지 시 재동기화 (예: 30초마다 5회 정도 재측정해 offset 드리프트 보정)
-
-### 2. 센서 스트리밍 (각 폰 → PC, port 9000)
-
-60~100Hz로 전송. 페이로드는 최소한으로.
-
-```json
-{"device": "sword", "seq": 10432, "t": 1721234567900.250, "ax": 0.12, "ay": 9.81, "az": -0.05, "gx": 0.0, "gy": 1.23, "gz": -0.4}
-```
-```json
-{"device": "shield", "seq": 8821, "t": 1721234567901.010, "ax": -0.03, "ay": 9.79, "az": 0.11, "gx": 0.02, "gy": -0.01, "gz": 0.03}
-```
-
-| 필드 | 의미 |
+| 키 | 용도 |
 |---|---|
-| `device` | `"sword"`(폰1) 또는 `"shield"`(폰2) — 어느 폰에서 온 샘플인지, offset 보정과 모션 분류기 라우팅에 사용 |
-| `seq` | 증가하는 패킷 시퀀스 번호 (손실 감지용, **폰별로 별도 카운터**) |
-| `t` | 샘플링 시점의 **폰** 시각 (ms) — PC에서 해당 폰의 offset으로 보정해서 사용 |
-| `ax, ay, az` | 가속도계 3축 (m/s²) |
-| `gx, gy, gz` | 자이로 3축 각속도 (deg/s 또는 rad/s — 팀에서 단위 통일, 아래 "결정 필요" 참고) |
+| `nose` | 머리 기울기(자세따라하기, 돌바나나 회피) |
+| `leftShoulder`/`rightShoulder` | 팔 각도 계산 기준점, 자세따라하기 실루엣 매칭 |
+| `leftElbow`/`rightElbow` | 팔 각도, 실루엣 매칭 |
+| `leftWrist`/`rightWrist` | 손 들기 판정(돌던지기, 돌바나나), 실루엣 매칭 |
+| `leftHip`/`rightHip` | P1/P2 좌우 구분 기준, 점프 높이 계산의 몸통 중심 |
+| `leftKnee`/`rightKnee` | 자세따라하기 실루엣 매칭 |
+| `leftAnkle`/`rightAnkle` | 점프 높이 계산(기준선 대비 변화량) |
 
-PC 수신 측은 `device`별로 `seq` 역전/누락을 따로 감지하고, 오래된 패킷은 버린다.
-분류기도 `device`로 분기: `sword` 스트림은 가로/세로 2분류, 전신 스트림은
-발차기, `shield` 스트림은
-방어/패링 상태머신으로 보낸다 (기획서 3-4). 분류 결과는 Phase 1과 동일한 이벤트 이름
-(`swing_horizontal` 등)으로 `CombatInputHub`에 넘겨서 게임 로직과의 계약을 유지한다.
+### `face` 필드 (2개 값, vision-server가 미리 계산해서 보냄)
 
-앉기/좌우 움직이기는 Phase 2에서도 계속 웹캠(MediaPipe) 담당— 폰으로 옮기지 않는다.
+| 키 | 범위/의미 |
+|---|---|
+| `mouthOpenRatio` | 0에 가까움=다묾, 커질수록 크게 벌림. 입술 상하 랜드마크 간격을 얼굴 크기로 정규화한 값 |
+| `eyeAspectRatio` (EAR) | 뜬 눈은 보통 0.25~0.35, 감으면 0.1 이하로 급격히 떨어짐. 표준 6점 EAR 공식 사용 |
 
-## 4. 모션 분류 결과 이벤트 이름 (표준화)
+이 두 값에 대한 임계값(예: "몇 이하면 감은 것으로 볼지")은 **Unity 쪽에서** 게임별로 정하고,
+필요하면 게임 시작 시 짧게 "눈 크게 뜨기/입 다물기" 캘리브레이션을 거쳐 사람마다 보정한다 —
+vision-server는 원값만 보내고 판정 임계값을 갖지 않는다.
 
-**이 섹션은 삭제하고 위 "Phase 1 > 이벤트 종류" 표로 합쳤다** (`guard_up`/`side_step`처럼
-실제 와이어 값(`guard`/`lateral`)과 다른 이름이 여기 따로 적혀 있어서 문서끼리 서로
-안 맞는 문제가 있었음). 이벤트 이름/값을 찾을 땐 항상 위쪽 "Phase 1: MediaPipe 이벤트
-프로토콜 > 이벤트 종류" 표를 참고할 것 — `prototype/mediapipe_only_mvp`,
-`prototype/pc_server`의 실험 코드도 전부 그 표의 이름을 따른다.
+## Unity 수신부
 
-## 결정 필요 (팀 회의에서 확정할 것)
+`pc-game/Assets/Scripts/Common/PoseStreamReceiver.cs`가 이 포맷을 파싱해서
+`PoseInputHub`(같은 폴더)에 채워 넣는다. 개별 미니게임은 `NetworkInputProvider`/UDP를 직접
+몰라도 되고, `PoseInputHub.GetPlayer(PlayerId.P1)`처럼 정리된 API만 사용한다 — 자세한 계약은
+`pc-game/Assets/Scripts/Common/README.md` 참고.
 
-- [ ] (Phase 1) 발차기 인식이 앉기·좌우이동과 안정적으로 구분되는지
-- [ ] (Phase 1) 판정 윈도우 값 (기획서 추천 ±250~300ms을 시작점으로, 실측 후 조정)
-- [ ] (Phase 2) 자이로 단위: deg/s vs rad/s (Unity `Gyroscope.rotationRate`는 rad/s 기준)
-- [ ] (Phase 2) 센서 전송 주기: 60Hz vs 100Hz (폰 발열/배터리 트레이드오프)
-- [ ] (Phase 2) 검 폰/방패 폰 IP를 어떻게 설정할지 (MVP는 수동 입력으로 충분)
-- [ ] (Phase 2) 접속 시 캘리브레이션 모드 절차 (샘플 스윙 몇 회, 어떤 값을 보정할지)
+## 결정 필요 (실측 후 확정)
+
+- [ ] 목표 전송 주기(현재는 웹캠 캡처 루프 속도에 그대로 종속 — 필요하면 vision-server 쪽에서
+      스로틀링 추가)
+- [ ] `mouthOpenRatio`/`eyeAspectRatio`의 정확한 정규화 공식과 사람별 편차 보정 필요 여부
+- [ ] 두 사람이 화면에서 겹치거나 한쪽이 프레임을 벗어났다가 다시 들어왔을 때 `p1`/`p2` 라벨
+      안정성 (현재는 매 프레임 hip x좌표로 재정렬 — 순간적으로 위치가 겹치면 라벨이 뒤바뀔 수
+      있음, 발생 빈도를 실측 후 스무딩/이력 기반 트래킹 추가 여부 결정)
