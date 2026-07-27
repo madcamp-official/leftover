@@ -1,9 +1,9 @@
 # vision-server
 
-웹캠 한 대 앞에 선 두 사람의 상체 포즈(관절 13개)와 얼굴 상태(입 벌림/눈 감김 비율)를 매
-프레임 그대로 UDP로 Unity(`pc-game`)에 스트리밍하는 Python 프로세스. 동작 분류는 하지 않는다 —
-미니게임마다 필요한 판정이 달라서 Unity 쪽(`pc-game/Assets/Scripts/Common/`)에서 게임별로
-해석한다. 자세한 포맷은 [../shared/PROTOCOL.md](../shared/PROTOCOL.md) 참고.
+한 사람의 상체 포즈(관절 13개)와 얼굴 상태(입 벌림/눈 감김 비율)를 매 프레임 그대로 UDP로
+Unity(`pc-game`)에 스트리밍하는 Python 프로세스. 동작 분류는 하지 않는다 — 미니게임마다
+필요한 판정이 달라서 Unity 쪽(`pc-game/Assets/Scripts/Common/`)에서 게임별로 해석한다.
+자세한 포맷은 [../shared/PROTOCOL.md](../shared/PROTOCOL.md) 참고.
 
 ## 환경 설정
 
@@ -28,27 +28,61 @@ curl -L -o models/face_landmarker.task \
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 ```
 
-## 실행
+## 실행 모드
+
+실측 결과 카메라 1대 앞에 두 사람을 같이 세우면 두 사람이 붙어 있을 때 사람 감지 단계의
+NMS가 겹친 바운딩박스를 하나로 억제해버려서 한쪽이 인식되지 않는 문제가 확인됐다. 그래서
+**온라인 모드(카메라 1대 = 플레이어 1명)를 기본으로 쓴다** — 같은 LAN에 노트북을 두 대
+놓고, 각자 자기 카메라로 자기 자신만 인식해서 같은 Unity PC로 전송한다. Unity는 두 PC 중
+한쪽(또는 별도 PC)에서만 실행되고, 두 사람이 그 화면을 같이 보면서 플레이한다.
 
 ```bash
-# pc-game과 같은 PC에서 돌릴 경우
-python main.py --pc-ip 127.0.0.1
+# 노트북 A (플레이어 1) - <Unity PC의 LAN IP>는 같은 와이파이/공유기에서 Unity를 실행할
+# PC의 IP (예: 192.168.0.12). ipconfig(Windows)/ifconfig(Mac/Linux)로 확인.
+python main.py --pc-ip <Unity PC의 LAN IP> --player-id p1
 
-# vision-server를 다른 머신에서 돌릴 경우 (보통은 안 씀, 레이턴시 손해)
-python main.py --pc-ip <PC의 로컬 IP>
+# 노트북 B (플레이어 2)
+python main.py --pc-ip <Unity PC의 LAN IP> --player-id p2
 ```
 
-카메라 프리뷰 창이 뜨고 랜드마크가 그려지면 성공. 화면 왼쪽에 선 사람 = `p1`, 오른쪽 = `p2`.
-캘리브레이션이 필요 없다 — 원시 좌표를 그대로 보내고, 사람마다 편차가 있는 임계값(눈 감김
-EAR, 점프 높이 기준선 등)은 Unity 쪽에서 게임 시작 시 짧게 캘리브레이션한다. 종료는 `q`.
+Unity를 실행하는 PC 자체에서 vision-server 하나를 같이 돌려도 된다(`--pc-ip 127.0.0.1
+--player-id p1`), 그러면 노트북은 한 대만 더 있으면 된다.
+
+`--player-id`를 생략하면 예전처럼 카메라 1대 앞에 두 사람이 같이 서서 좌/우로 자동 구분하는
+구모드로 동작한다(장비가 노트북 한 대뿐일 때 빠르게 테스트하는 용도로는 여전히 쓸 수 있지만,
+위 문제 때문에 데모용 기본값으로는 권장하지 않음):
+
+```bash
+python main.py --pc-ip 127.0.0.1
+```
+
+카메라 프리뷰 창이 뜨고 랜드마크가 그려지면 성공. 캘리브레이션이 필요 없다 — 원시 좌표를
+그대로 보내고, 사람마다 편차가 있는 임계값(눈 감김 EAR, 점프 높이 기준선 등)은 Unity 쪽에서
+게임 시작 시 짧게 캘리브레이션한다. 종료는 `q`.
+
+## 네트워크 주의사항 (온라인 모드)
+
+- 두 노트북과 Unity PC가 같은 LAN(같은 공유기/핫스팟)에 있어야 한다 — 이번 주 안에는 진짜
+  원격(서로 다른 장소) 전환까지는 하지 않음, 나중에 필요해지면 `--pc-ip`에 공인 IP나 릴레이
+  서버 주소를 넣는 식으로 확장 가능(프로토콜 자체는 안 바뀜).
+- Unity PC의 방화벽이 UDP 9100 인바운드를 막고 있으면 다른 노트북에서 보낸 패킷이 안 들어올
+  수 있다 — Windows는 "Windows Defender 방화벽" > "고급 설정"에서 인바운드 규칙 추가 필요.
+- `PoseStreamReceiver.cs`는 이미 모든 인터페이스(`IPAddress.Any`)에서 9100을 수신하므로
+  Unity/Common 쪽 코드는 온라인 모드 대응을 위해 따로 고칠 게 없다 — 두 노트북이 각자
+  `id: "p1"` 또는 `id: "p2"`만 담긴 프레임을 보내도 `PoseInputHub.ApplyFrame()`이 프레임마다
+  들어온 id만 갱신하는 구조라 자연스럽게 합쳐진다.
 
 ## 현재 상태
 
-- [x] 웹캠 캡처 + MediaPipe Pose Landmarker(최대 2명) + Face Landmarker(최대 2명) landmark
-      오버레이
+- [x] 웹캠 캡처 + MediaPipe Pose Landmarker + Face Landmarker landmark 오버레이
 - [x] UDP 9100으로 `PROTOCOL.md` v1.0 포맷(`{"t":..., "players":[...]}`)에 맞춰 매 프레임
       전송 — `pc-game/Assets/Scripts/Common/PoseStreamReceiver.cs`가 그대로 파싱함
-- [x] p1/p2 구분: hip 중심 x좌표로 좌/우 정렬 (얼굴도 같은 방식으로 정렬해서 포즈와 짝지음)
+- [x] `--player-id` 온라인 모드: 카메라 1대=플레이어 1명, 감지된 첫 사람을 고정 id로 전송
+- [x] 구모드(카메라 1대에 두 명) p1/p2 구분: 이력 기반 최근접 매칭으로 라벨 안정화(단순 x좌표
+      정렬은 두 사람이 순간적으로 겹치면 라벨이 뒤바뀌는 문제가 있어 개선함), 얼굴도 같은
+      원칙으로 짝지음
+- [x] 사람 감지 신뢰도 임계값을 낮춰(0.5→0.3) 붙어 서 있을 때 인식 누락을 줄임 — 다만 실측
+      결과 완전히 해결되진 않아 온라인 모드 도입의 직접적 계기가 됨
 
 ## 이 머신에서만 해당하는 이슈
 

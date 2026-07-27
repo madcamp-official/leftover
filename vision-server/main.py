@@ -3,9 +3,18 @@
 shared/PROTOCOL.md 참고.
 
 우가우가게임(미니게임 6종)은 게임마다 관절 좌표를 다르게 해석해야 해서, 이 서버는 동작을
-분류하지 않는다. 매 프레임 Pose Landmarker가 잡은 두 사람의 상체+하체 관절 13개와,
+분류하지 않는다. 매 프레임 Pose Landmarker가 잡은 사람의 상체+하체 관절 13개와,
 Face Landmarker로 계산한 입 벌림/눈 감김 정도(비율값) 두 개만 얹어서 그대로 Unity에
 스트리밍한다 - 분류는 전부 Unity(pc-game/Assets/Scripts/Common/) 쪽 책임.
+
+두 가지 실행 모드가 있다:
+- 온라인 모드(권장, --player-id 지정): 플레이어 1명당 카메라 1대 - 노트북 두 대를 같은 LAN에
+  놓고 각자 자기 카메라로 자기 자신만 잡아서 보낸다. 카메라 겹침 인식 문제(사람 2명이 붙어
+  있으면 감지가 하나로 억제되는 NMS 문제)가 애초에 생기지 않아 가장 안정적 - 실측 결과 이
+  방식으로 전환하기로 결정함. Unity는 한 PC에서만 실행되고 둘 다 그 화면을 같이 본다.
+- 구모드(--player-id 생략): 카메라 1대 앞에 두 명이 같이 서서 좌/우로 구분. 별도 장비 없이
+  빠르게 테스트할 땐 여전히 쓸 수 있지만, 사람이 붙어 있으면 한쪽이 인식 안 되는 문제가
+  실측으로 확인돼 데모용 기본 모드로는 온라인 모드를 쓴다.
 
 주의: 이 머신의 mediapipe 빌드는 레거시 mp.solutions.pose/face_mesh API가 빠져있고
 Tasks API(mediapipe.tasks.python.vision.PoseLandmarker/FaceLandmarker)만 들어있다 -
@@ -15,7 +24,11 @@ Face Landmarker 모델(face_landmarker.task)이 models/ 밑에 없으면 얼굴 
 감김)만 건너뛰고 포즈 스트리밍은 계속한다 - 모델 파일 하나 없다고 서버 전체가 죽을 필요는
 없음. 받는 법은 vision-server/README.md 참고.
 
-실행: python main.py --pc-ip 127.0.0.1
+실행(온라인 모드, 노트북 A/B에서 각각):
+  python main.py --pc-ip <Unity가 돌아가는 PC의 LAN IP> --player-id p1
+  python main.py --pc-ip <Unity가 돌아가는 PC의 LAN IP> --player-id p2
+실행(구모드, 카메라 1대에 두 명):
+  python main.py --pc-ip 127.0.0.1
 """
 
 import argparse
@@ -98,28 +111,86 @@ def _face_center_x(face_landmarks):
     return face_landmarks[_FACE_TOP].x
 
 
-def build_players_payload(pose_result, face_result):
-    """이번 프레임의 포즈/얼굴 감지 결과를 hip 중심 x좌표(작은 쪽=p1, 큰 쪽=p2) 기준으로
-    정렬해서 최대 2명분의 PROTOCOL.md 포맷 리스트로 조립한다. 얼굴은 별도 모델 detection이라
-    포즈와 짝을 맞춰야 하는데, 같은 프레임 안에서 사람이 최대 2명이라는 전제 하에 얼굴도
-    x좌표로 정렬해서 포즈와 위치 순서대로 짝짓는다(왼쪽 얼굴 <-> 왼쪽 포즈)."""
-    poses = list(pose_result.pose_landmarks) if pose_result.pose_landmarks else []
-    poses.sort(key=_hip_center_x)
+def _assign_player_ids(poses, prev_hip_x):
+    """단순 x좌표 정렬 대신, 직전 프레임에 각 id(p1/p2)가 있던 hip x좌표에 더 가까운 쪽으로
+    매칭한다 - 두 사람이 순간적으로 교차하거나 겹쳐서 hip x좌표 대소관계가 잠깐 역전돼도
+    라벨이 프레임 단위로 뒤바뀌지 않게 하기 위함(실측 결과 실제로 발생하는 문제였음,
+    PROTOCOL.md "결정 필요" 항목). prev_hip_x는 {"p1": float|None, "p2": float|None}이고
+    이 함수가 in-place로 갱신한다. 최초 프레임이나 이력이 없으면 기존처럼 왼쪽=p1로 정렬."""
+    hip_xs = [_hip_center_x(p) for p in poses]
 
+    if len(poses) == 0:
+        return []
+
+    if len(poses) == 1:
+        have_p1, have_p2 = prev_hip_x["p1"] is not None, prev_hip_x["p2"] is not None
+        if have_p1 and have_p2:
+            pid = "p1" if abs(hip_xs[0] - prev_hip_x["p1"]) <= abs(hip_xs[0] - prev_hip_x["p2"]) else "p2"
+        elif have_p2 and not have_p1:
+            pid = "p2"
+        else:
+            pid = "p1"
+        prev_hip_x[pid] = hip_xs[0]
+        return [(pid, poses[0])]
+
+    # len(poses) == 2 (num_poses=2로 제한돼 있어 그 이상은 안 옴)
+    if prev_hip_x["p1"] is None or prev_hip_x["p2"] is None:
+        order = sorted(range(2), key=lambda i: hip_xs[i])
+        assignment = [("p1", order[0]), ("p2", order[1])]
+    else:
+        cost_direct = abs(hip_xs[0] - prev_hip_x["p1"]) + abs(hip_xs[1] - prev_hip_x["p2"])
+        cost_swap = abs(hip_xs[0] - prev_hip_x["p2"]) + abs(hip_xs[1] - prev_hip_x["p1"])
+        assignment = [("p1", 0), ("p2", 1)] if cost_direct <= cost_swap else [("p2", 0), ("p1", 1)]
+
+    result = [(pid, poses[idx]) for pid, idx in assignment]
+    for pid, pose_lm in result:
+        prev_hip_x[pid] = _hip_center_x(pose_lm)
+    return result
+
+
+def _match_faces_to_players(matched_poses, faces):
+    """faces를 x좌표로 단순 정렬해서 포즈와 짝짓지 않고, 각 플레이어 포즈의 코 x좌표와 가장
+    가까운 얼굴을 골라 짝짓는다(포즈 id 배정이 이력 기반으로 바뀌었으니 얼굴 매칭도 같은
+    원칙을 따라야 라벨 안정성이 유지됨). 얼굴 하나는 최대 한 플레이어에게만 배정."""
+    result = {}
+    remaining = list(range(len(faces)))
+    for pid, pose_lm in matched_poses:
+        if not remaining:
+            break
+        ref_x = pose_lm[_NOSE].x
+        best_idx = min(remaining, key=lambda i: abs(_face_center_x(faces[i]) - ref_x))
+        result[pid] = faces[best_idx]
+        remaining.remove(best_idx)
+    return result
+
+
+def build_players_payload(pose_result, face_result, prev_hip_x, fixed_player_id=None):
+    """이번 프레임의 포즈/얼굴 감지 결과를 최대 2명분의 PROTOCOL.md 포맷 리스트로 조립한다.
+
+    fixed_player_id가 None이면 기존처럼 한 카메라에 두 명이 잡히는 걸 전제로
+    _assign_player_ids(이력 기반 최근접 매칭)를 쓴다. fixed_player_id가 주어지면(카메라
+    1대=플레이어 1명 모드 - 온라인/각자 컴퓨터 구성) 좌우 정렬이 의미가 없으므로 감지된
+    첫 사람을 그 id로 그대로 보낸다."""
+    poses = list(pose_result.pose_landmarks) if pose_result.pose_landmarks else []
     faces = list(face_result.face_landmarks) if face_result and face_result.face_landmarks else []
-    faces.sort(key=_face_center_x)
+
+    if fixed_player_id is not None:
+        matched_poses = [(fixed_player_id, poses[0])] if poses else []
+    else:
+        matched_poses = _assign_player_ids(poses[:2], prev_hip_x)
+    matched_faces = _match_faces_to_players(matched_poses, faces)
 
     players = []
-    for i, pose_lm in enumerate(poses[:2]):
+    for pid, pose_lm in matched_poses:
         player = {
-            "id": f"p{i + 1}",
+            "id": pid,
             # {"x":..,"y":..} 객체 형태 - Unity JsonUtility가 [x,y] 배열은 커스텀 타입
             # 필드로 못 받아서(배열<->객체 불일치) 애초에 객체로 보낸다.
             "pose": {key: {"x": pose_lm[idx].x, "y": pose_lm[idx].y} for key, idx in POSE_KEYS.items()},
             "face": {"mouthOpenRatio": 0.0, "eyeAspectRatio": 0.3},
         }
-        if i < len(faces):
-            face_lm = faces[i]
+        face_lm = matched_faces.get(pid)
+        if face_lm is not None:
             player["face"] = {
                 "mouthOpenRatio": _mouth_open_ratio(face_lm),
                 "eyeAspectRatio": (
@@ -128,10 +199,12 @@ def build_players_payload(pose_result, face_result):
                 ) / 2.0,
             }
         players.append(player)
+    # id 순서(p1 먼저)로 전송 - 필수는 아니지만 로그/디버깅 시 보기 편하게.
+    players.sort(key=lambda p: p["id"])
     return players
 
 
-def load_pose_landmarker() -> vision.PoseLandmarker:
+def load_pose_landmarker(num_poses: int = 2) -> vision.PoseLandmarker:
     if not POSE_MODEL_PATH.exists():
         raise FileNotFoundError(
             f"모델 파일이 없습니다: {POSE_MODEL_PATH}\n"
@@ -140,15 +213,23 @@ def load_pose_landmarker() -> vision.PoseLandmarker:
     # model_asset_path 대신 파일을 직접 바이트로 읽어 model_asset_buffer로 넘긴다 - 한글이
     # 섞인 Windows 경로에서 네이티브 레이어가 FileNotFoundError를 내는 문제 우회 (구 버전에서
     # 실측으로 확인된 우회법 그대로 유지).
+    # 기본 신뢰도 임계값(0.5)에서는 두 사람이 가까이 붙어 있을 때 사람 감지 단계의 NMS가
+    # 겹친 바운딩박스를 하나로 억제해버려서 한쪽이 아예 안 잡히는 경우가 실측으로 확인됨
+    # (한 카메라에 두 명을 같이 잡는 구모드에서 특히 자주 발생) - 임계값을 낮춰서 더
+    # 적극적으로 잡도록 함. --player-id 모드(카메라 1대=1명)에서는 애초에 겹칠 사람이 없어
+    # 덜 중요하지만 낮은 임계값을 유지해도 무해함.
     options = vision.PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_buffer=POSE_MODEL_PATH.read_bytes()),
         running_mode=vision.RunningMode.VIDEO,
-        num_poses=2,
+        num_poses=num_poses,
+        min_pose_detection_confidence=0.3,
+        min_pose_presence_confidence=0.3,
+        min_tracking_confidence=0.3,
     )
     return vision.PoseLandmarker.create_from_options(options)
 
 
-def load_face_landmarker():
+def load_face_landmarker(num_faces: int = 2):
     """얼굴 모델이 없으면 None을 리턴 - 호출부는 포즈만으로 계속 동작해야 한다."""
     if not FACE_MODEL_PATH.exists():
         print(
@@ -160,7 +241,7 @@ def load_face_landmarker():
     options = vision.FaceLandmarkerOptions(
         base_options=BaseOptions(model_asset_buffer=FACE_MODEL_PATH.read_bytes()),
         running_mode=vision.RunningMode.VIDEO,
-        num_faces=2,
+        num_faces=num_faces,
     )
     return vision.FaceLandmarker.create_from_options(options)
 
@@ -171,21 +252,42 @@ def main():
     parser.add_argument("--port", type=int, default=9100)
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--show", action="store_true", default=True, help="디버그용 카메라 창 표시")
+    parser.add_argument(
+        "--player-id", choices=["p1", "p2"], default=None,
+        help="지정하면 이 카메라는 '1명만 인식' 모드로 동작 - 감지된 첫 사람을 항상 이 id로"
+             " 보낸다. 카메라 2대(플레이어 1명당 1대)로 나눠서 인식할 때 씀: 노트북 A는"
+             " --player-id p1, 노트북 B는 --player-id p2로 각각 실행하고 둘 다 같은 --pc-ip를"
+             " 바라보게 하면 됨(Unity 쪽 PoseInputHub는 id별로 값을 받으므로 별도 수정 불필요)."
+             " 생략하면 기존처럼 카메라 1대에 두 명이 같이 잡히는 모드로 동작."
+    )
     args = parser.parse_args()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest = (args.pc_ip, args.port)
 
-    pose_landmarker = load_pose_landmarker()
-    face_landmarker = load_face_landmarker()
+    num_people = 1 if args.player_id else 2
+    pose_landmarker = load_pose_landmarker(num_people)
+    face_landmarker = load_face_landmarker(num_people)
 
     cap = cv2.VideoCapture(args.camera_index)
     if not cap.isOpened():
         raise RuntimeError(f"카메라 {args.camera_index}번을 열 수 없습니다.")
+    # 테스트 시 화면이 너무 작아 잘 안 보인다는 피드백 - 캡처 해상도 자체를 높여서 요청.
+    # 카메라가 이 해상도를 지원 안 하면 드라이버가 가장 가까운 값으로 알아서 맞춘다.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+    if args.show:
+        cv2.namedWindow("vision-server", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("vision-server", 1280, 720)
 
     start_time = time.time()
+    prev_hip_x = {"p1": None, "p2": None}  # 라벨 안정화용 이력 - _assign_player_ids 참고.
     print(f"[udp] {dest[0]}:{dest[1]} 로 연속 포즈 스트림 전송 (매 프레임)")
-    print("화면 왼쪽에 선 사람 = p1, 오른쪽 = p2. 종료는 'q'.")
+    if args.player_id:
+        print(f"1인 모드: 이 카메라에 감지된 사람은 전부 {args.player_id}로 전송됩니다. 종료는 'q'.")
+    else:
+        print("화면 왼쪽에 선 사람 = p1, 오른쪽 = p2. 종료는 'q'.")
 
     try:
         while True:
@@ -201,7 +303,7 @@ def main():
             pose_result = pose_landmarker.detect_for_video(mp_image, now_ms)
             face_result = face_landmarker.detect_for_video(mp_image, now_ms) if face_landmarker else None
 
-            players = build_players_payload(pose_result, face_result)
+            players = build_players_payload(pose_result, face_result, prev_hip_x, fixed_player_id=args.player_id)
             sock.sendto(
                 json.dumps({"t": time.time(), "players": players}).encode("utf-8"),
                 dest,

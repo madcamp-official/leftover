@@ -2,9 +2,14 @@
 
 몰입캠프 26s-w4-c2-07 프로젝트 repository
 
-**우가우가게임** — 웹캠 한 대 앞에 두 사람이 서서 MediaPipe로 서로의 몸짓을 인식하고, 원시인
+**우가우가게임** — 두 사람이 각자 카메라 앞에서 MediaPipe로 몸짓을 인식하고, 원시인
 캐릭터로 6개 미니게임(돌던지기, 자세따라하기, 점프해서 과일따기, 머리로 코코넛 깨기, 돌 or
 바나나, 눈빛싸움)에서 1:1로 겨루는 파티 게임. 기획: [우가우가게임_기획_프롬프트.md](우가우가게임_기획_프롬프트.md)
+
+> 처음엔 웹캠 한 대 앞에 두 사람이 같이 서는 구조였는데, 실측 결과 두 사람이 붙어 있으면
+> 인식이 한쪽만 되는 문제가 확인돼 **플레이어 1명당 카메라 1대(온라인 모드)** 로 바꿨다.
+> Unity 자체는 한 PC에서만 실행되고 두 사람이 그 화면을 같이 본다 — 자세한 배경/실행법은
+> [vision-server/README.md](vision-server/README.md) "실행 모드" 참고.
 
 시작 가이드: [GETTING_STARTED.md](GETTING_STARTED.md)
 
@@ -16,7 +21,7 @@
 
 | 폴더 | 내용 | 담당 |
 |---|---|---|
-| [`vision-server/`](vision-server/) | 웹캠으로 두 사람의 포즈+표정을 인식해서 UDP로 연속 스트리밍하는 Python 프로세스 | **입력팀** |
+| [`vision-server/`](vision-server/) | 카메라로 포즈+표정을 인식해서 UDP로 연속 스트리밍하는 Python 프로세스(플레이어별로 1대씩 실행) | **입력팀** |
 | [`pc-game/Assets/Scripts/Common/`](pc-game/Assets/Scripts/Common/) | UDP 스트림을 받아 정리된 API로 노출하는 공용 계층(`PoseInputHub` 등) - 게임팀이 참조하는 계약 | **입력팀** |
 | [`pc-game/Assets/Scripts/GameFlow/`](pc-game/Assets/Scripts/GameFlow/) | 6판 진행/점수 관리 (`MatchController`, `HubController`) | 공용 |
 | [`pc-game/Assets/Scripts/Minigames/`](pc-game/Assets/Scripts/Minigames/) | 미니게임 6종, 게임별 폴더 분리 - `StaringContest`는 완전히 구현된 예시, 나머지 5개는 스캐폴드 | **게임팀** |
@@ -29,5 +34,6 @@
 
 ## 실행
 
-1. `vision-server/README.md`대로 Python 서버 실행 (`python main.py --pc-ip 127.0.0.1`)
-2. Unity에서 `Hub` 씬을 열고 Play
+1. `vision-server/README.md`대로, 두 사람이 각자 PC에서 Python 서버 실행
+   (`python main.py --pc-ip <Unity PC의 LAN IP> --player-id p1` / `p2`)
+2. Unity PC에서 `Hub` 씬을 열고 Play — 두 사람이 그 화면을 같이 보면서 플레이
