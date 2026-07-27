@@ -100,6 +100,11 @@ public sealed class BossDuelPrototype : MonoBehaviour
         KickTrade
     }
 
+    // Distance each fighter starts from the center line. Was 2.75 (5.5 apart) -
+    // wide enough that an arm-extended sword swing's blade never reached the
+    // opponent's model at all, swinging through open air. Closed to sword-swing
+    // range, checked visually against an actual mid-swing frame.
+    private const float DuelHalfDistance = 1.65f;
     private const float MaxHealth = 100f;
     private const float PlayerAttackDamage = 18f;
     private const float EnemyAttackDamage = 22f;
@@ -193,8 +198,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         CreateAudio();
         ConfigureScene();
         CreateArena();
-        _player = CreateFighter("PLAYER", new Vector3(-2.75f, 0.25f, 0f), true, _playerMaterial);
-        _enemy = CreateFighter("RIVAL", new Vector3(2.75f, 0.25f, 0f), false, _enemyMaterial);
+        _player = CreateFighter("PLAYER", new Vector3(-DuelHalfDistance, 0.25f, 0f), true, _playerMaterial);
+        _enemy = CreateFighter("RIVAL", new Vector3(DuelHalfDistance, 0.25f, 0f), false, _enemyMaterial);
         ConnectInput();
         ResetRound();
     }
@@ -274,8 +279,8 @@ public sealed class BossDuelPrototype : MonoBehaviour
         _enemy.motion = Motion.Idle;
         _player.root.localScale = _player.baseScale;
         _enemy.root.localScale = _enemy.baseScale;
-        _player.root.position = new Vector3(-2.75f, 0f, 0f);
-        _enemy.root.position = new Vector3(2.75f, 0f, 0f);
+        _player.root.position = new Vector3(-DuelHalfDistance, 0f, 0f);
+        _enemy.root.position = new Vector3(DuelHalfDistance, 0f, 0f);
         _player.basePosition = _player.root.position;
         _enemy.basePosition = _enemy.root.position;
         RestoreFighterAppearance(_player);
@@ -2882,6 +2887,7 @@ public sealed class GroundedFighterRig : MonoBehaviour
     private Transform _fighterRoot;
     private Transform _leftFoot;
     private Transform _rightFoot;
+    private Transform _head;
     private Vector3 _leftFootAnchor;
     private Vector3 _rightFootAnchor;
     private bool _ready;
@@ -2927,6 +2933,25 @@ public sealed class GroundedFighterRig : MonoBehaviour
             if (_leftFoot == null || _rightFoot == null)
                 return;
         }
+        if (_head == null)
+            _head = _animator.GetBoneTransform(HumanBodyBones.Head);
+
+        // The ready-stance/guard clip's mocap turns the head well off to one side
+        // (measured ~55-60 degrees of yaw away from the torso's own facing) - a
+        // fencer sighting past their shield shoulder, presumably authored against
+        // a different opponent-facing convention than this rig uses, and the
+        // reason both fighters read as not looking at each other even though the
+        // hips/chest are already aimed correctly at the opponent. Re-aim just the
+        // head's horizontal facing at the opponent every frame (skipped during
+        // Dead, via lockFeet, so the death-fall rotation is untouched) - only the
+        // yaw is corrected, so any animated up/down nod or tilt is left alone.
+        if (_head != null && lockFeet)
+        {
+            Vector3 currentFlat = Vector3.ProjectOnPlane(_head.forward, Vector3.up);
+            Vector3 desiredFlat = Vector3.ProjectOnPlane(_fighterRoot.forward, Vector3.up);
+            if (currentFlat.sqrMagnitude > 0.0001f && desiredFlat.sqrMagnitude > 0.0001f)
+                _head.rotation = Quaternion.FromToRotation(currentFlat, desiredFlat) * _head.rotation;
+        }
 
         // Keep tracking the live animated foot pose while standing normally, instead of
         // freezing a single snapshot forever — a one-time snapshot fights the continuously
@@ -2944,7 +2969,16 @@ public sealed class GroundedFighterRig : MonoBehaviour
         // with a fallen-pose offset. Restarting then re-enables lockFeet and immediately
         // re-plants both feet using that stale fallen-pose anchor - legs snap into a
         // crouched/forward pose instead of the actual Idle stance.
-        if (lockFeet && !kickActive && !nativeFeet &&
+        //
+        // Deliberately NOT excluded here: nativeFeet (Idle). OnAnimatorIK below skips
+        // applying IK entirely while nativeFeet is set, but this capture still has to run
+        // during Idle so the anchor is already valid the instant a fighter leaves Idle for
+        // an attack - otherwise the anchor sits at its C# default (0,0,0) for as long as the
+        // fighter has ever only been Idle, and the first frame of that first attack applies
+        // IK using that zero anchor: both feet snap to the fighter root's own position
+        // (ground level) for a frame, which reads as the foot punching straight through the
+        // floor right as the swing begins.
+        if (lockFeet && !kickActive &&
             Mathf.Approximately(crouchWeight, 0f) && Mathf.Approximately(lateralWeight, 0f))
         {
             _leftFootAnchor = _fighterRoot.InverseTransformPoint(_leftFoot.position);
