@@ -1,7 +1,7 @@
 // 눈빛 싸움 - 조작 없음, 그냥 카메라를 응시. 다른 5개 미니게임을 담당할 협업자를 위한
 // "완전히 동작하는 예시"로 가장 먼저 구현했다: PoseInputHub를 어떻게 읽고, CavemanSilhouette를
 // 어떻게 붙이고, MatchController에 결과를 어떻게 보고하는지 전부 이 파일 하나에 들어있다.
-// 저능아게임_기획_프롬프트.md "6. 눈빛 싸움" 스펙 그대로.
+// 우가우가게임_기획_프롬프트.md "6. 눈빛 싸움" 스펙 그대로.
 using System.Collections;
 using UnityEngine;
 

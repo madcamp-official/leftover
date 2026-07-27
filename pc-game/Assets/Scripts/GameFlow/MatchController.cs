@@ -9,7 +9,7 @@ public sealed class MatchController : MonoBehaviour
 {
     public static MatchController Instance { get; private set; }
 
-    // 저능아게임_기획_프롬프트.md 표 순서 그대로. 씬 이름은 Build Settings에 등록된
+    // 우가우가게임_기획_프롬프트.md 표 순서 그대로. 씬 이름은 Build Settings에 등록된
     // 미니게임 씬 이름과 정확히 같아야 한다.
     public static readonly IReadOnlyList<string> RoundScenes = new List<string>
     {
