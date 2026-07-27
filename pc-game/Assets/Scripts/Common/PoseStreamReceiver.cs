@@ -58,27 +58,28 @@ public class PoseStreamReceiver : MonoBehaviour
         PoseInputHub hub = PoseInputHub.Instance;
         if (hub == null) return;
 
-        // 한 프레임에 여러 개가 쌓여 있어도 최신 것만 반영하면 되므로, 큐를 비우면서
-        // 마지막으로 파싱에 성공한 것만 적용한다 (오래된 프레임을 굳이 순서대로 처리할
-        // 필요 없음 - 위치 스트림은 최신 값이 항상 이전 값을 덮어써도 무방).
-        string latest = null;
+        // 쌓인 패킷을 전부 순서대로 적용한다. 같은 플레이어의 나중 프레임이 앞 프레임을
+        // 덮어쓰므로 결과적으로는 각 플레이어의 최신 값만 남는다.
+        //
+        // 마지막 패킷 하나만 적용하는 최적화를 쓰면 안 된다: 온라인 모드(플레이어 1명당
+        // vision-server 1개)에서는 p1 패킷과 p2 패킷이 서로 다른 소스에서 번갈아 도착하기
+        // 때문에, 마지막 하나만 취하면 다른 플레이어의 프레임이 통째로 버려져서 그쪽이
+        // stale timeout에 걸려 계속 추적 끊김 상태가 된다.
         while (_incoming.TryDequeue(out string json))
-            latest = json;
-
-        if (latest == null) return;
-
-        FramePayload frame = null;
-        try
         {
-            frame = JsonUtility.FromJson<FramePayload>(latest);
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning($"[PoseStream] JSON 파싱 실패: {e.Message}");
-        }
+            FramePayload frame = null;
+            try
+            {
+                frame = JsonUtility.FromJson<FramePayload>(json);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[PoseStream] JSON 파싱 실패: {e.Message}");
+            }
 
-        if (frame != null)
-            hub.ApplyFrame(frame);
+            if (frame != null)
+                hub.ApplyFrame(frame);
+        }
     }
 
     private void OnDestroy()
