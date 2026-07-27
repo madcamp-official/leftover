@@ -1247,43 +1247,24 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (anchorBone == null)
             return;
 
-        // Rounds 3-5 all mounted the shield rigidly on a single bone (first
-        // LeftHand, then LeftLowerArm) with one hardcoded local rotation constant
-        // (an idle-yaw, then a wrist offset with the wrong sign, then
-        // ShieldBaseRotation = Euler(-70,0,90)). Each attempt only ever "looked
-        // right" in the one pose it was tuned against, because a single fixed
-        // rotation has no way to know where the wrist actually is relative to the
-        // elbow in THIS rig/pose - the user's own diagnosis was that this is why
-        // it kept flipping between "elbow exposed" and "arm pokes through the
-        // shield face" as the constant got re-tuned.
-        //
-        // The user's proposed fix, implemented directly: a forearm shield is
-        // braced at TWO points at once - an inner-front handle at the wrist and
-        // an inner-rear strap at the elbow - so its geometry should be derived
-        // from the vector between those two bones, not from a guessed constant.
-        // We still parent to a single bone (the forearm/lower-arm, since that
-        // sits roughly at the midpoint and already carries the natural elbow
-        // bend during animation), but the local offset/rotation baked onto that
-        // parent is computed ONCE here, at fighter-creation time, straight from
-        // where the wrist and elbow bones actually are on this rig's bind pose:
-        //   - position: the midpoint between the wrist and elbow world
-        //     positions, nudged a little further along the outward face-normal
-        //     so the mesh clears the arm instead of intersecting it.
-        //   - orientation: local Y (the mesh's long/vertical axis - it's a tall
-        //     kite-ish shield, X and Z are the narrow width/thickness axes) is
-        //     set to point exactly along the elbow->wrist axis, so the shield's
-        //     span naturally follows the real forearm's angle in every pose
-        //     instead of a single fixed tilt. Local Z (the mesh's flat
-        //     face-normal, confirmed via its ~1.17 x 1.17 x 0.13 localBounds -
-        //     Z is the thin dimension) is solved as whatever is left over,
-        //     perpendicular to that arm axis, closest to the character's own
-        //     forward direction - so the face reads as a broad plane pointed at
-        //     the opponent rather than edge-on, from front, 3/4, and profile
-        //     alike, and never ends up aimed back along the arm (which is what
-        //     let the forearm poke through the face in round 5).
-        // Because this is derived from the two real bone positions instead of a
-        // constant, it self-corrects for any arm angle this rig is ever posed
-        // in, rather than only the one pose it happened to be measured against.
+        // Rounds 3-6 all mounted the shield from a guessed axis constant (an
+        // idle-yaw, then a wrist offset with the wrong sign, then "local Y is
+        // the arm axis") and kept flipping between "elbow exposed" and "arm
+        // pokes through the shield face"/"handle facing the opponent" as that
+        // constant got re-tuned. The user's own read of round 6: the mesh's
+        // two physical strap handles baked into the prefab - a single straight
+        // hand-grip bar ("MedievalShieldHandle") and a pair of crossed straps
+        // ("MedievalShieldHandle (1)"/"(2)") that read as an X-brace for the
+        // forearm - should be the calibration points: grip bar to the wrist,
+        // X-strap to the elbow. So instead of assuming which local axis is
+        // "the arm axis" or "the front," we measure the real local-space
+        // vector between those two named parts on the actual mesh and solve
+        // the mount transform from that, plus the mesh's known thin axis
+        // (local Z, confirmed via its ~1.17 x 1.17 x 0.13 localBounds) for the
+        // face normal - flipped to point the strap side inward, since round 6
+        // had that backwards. See the prefab-branch below for the actual fit;
+        // this generic midpoint/axis math still backs the no-prefab primitive
+        // fallback, which has no handle geometry to calibrate against.
         Vector3 worldElbow = leftElbow != null ? leftElbow.position : leftWrist.position;
         Vector3 worldWrist = leftWrist != null ? leftWrist.position : leftElbow.position;
         Vector3 armAxis = worldWrist - worldElbow;
@@ -1309,37 +1290,81 @@ public sealed class BossDuelPrototype : MonoBehaviour
         if (Vector3.Dot(faceNormal, fighterRoot.forward) < 0f)
             faceNormal = -faceNormal;
 
-        Vector3 widthAxis = Vector3.Cross(armAxis, faceNormal).normalized;
-        // Re-derive the face normal from the other two so all three are exactly
-        // orthogonal (the projection above only guarantees perpendicular-to-arm,
-        // not perfect orthogonality with the re-derived width axis).
-        faceNormal = Vector3.Cross(widthAxis, armAxis).normalized;
-
-        Quaternion worldShieldRotation = Quaternion.LookRotation(faceNormal, armAxis);
-        Vector3 worldMidpoint = Vector3.Lerp(worldElbow, worldWrist, 0.5f);
-        // Small clearance so the mesh's inner face doesn't z-fight/intersect the
-        // forearm mesh - same intent as the old 0.02 local-Z nudge, just applied
-        // along the axis that is now actually verified to face outward.
-        Vector3 worldMountPosition = worldMidpoint + faceNormal * 0.05f;
-
         var mount = new GameObject("Left Hand Shield");
         mount.transform.SetParent(anchorBone);
-        mount.transform.position = worldMountPosition;
-        mount.transform.rotation = worldShieldRotation;
         fighter.shieldPivot = mount.transform;
+        const float shieldScale = 0.55f;
+
         if (_assetLibrary != null && _assetLibrary.shieldPrefab != null)
         {
             GameObject shield = Instantiate(_assetLibrary.shieldPrefab, mount.transform);
             shield.name = "Medieval Shield";
             shield.transform.localPosition = Vector3.zero;
             shield.transform.localRotation = Quaternion.identity;
-            shield.transform.localScale = Vector3.one * 0.55f;
+            shield.transform.localScale = Vector3.one * shieldScale;
+
+            Transform gripHandle = null;
+            Vector3 crossHandleSum = Vector3.zero;
+            int crossHandleCount = 0;
+            foreach (Transform t in shield.GetComponentsInChildren<Transform>(true))
+            {
+                if (t.name == "MedievalShieldHandle")
+                    gripHandle = t;
+                else if (t.name.StartsWith("MedievalShieldHandle ("))
+                {
+                    crossHandleSum += t.localPosition;
+                    crossHandleCount++;
+                }
+            }
+
+            Quaternion worldShieldRotation;
+            Vector3 worldMountPosition;
+            if (gripHandle != null && crossHandleCount > 0)
+            {
+                Vector3 localHand = gripHandle.localPosition;
+                Vector3 localElbow = crossHandleSum / crossHandleCount;
+                Vector3 localAxis = (localElbow - localHand).normalized;
+
+                // Align the mesh's face-normal axis (local +Z) to point the
+                // strap side inward (-faceNormal, i.e. toward the arm/body) so
+                // the blocking face reads outward toward the opponent - the
+                // exact reverse of round 6, which pointed local +Z outward and
+                // so showed the handles to the opponent instead.
+                Quaternion alignFace = Quaternion.FromToRotation(Vector3.forward, -faceNormal);
+                Vector3 rotatedAxis = alignFace * localAxis;
+                // Twist around that now-aligned face axis until the mesh's own
+                // measured grip->cross-strap line matches the real wrist->elbow
+                // line, so the shield's span follows the actual forearm angle
+                // in this pose rather than a guessed roll.
+                float twistAngle = Vector3.SignedAngle(rotatedAxis, armAxis, -faceNormal);
+                worldShieldRotation = Quaternion.AngleAxis(twistAngle, -faceNormal) * alignFace;
+
+                Vector3 localMid = Vector3.Lerp(localHand, localElbow, 0.5f);
+                Vector3 worldMid = Vector3.Lerp(worldWrist, worldElbow, 0.5f);
+                // Small clearance so the mesh's inner face doesn't z-fight/
+                // intersect the forearm mesh.
+                worldMountPosition = worldMid - worldShieldRotation * (localMid * shieldScale) + faceNormal * 0.05f;
+            }
+            else
+            {
+                // Defensive fallback if the prefab's handle parts are ever
+                // renamed/removed - same inward-strap fix, generic midpoint mount.
+                worldShieldRotation = Quaternion.LookRotation(-faceNormal, armAxis);
+                worldMountPosition = Vector3.Lerp(worldElbow, worldWrist, 0.5f) + faceNormal * 0.05f;
+            }
+
+            mount.transform.position = worldMountPosition;
+            mount.transform.rotation = worldShieldRotation;
+
             Renderer[] renderers = shield.GetComponentsInChildren<Renderer>(true);
             ConvertFighterMaterialsToUrp(renderers, teamMaterial.color);
             fighter.shieldRenderer = renderers.Length > 0 ? renderers[0] : null;
         }
         else
         {
+            Quaternion worldShieldRotation = Quaternion.LookRotation(faceNormal, armAxis);
+            mount.transform.position = Vector3.Lerp(worldElbow, worldWrist, 0.5f) + faceNormal * 0.05f;
+            mount.transform.rotation = worldShieldRotation;
             Transform shield = CreatePrimitive(PrimitiveType.Cylinder, "Shield Face", mount.transform,
                 Vector3.zero, new Vector3(0.43f, 0.065f, 0.43f), teamMaterial);
             // The primitive cylinder's face-normal is its local Y (it's squashed
