@@ -1,5 +1,5 @@
-// 시작 화면 + 최종 결과 화면을 겸하는 Hub 씬 컨트롤러. 시작 화면은 image/start/의 실제 아트
-// (배경+로고+버튼 4개, start_screen_preview.png 구성)로 uGUI Canvas를 조립해서 보여준다.
+// 시작 화면 + 최종 결과 화면을 겸하는 Hub 씬 컨트롤러. 시작 화면은 image/screens/start/의 실제 아트
+// (배경+로고+버튼 4개, previews/ui_layout.png 구성)로 uGUI Canvas를 조립해서 보여준다.
 // MatchController가 "시작 전" 상태(CurrentRoundIndex == -1)면 이 시작 화면을, 6판이 다 끝난
 // 상태(IsMatchComplete)면 결과를 보여준다(결과 화면은 전용 아트가 없어 텍스트로만).
 using UnityEngine;
