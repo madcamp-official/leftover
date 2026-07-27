@@ -1,4 +1,4 @@
-// image/ 폴더에서 (손 또는 AI로) 그려진 실제 소품 아트를 Assets/Resources/Props/ 밑에 넣어두고
+// image/common/props/에서 (손 또는 AI로) 그려진 실제 소품 아트를 Assets/Resources/Props/ 밑에 넣어두고
 // 코드에서 불러올 때 쓰는 헬퍼. RuntimeSpriteFactory(절차적 도형)와 달리 이쪽은 실제 PNG를
 // 그대로 스프라이트로 쓰는 쪽을 위한 것.
 using UnityEngine;
@@ -29,8 +29,9 @@ public static class ArtAssets
     public static Sprite LoadUi(string name) => LoadSprite($"UI/{name}");
     public static Sprite LoadStoneThrow(string name) => LoadSprite($"StoneThrow/{name}");
 
-    // 캐릭터 파츠. 원본 파일명이 캐릭터마다 제각각이라(caveman_01_v2_* / caveman_02_*)
-    // Resources로 들여올 때 p1_*/p2_*로 통일해뒀다 - 여기서는 그 통일된 이름만 쓴다.
+    // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래에서
+    // front/back/faces와 공통 파츠명으로 정리되어 있다. Resources로 들여올 때는
+    // p1_*/p2_* 이름을 사용하며 여기서는 그 통일된 이름만 쓴다.
     // part 예: "head", "torso", "left_upper_arm", "right_lower_arm_hand",
     //          "face_grimacing", "face_stone_hit_one_tooth_broken"
     public static Sprite LoadCharacter(PlayerId player, string part)
