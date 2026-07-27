@@ -1,0 +1,48 @@
+// 점프해서 과일따기 전용 - 발목 y좌표의 "가만히 서 있는" 기준선을 짧게 잡은 뒤, 그 대비
+// 상승 높이를 몸통 길이로 정규화해서 리턴한다. 키/카메라 거리 차이에 영향받지 않게 절대
+// 화면 높이가 아니라 항상 "이 사람 몸통 대비 얼마나 떴는지"로만 잰다.
+using UnityEngine;
+
+public class JumpHeightCalibrator : MonoBehaviour
+{
+    public PlayerId player;
+    public float calibrationSeconds = 1.5f;
+
+    public bool IsCalibrated { get; private set; }
+
+    private float _baselineAnkleY;
+    private float _calibTimer;
+
+    private void Update()
+    {
+        PlayerPoseState state = PoseInputHub.Instance != null ? PoseInputHub.Instance.Get(player) : null;
+        if (state == null || !state.IsTracked || IsCalibrated)
+            return;
+
+        float ankleY = (state.Joints.leftAnkle.y + state.Joints.rightAnkle.y) * 0.5f;
+        _baselineAnkleY = _calibTimer <= 0f ? ankleY : Mathf.Lerp(_baselineAnkleY, ankleY, 0.15f);
+        _calibTimer += Time.deltaTime;
+        if (_calibTimer >= calibrationSeconds)
+            IsCalibrated = true;
+    }
+
+    public void Recalibrate()
+    {
+        IsCalibrated = false;
+        _calibTimer = 0f;
+    }
+
+    // 0 이상, 몸통 길이 대비 상승 비율 (뛸수록 커짐). 캘리브레이션 전이거나 추적이 끊기면 0.
+    public float GetJumpHeight()
+    {
+        if (!IsCalibrated) return 0f;
+        PlayerPoseState state = PoseInputHub.Instance != null ? PoseInputHub.Instance.Get(player) : null;
+        if (state == null || !state.IsTracked) return 0f;
+
+        float torso = state.Joints.TorsoLength;
+        if (torso <= 0f) return 0f;
+        float ankleY = (state.Joints.leftAnkle.y + state.Joints.rightAnkle.y) * 0.5f;
+        // 이미지 y는 아래로 증가하므로, 기준선보다 작아졌다는 건 위로 올라갔다는 뜻.
+        return Mathf.Max(0f, (_baselineAnkleY - ankleY) / torso);
+    }
+}

@@ -3,10 +3,7 @@ __pycache__/
 .venv/
 venv/
 
-# 자체서명 인증서 (로컬에서 각자 생성, prototype/README.md 참고)
-prototype/pc_server/certs/
-
-# Unity (프로젝트 생성 후 pc-game/, phone-sensor/ 안에서도 적용됨)
+# Unity
 Library/
 Temp/
 Obj/
