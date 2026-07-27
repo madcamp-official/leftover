@@ -4,6 +4,11 @@
 // 발사 순간 오른손이 들려 있으면 상대의 오른쪽을, 왼손이 들려 있으면 상대의 왼쪽을 조준한다
 // (둘 다 들려 있으면 오른손 우선). 상대는 그 순간 머리를 좌/우로 기울여 회피 - 조준 방향과
 // 상대의 기울기 방향이 "같으면" 회피, "다르면"(또는 상대가 기울이지 않고 있으면) 명중.
+//
+// 화면은 image/stonethrow/의 실제 아트(v2)로 구성한다 - 배경(style-blend)/플레이어별
+// "맞은 돌" 네임플레이트/남은시간만 사용(HUD 조립은 StoneThrowHud 참고). 이전 v1 아트에 있던
+// 각도/파워/바람 HUD는 건바운드류 포격 조작을 전제로 그려진 것이라 실제 조작(손 들기 자동발사
+// + 머리 기울이기 회피)과 맞지 않아 쓰지 않았고, v2에서는 아예 빠졌다.
 using System.Collections;
 using UnityEngine;
 
@@ -27,8 +32,8 @@ public class StoneThrowGame : MonoBehaviour
     private int _p1Hits;
     private int _p2Hits;
     private bool _ended;
-    private string _eventText = "";
-    private float _eventTextTimer;
+
+    private StoneThrowHud _hud;
 
     private void Start()
     {
@@ -47,9 +52,35 @@ public class StoneThrowGame : MonoBehaviour
         cam.orthographic = true;
         cam.orthographicSize = 3f;
         cam.transform.position = new Vector3(0, 1f, -10f);
+        cam.backgroundColor = new Color(0.79f, 0.69f, 0.53f);
+        cam.clearFlags = CameraClearFlags.SolidColor;
+
+        CreateBackground(cam);
 
         _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2.5f, 0f, 0f));
         _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2.5f, 0f, 0f));
+
+        _hud = StoneThrowHud.Build(matchSeconds);
+    }
+
+    // 배경을 카메라 뷰에 꽉 차게 깐다. 화면비가 배경비(16:9)와 달라도 빈 곳이 안 보이도록
+    // 가로/세로 중 더 크게 키워야 하는 쪽에 맞춘다(cover 방식).
+    private void CreateBackground(Camera cam)
+    {
+        Sprite sprite = ArtAssets.LoadStoneThrow("background");
+        if (sprite == null) return;
+
+        var go = new GameObject("Background");
+        go.transform.position = new Vector3(cam.transform.position.x, cam.transform.position.y, 0f);
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = -100;
+
+        float viewHeight = cam.orthographicSize * 2f;
+        float viewWidth = viewHeight * cam.aspect;
+        Vector2 size = sprite.bounds.size;
+        if (size.x <= 0f || size.y <= 0f) return;
+        go.transform.localScale = Vector3.one * Mathf.Max(viewWidth / size.x, viewHeight / size.y);
     }
 
     private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
@@ -69,18 +100,14 @@ public class StoneThrowGame : MonoBehaviour
         _p1Silhouette.ApplyPose(p1);
         _p2Silhouette.ApplyPose(p2);
 
-        if (_eventTextTimer > 0f)
-        {
-            _eventTextTimer -= Time.deltaTime;
-            if (_eventTextTimer <= 0f) _eventText = "";
-        }
-
         if (_ended) return;
 
         _elapsed += Time.deltaTime;
 
         TickFiring(PlayerId.P1, p1, p2, ref _p1FireTimer);
         TickFiring(PlayerId.P2, p2, p1, ref _p2FireTimer);
+
+        _hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
 
         if (_elapsed >= matchSeconds)
         {
@@ -122,19 +149,40 @@ public class StoneThrowGame : MonoBehaviour
         PlayerId target = thrower == PlayerId.P1 ? PlayerId.P2 : PlayerId.P1;
         if (hit)
         {
-            if (thrower == PlayerId.P1) _p1Hits++; else _p2Hits++;
-            _eventText = $"{thrower} 명중!";
+            int targetHitCount;
+            if (thrower == PlayerId.P1) { _p1Hits++; targetHitCount = _p1Hits; }
+            else { _p2Hits++; targetHitCount = _p2Hits; }
+
+            // HUD의 "맞은 돌"은 각자 플레이트에 자신이 맞은 횟수를 보여준다(누가 맞혔는지가
+            // 아니라 누가 맞았는지) - target의 받은 횟수는 곧 thrower가 지금까지 맞힌 횟수와
+            // 같으므로 targetHitCount를 그대로 target 쪽 플레이트에 표시한다.
+            _hud?.SetHits(target, targetHitCount);
+            _hud?.ShowEvent($"{Label(thrower)} 명중!");
+            StartCoroutine(ReactToHit(target, targetHitCount));
         }
         else
         {
-            _eventText = $"{target} 회피!";
+            _hud?.ShowEvent($"{Label(target)} 회피!");
         }
-        _eventTextTimer = 0.6f;
 
         CavemanSilhouette throwerSil = thrower == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
         CavemanSilhouette targetSil = thrower == PlayerId.P1 ? _p2Silhouette : _p1Silhouette;
         StartCoroutine(FlyStone(throwerSil.transform.position + Vector3.up * 0.6f,
             targetSil.transform.position + Vector3.up * 0.6f, hit));
+    }
+
+    private static string Label(PlayerId id) => id == PlayerId.P1 ? "플레이어 1" : "플레이어 2";
+
+    // 맞은 쪽 표정을 잠깐 바꿔준다 - 많이 맞을수록 이빨이 더 나간 얼굴로.
+    private IEnumerator ReactToHit(PlayerId target, int timesHit)
+    {
+        CavemanSilhouette sil = target == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
+        string face = timesHit >= 6 ? "face_stone_hit_two_teeth_broken"
+            : timesHit >= 3 ? "face_stone_hit_one_tooth_broken"
+            : "face_grimacing";
+        sil.SetFace(face);
+        yield return new WaitForSeconds(0.8f);
+        sil.ResetFace();
     }
 
     private IEnumerator FlyStone(Vector3 from, Vector3 to, bool hit)
@@ -153,6 +201,7 @@ public class StoneThrowGame : MonoBehaviour
         {
             t += Time.deltaTime;
             go.transform.position = Vector3.Lerp(from, end, t / stoneTravelSeconds);
+            go.transform.Rotate(0f, 0f, 540f * Time.deltaTime);
             yield return null;
         }
         Destroy(go);
@@ -161,8 +210,8 @@ public class StoneThrowGame : MonoBehaviour
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
-        _eventText = winner == null ? "무승부!" : $"{winner} 승리!";
-        _eventTextTimer = resultDisplaySeconds;
+        _hud?.SetTimeRemaining(0f);
+        _hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }
@@ -171,22 +220,5 @@ public class StoneThrowGame : MonoBehaviour
     {
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
-    }
-
-    private void OnGUI()
-    {
-        GUI.Label(new Rect(20, 20, 300, 30), $"P1 hits: {_p1Hits}   P2 hits: {_p2Hits}");
-        GUI.Label(new Rect(20, 50, 300, 30), $"남은 시간: {Mathf.Max(0f, matchSeconds - _elapsed):F0}초");
-
-        if (!string.IsNullOrEmpty(_eventText))
-        {
-            var style = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 26,
-                alignment = TextAnchor.UpperCenter,
-                normal = { textColor = Color.black },
-            };
-            GUI.Label(new Rect(0, 90, Screen.width, 40), _eventText, style);
-        }
     }
 }
