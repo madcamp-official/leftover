@@ -14,9 +14,11 @@ public class StoneThrowGame : MonoBehaviour
     public float dodgeTiltThreshold = 0.12f;
     public float stoneTravelSeconds = 0.25f;
     public float resultDisplaySeconds = 2f;
+    public float stoneWidth = 0.3f; // 인게임에서 보일 돌 가로 폭(월드 유닛)
 
     private enum Side { Left, Right }
 
+    private Sprite _stoneSprite;
     private CavemanSilhouette _p1Silhouette;
     private CavemanSilhouette _p2Silhouette;
     private float _elapsed;
@@ -32,6 +34,8 @@ public class StoneThrowGame : MonoBehaviour
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+
+        _stoneSprite = ArtAssets.LoadProp("stone");
 
         Camera cam = Camera.main;
         if (cam == null)
@@ -137,9 +141,10 @@ public class StoneThrowGame : MonoBehaviour
     {
         var go = new GameObject("Stone");
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = RuntimeSpriteFactory.CreateCircle(18, new Color(0.45f, 0.35f, 0.25f));
+        sr.sprite = _stoneSprite;
         sr.sortingOrder = 5;
         go.transform.position = from;
+        ArtAssets.FitWidth(sr, stoneWidth);
 
         // 명중이면 상대 위치에서 멈추고, 회피면 그대로 조금 더 지나쳐서 빗나간 느낌을 준다.
         Vector3 end = hit ? to : to + (to - from).normalized * 0.6f;
