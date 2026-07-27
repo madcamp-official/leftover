@@ -18,8 +18,11 @@ public class CoconutCrackGame : MonoBehaviour
     public float hitDistance = 0.25f;     // 몸통 길이 대비, 이 이하면 "타격"
     public float releaseDistance = 0.45f; // 이 이상으로 벌어져야 다음 타격을 셀 준비 완료
     public float resultDisplaySeconds = 2f;
+    public float coconutWidth = 0.5f; // 인게임에서 보일 코코넛 가로 폭(월드 유닛)
 
-    private static readonly Color CoconutBrown = new Color(0.5f, 0.35f, 0.2f);
+    private Sprite _coconutSprite;
+    private Sprite _coconutBreakLeftSprite;
+    private Sprite _coconutBreakRightSprite;
 
     private CavemanSilhouette _p1Silhouette;
     private CavemanSilhouette _p2Silhouette;
@@ -36,6 +39,10 @@ public class CoconutCrackGame : MonoBehaviour
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+
+        _coconutSprite = ArtAssets.LoadProp("coconut");
+        _coconutBreakLeftSprite = ArtAssets.LoadProp("coconut_break_left");
+        _coconutBreakRightSprite = ArtAssets.LoadProp("coconut_break_right");
 
         Camera cam = Camera.main;
         if (cam == null)
@@ -60,8 +67,9 @@ public class CoconutCrackGame : MonoBehaviour
         go.transform.SetParent(parent, false);
         go.transform.localPosition = new Vector3(0f, 1.6f, 0f);
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = RuntimeSpriteFactory.CreateCircle(50, CoconutBrown);
+        sr.sprite = _coconutSprite;
         sr.sortingOrder = 3;
+        ArtAssets.FitWidth(sr, coconutWidth);
         return sr;
     }
 
@@ -112,26 +120,53 @@ public class CoconutCrackGame : MonoBehaviour
         }
     }
 
-    // 타격 순간 코코넛이 살짝 커졌다가(펀치 스케일) 흰색으로 번쩍이며 원래 크기/색으로 돌아온다.
+    // 타격 순간 멀쩡한 코코넛을 잠깐 숨기고, 반으로 쪼개진 코코넛 두 조각이 좌우로 튀어나가며
+    // 사라지는 연출을 보여준 뒤 다시 멀쩡한 코코넛으로 복구한다(반복 타격 경쟁이라 매번
+    // "깨졌다가 새 코코넛이 나타나는" 것처럼 보이게).
     private IEnumerator PunchCoconut(SpriteRenderer coconut)
     {
         if (coconut == null) yield break;
-        Transform t = coconut.transform;
-        Vector3 baseScale = Vector3.one;
-        coconut.color = Color.white;
 
-        float duration = 0.18f;
+        SpriteRenderer left = SpawnHalf(coconut.transform, _coconutBreakLeftSprite);
+        SpriteRenderer right = SpawnHalf(coconut.transform, _coconutBreakRightSprite);
+        coconut.enabled = false;
+
+        const float duration = 0.28f;
         float elapsed = 0f;
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             float p = elapsed / duration;
-            t.localScale = Vector3.Lerp(baseScale * 1.4f, baseScale, p);
-            coconut.color = Color.Lerp(Color.white, CoconutBrown, p);
+            left.transform.localPosition = Vector3.Lerp(Vector3.zero, new Vector3(-0.3f, -0.15f, 0f), p);
+            left.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Lerp(0f, -30f, p));
+            right.transform.localPosition = Vector3.Lerp(Vector3.zero, new Vector3(0.3f, -0.15f, 0f), p);
+            right.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Lerp(0f, 30f, p));
+            SetAlpha(left, 1f - p);
+            SetAlpha(right, 1f - p);
             yield return null;
         }
-        t.localScale = baseScale;
-        coconut.color = CoconutBrown;
+
+        Destroy(left.gameObject);
+        Destroy(right.gameObject);
+        coconut.enabled = true;
+    }
+
+    private SpriteRenderer SpawnHalf(Transform parent, Sprite sprite)
+    {
+        var go = new GameObject("CoconutHalf");
+        go.transform.SetParent(parent, false);
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = 4;
+        ArtAssets.FitWidth(sr, coconutWidth);
+        return sr;
+    }
+
+    private static void SetAlpha(SpriteRenderer sr, float alpha)
+    {
+        Color c = sr.color;
+        c.a = alpha;
+        sr.color = c;
     }
 
     private void EndMatch(PlayerId? winner)

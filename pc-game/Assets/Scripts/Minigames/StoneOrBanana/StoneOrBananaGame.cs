@@ -21,7 +21,11 @@ public class StoneOrBananaGame : MonoBehaviour
     public float turnTimeoutSeconds = 8f;
     public float throwTravelSeconds = 0.5f;
     public float resultDisplaySeconds = 2f;
+    public float stoneWidth = 0.3f;  // 인게임에서 보일 돌 가로 폭(월드 유닛)
+    public float bananaWidth = 0.45f; // 인게임에서 보일 바나나 가로 폭(월드 유닛)
 
+    private Sprite _stoneSprite;
+    private Sprite _bananaSprite;
     private CavemanSilhouette _p1Silhouette;
     private CavemanSilhouette _p2Silhouette;
     private float _p1Fullness, _p2Fullness;
@@ -37,6 +41,9 @@ public class StoneOrBananaGame : MonoBehaviour
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+
+        _stoneSprite = ArtAssets.LoadProp("stone");
+        _bananaSprite = ArtAssets.LoadProp("banana");
 
         Camera cam = Camera.main;
         if (cam == null)
@@ -201,13 +208,12 @@ public class StoneOrBananaGame : MonoBehaviour
     {
         var go = new GameObject($"Thrown_{kind}");
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = kind == ThrowKind.Stone
-            ? RuntimeSpriteFactory.CreateCircle(18, new Color(0.45f, 0.35f, 0.25f))
-            : RuntimeSpriteFactory.CreateCapsule(14, 34, new Color(0.95f, 0.85f, 0.2f));
+        sr.sprite = kind == ThrowKind.Stone ? _stoneSprite : _bananaSprite;
         sr.sortingOrder = 5;
         Vector3 start = from + Vector3.up * 0.6f;
         Vector3 end = to + Vector3.up * 0.6f;
         go.transform.position = start;
+        ArtAssets.FitWidth(sr, kind == ThrowKind.Stone ? stoneWidth : bananaWidth);
 
         float t = 0f;
         while (t < throwTravelSeconds)
