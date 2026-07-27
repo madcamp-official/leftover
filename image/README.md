@@ -16,6 +16,8 @@ image/
 │   └── ui/{hud,game_icons,match_results}/
 ├── games/
 │   ├── fruit_jump/{background,hud,previews}/
+│   ├── pose_match/{background,obstacles,hud,previews}/
+│   ├── stone_or_banana/{background,covers,hud,icons,ui,previews}/
 │   └── stone_throw/{background,hud,previews}/
 └── screens/
     └── start/{background,buttons,logo,previews}/
@@ -28,10 +30,17 @@ image/
 - 모든 게임에서 사용하는 남은 시간판은 `common/ui/hud/time_remaining.png` 하나만 사용한다.
 - 6게임 공통 승패판과 O/X/무승부 표시는 `common/ui/match_results/`에 둔다.
 - 여러 게임에서 재사용하는 돌·바나나·코코넛·과일은 `common/props/`에 둔다.
+- 돌 or 바나나 게임은 공용 `stone.png`, `banana.png`, 남은 시간판, 6게임 승패판을
+  재사용하며 게임 전용 이빨·포만감 HUD와 턴 안내판만 `games/stone_or_banana/`에 둔다.
+- 돌 or 바나나 게임의 은폐 수풀은 배경에 합치지 않고 `covers/`의 투명 PNG를 사용한다.
+  Unity 정렬 순서는 `background → character → cover bush → UI`로 구성한다.
+- 돌 피격 및 바나나 섭취 표정은 각 캐릭터의 `faces/stone_hit_*.png`,
+  `faces/banana_chewing_puffed_cheeks.png`를 재사용한다.
 - 코코넛 깨기와 과일 점프의 게임 아이콘은 각각
   `common/props/coconut_break_left.png`, `common/props/fruit_grapes.png`를 재사용한다.
 - `previews/` 이미지는 배치 참고용이며 Unity에서 직접 조립할 개별 에셋이 아니다.
-- 새 게임을 추가할 때는 `games/<game_name>/background`, `hud`, `previews` 구조를 따른다.
+- 새 게임을 추가할 때는 `games/<game_name>/background`, `hud`, `previews` 구조를 따르고,
+  독립 장애물이나 소품이 필요하면 `obstacles` 또는 `props`를 추가한다.
 
 ## 정리 원칙
 
