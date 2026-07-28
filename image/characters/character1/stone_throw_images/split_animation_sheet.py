@@ -1,12 +1,18 @@
-"""돌던지기 애니메이션 시트에서 체커보드 배경을 걷어내고 프레임별 PNG로 분리한다.
+"""애니메이션 시트에서 "투명 체커보드"가 픽셀로 구워진 배경을 걷어내고 프레임별 PNG로 분리.
 
-원본(image/characters/character1/charactor1_animation_rock _throw.png)은 알파가 전부 255고
-"투명" 체커보드가 픽셀로 구워져 있다. 체커는 43.125px 격자의 두 색((0,2,1)/(86,86,86))으로
-완벽히 규칙적이라 격자 모델로 예측색을 만들어 걷어낸다.
+원본은 알파가 전부 255고 체커가 그림으로 박혀 있어서 Unity에 그대로 넣으면 회색 체크무늬가
+따라다닌다. 게다가 프레임끼리 팔이 겹쳐서 Grid/Automatic 슬라이스로는 제대로 안 잘린다.
 
-문제: 캐릭터 외곽선이 순수 검정이라 체커 어두운 칸과 색이 같다. 그래서 격자 모델만으로는
-어두운 칸 위의 외곽선이 배경으로 잘려 실루엣이 갉아먹힌다. 채도 있는 본체 픽셀 근처의
-검은 픽셀은 외곽선으로 되살리는 보정을 넣었다.
+핵심 아이디어
+  1) 체커는 43px 격자의 두 색으로 완벽히 규칙적이다. 격자 주기/위상을 실측하고, 칸마다
+     '실제 관측된' 배경 밝기로 dark/light를 정한다(일부 구간은 위상이 뒤집혀 있어 전역
+     패리티 공식만으로는 안 맞는다).
+  2) 배경으로 판정된 픽셀을 '덩어리 단위'로 지운다. 이러면 팔과 몸통 사이처럼 실루엣에
+     둘러싸인 배경(겨드랑이)도 같이 지워진다 - 예전에 fill_holes로 무조건 메워서 체커 색
+     얼룩이 남던 문제가 사라진다.
+  3) 캐릭터의 검은 외곽선은 체커 어두운 칸과 색이 똑같아서 2)에서 같이 깎여나간다. 깎인
+     자국은 닫기 연산으로 되메우되 '검은색으로 칠한다' - 원본 색을 쓰면 체커가 다시
+     묻어나므로. 외곽선 자리라 검정으로 칠하는 게 원래 그림과 같다.
 """
 import numpy as np
 from PIL import Image
@@ -14,73 +20,18 @@ from scipy import ndimage
 
 SRC = r"C:/Users/idote/몰입캠프4주차/leftover/image/characters/character1/charactor1_animation_rock _throw.png"
 OUT_DIR = r"C:/Users/idote/몰입캠프4주차/leftover/image/characters/character1/stone_throw_images"
+PREFIX = "rock_throw"
 
-# 빈 영역의 체커 경계를 선형회귀로 실측한 값 (위상이 0이 아니라 반 칸 어긋나 있다).
+# 빈 영역의 체커 경계를 선형회귀로 실측한 값.
 PERIOD_X, PHASE_X = 43.05444, 42.963
 PERIOD_Y, PHASE_Y = 43.00084, 36.957
 DARK = np.array([0, 2, 1])
 LIGHT = np.array([86, 86, 86])
-MODEL_TOL = 14                 # 예측 체커색과 이 이하로 차이나면 배경 후보
-OUTLINE_REACH = 16             # 본체에서 이 거리 안의 검은 픽셀은 외곽선으로 되살림
-DARK_MAX = 70                  # 외곽선으로 볼 밝기 상한
 
-
-def checker_model(h, w):
-    ys, xs = np.mgrid[0:h, 0:w]
-    iu = np.floor((xs - PHASE_X) / PERIOD_X).astype(int)
-    iv = np.floor((ys - PHASE_Y) / PERIOD_Y).astype(int)
-    return (iu + iv) % 2
-
-
-def build_mask(rgb):
-    """격자 칸마다 '실제 관측된' 배경색으로 예측 맵을 만든다.
-
-    전역 패리티 공식만 쓰면 이미지 일부 구간(x 1938~2358)에서 체커 위상이 뒤집혀 있어
-    예측 light 자리에 실제 dark가 오고, 순수 검정 칸이 그대로 전경으로 통과해버린다.
-    칸별로 배경 표본 밝기를 직접 재서 dark/light를 정하면 위상이 어떻든 맞는다."""
-    h, w, _ = rgb.shape
-    rgbi = rgb.astype(np.int16)
-    mx = rgbi.max(axis=2)
-    mn = rgbi.min(axis=2)
-    chroma = (mx - mn) >= 25            # 살/옷 등 확실한 본체
-
-    # 배경 표본: 채색에서 충분히 떨어진 픽셀만 (외곽선이 섞이면 칸 밝기가 왜곡됨).
-    sample = ~ndimage.binary_dilation(chroma, np.ones((3, 3)), iterations=14)
-
-    iu = np.floor((np.arange(w) - PHASE_X) / PERIOD_X).astype(int)
-    iv = np.floor((np.arange(h) - PHASE_Y) / PERIOD_Y).astype(int)
-    iu -= iu.min()
-    iv -= iv.min()
-    cell = iv[:, None] * (iu.max() + 1) + iu[None, :]
-    ncell = int(cell.max()) + 1
-
-    cnt = np.bincount(cell[sample], minlength=ncell)
-    tot = np.bincount(cell[sample], weights=mx[sample].astype(float), minlength=ncell)
-    cell_dark = (tot / np.maximum(cnt, 1)) < 43
-
-    # 표본이 적은 칸(캐릭터가 거의 다 덮은 칸)은 전역 패리티로 대체.
-    parity = checker_model(h, w)
-    probe = slice(0, 200)
-    dark_parity = 0 if rgb[probe][parity[probe] == 0].mean() < 43 else 1
-    is_dark = np.where(cnt[cell] >= 60, cell_dark[cell], parity == dark_parity)
-    expected = np.where(is_dark[..., None], DARK, LIGHT).astype(np.int16)
-
-    bg_like = np.abs(rgbi - expected).max(axis=2) <= MODEL_TOL
-    print(f"  model check: 상단 빈 영역 배경 일치율 {bg_like[probe].mean():.1%}")
-
-    # 발밑 그림자(체커를 덮은 반투명 타원) 제거 - 진짜 그림에서 무채색인 건
-    # 순수 검정 외곽선(밝기 25 미만)뿐이다.
-    gray_junk = (~chroma) & (mx >= 25)
-    fg = (~bg_like) & (~gray_junk)
-    return ndimage.binary_opening(fg, np.ones((3, 3))), chroma
-
-
-def repair(mask):
-    """실루엣 안쪽 외곽선(둘러싸여 있음)은 구멍 메우기로, 바깥 테두리에 생긴 이빨 자국은
-    얕은 닫기로 복원한다. 닫기 반경을 키우면 손가락/발가락이 뭉개지므로 최소로만."""
-    mask = ndimage.binary_fill_holes(mask)
-    mask = ndimage.binary_closing(mask, DISK12)
-    return ndimage.binary_fill_holes(mask)
+MODEL_TOL = 14        # 예측 체커색과 이 이하 차이면 배경 후보
+MIN_BG_BLOB = 400     # 이보다 큰 배경 후보 덩어리만 실제 배경으로 간주(작은 건 외곽선 틈)
+BITE_RADIUS = 14      # 외곽선이 깎인 자국을 되메울 닫기 반경
+MIN_FIGURE = 20000    # 캐릭터 한 명으로 볼 최소 채색 면적
 
 
 def _disk(r):
@@ -88,73 +39,115 @@ def _disk(r):
     return x * x + y * y <= r * r
 
 
-DISK12 = _disk(12)
+DISK_BITE = _disk(BITE_RADIUS)
 
 
-def main():
-    img = Image.open(SRC).convert("RGB")
-    rgb = np.array(img)
-    fg, chroma = build_mask(rgb)
+def analyze(rgb):
+    """(전경 마스크, 채색 마스크) 반환."""
+    h, w, _ = rgb.shape
+    rgbi = rgb.astype(np.int16)
+    mx = rgbi.max(axis=2)
+    mn = rgbi.min(axis=2)
+    chroma = (mx - mn) >= 25                       # 살/옷 등 확실한 그림
 
-    # 캐릭터 덩어리 찾기: 채도 있는 본체 기준으로 라벨링해야 그림자/체커 잔재에 안 속는다.
+    # --- 칸별 배경색 관측 ---
+    sample = ~ndimage.binary_dilation(chroma, np.ones((3, 3)), iterations=14)
+    iu = np.floor((np.arange(w) - PHASE_X) / PERIOD_X).astype(int)
+    iv = np.floor((np.arange(h) - PHASE_Y) / PERIOD_Y).astype(int)
+    iu -= iu.min()
+    iv -= iv.min()
+    cell = iv[:, None] * (iu.max() + 1) + iu[None, :]
+    ncell = int(cell.max()) + 1
+    cnt = np.bincount(cell[sample], minlength=ncell)
+    tot = np.bincount(cell[sample], weights=mx[sample].astype(float), minlength=ncell)
+    cell_dark = (tot / np.maximum(cnt, 1)) < 43
+
+    ys, xs = np.mgrid[0:h, 0:w]
+    parity = ((np.floor((xs - PHASE_X) / PERIOD_X).astype(int)
+               + np.floor((ys - PHASE_Y) / PERIOD_Y).astype(int)) % 2)
+    dark_parity = 0 if rgb[0:200][parity[0:200] == 0].mean() < 43 else 1
+    is_dark = np.where(cnt[cell] >= 60, cell_dark[cell], parity == dark_parity)
+    expected = np.where(is_dark[..., None], DARK, LIGHT).astype(np.int16)
+
+    bg_like = np.abs(rgbi - expected).max(axis=2) <= MODEL_TOL
+    # 발밑 그림자(체커를 덮은 반투명 타원)와 체커 잔재도 배경 취급. 그림에서 무채색인 건
+    # 검은 외곽선(25 미만)과 흰 눈/이빨(200 이상)뿐이다.
+    bg_like |= (~chroma) & (mx >= 25) & (mx < 200)
+    print(f"  배경 후보 비율 {bg_like.mean():.1%}")
+
+    # --- 배경을 덩어리 단위로 확정 ---
+    lbl, n = ndimage.label(bg_like)
+    if n:
+        sizes = np.bincount(lbl.ravel())
+        big = np.zeros(sizes.size, bool)
+        big[1:] = sizes[1:] >= MIN_BG_BLOB
+        bg = big[lbl]
+    else:
+        bg = bg_like
+    fg = ndimage.binary_opening(~bg, np.ones((3, 3)))
+    return fg, chroma
+
+
+def extract(rgb, fg, chroma):
+    """캐릭터별로 (마스크, 깎인자국 마스크, bbox) 리스트 반환."""
     body = ndimage.binary_closing(chroma, np.ones((9, 9)))
     lbl, n = ndimage.label(body, ndimage.generate_binary_structure(2, 2))
     sizes = ndimage.sum(body, lbl, range(1, n + 1))
-    keep = [i + 1 for i, s in enumerate(sizes) if s > 20000]
+    keep = [i + 1 for i, s in enumerate(sizes) if s > MIN_FIGURE]
     boxes = ndimage.find_objects(lbl)
     figs = sorted((boxes[i - 1] for i in keep), key=lambda s: s[1].start)
-    print(f"figures found: {len(figs)}")
+    print(f"  캐릭터 {len(figs)}명")
 
-    crops = []
+    out = []
+    pad = BITE_RADIUS + 30
     for sl in figs:
-        y0, y1 = sl[0].start, sl[0].stop
-        x0, x1 = sl[1].start, sl[1].stop
-        # 본체 bbox를 외곽선 두께만큼 넉넉히 넓혀서 fg를 가져온다.
-        pad = OUTLINE_REACH + 6
-        y0, y1 = max(0, y0 - pad), min(rgb.shape[0], y1 + pad)
-        x0, x1 = max(0, x0 - pad), min(rgb.shape[1], x1 + pad)
-        # 닫기 전에 먼저 가장 큰 덩어리만 남긴다 - 순서를 바꾸면 옆 프레임 조각이나
-        # 워터마크 잔재가 닫기로 본체에 붙어버린다.
-        sub_fg = fg[y0:y1, x0:x1]
-        l2, n2 = ndimage.label(sub_fg, ndimage.generate_binary_structure(2, 2))
-        if n2 > 1:
-            s2 = ndimage.sum(sub_fg, l2, range(1, n2 + 1))
-            sub_fg = l2 == (int(np.argmax(s2)) + 1)
-        sub_fg = repair(sub_fg)
-        ys, xs = np.nonzero(sub_fg)
-        crops.append({
-            "rgb": rgb[y0:y1, x0:x1],
-            "mask": sub_fg,
-            "top": ys.min(), "bottom": ys.max(),
-            "left": xs.min(), "right": xs.max(),
-        })
+        y0 = max(0, sl[0].start - pad)
+        y1 = min(rgb.shape[0], sl[0].stop + pad)
+        x0 = max(0, sl[1].start - pad)
+        x1 = min(rgb.shape[1], sl[1].stop + pad)
 
-    # 공통 캔버스: 가장 큰 프레임 기준 + 여백. 발바닥(하단)과 접지 중심(하단 8% 무게중심)으로 정렬.
-    anchors = []
+        sub = fg[y0:y1, x0:x1]
+        l2, n2 = ndimage.label(sub, ndimage.generate_binary_structure(2, 2))
+        if n2 > 1:                                   # 옆 프레임 침범분 제거
+            s2 = ndimage.sum(sub, l2, range(1, n2 + 1))
+            sub = l2 == (int(np.argmax(s2)) + 1)
+
+        closed = ndimage.binary_closing(sub, DISK_BITE)
+        bites = closed & ~sub                        # 외곽선이 깎인 자리
+        out.append({"rgb": rgb[y0:y1, x0:x1], "mask": closed, "bites": bites})
+    return out
+
+
+def main():
+    rgb = np.array(Image.open(SRC).convert("RGB"))
+    fg, chroma = analyze(rgb)
+    crops = extract(rgb, fg, chroma)
+
+    # 발바닥(하단)과 접지 중심으로 정렬해 공통 캔버스에 담는다 - 재생 시 안 튀게.
+    anchors, bounds = [], []
     for c in crops:
         ys, xs = np.nonzero(c["mask"])
-        cutoff = c["bottom"] - (c["bottom"] - c["top"]) * 0.08
-        foot_x = xs[ys >= cutoff]
-        anchors.append((float(foot_x.mean()), float(c["bottom"])))
+        top, bottom, left, right = ys.min(), ys.max(), xs.min(), xs.max()
+        foot = xs[ys >= bottom - (bottom - top) * 0.08]
+        anchors.append((float(foot.mean()), float(bottom)))
+        bounds.append((top, bottom, left, right))
 
-    left_ext = max(a[0] - c["left"] for a, c in zip(anchors, crops))
-    right_ext = max(c["right"] - a[0] for a, c in zip(anchors, crops))
-    top_ext = max(a[1] - c["top"] for a, c in zip(anchors, crops))
-    W = int(left_ext + right_ext) + 20
-    H = int(top_ext) + 20
+    left_ext = max(a[0] - b[2] for a, b in zip(anchors, bounds))
+    right_ext = max(b[3] - a[0] for a, b in zip(anchors, bounds))
+    top_ext = max(a[1] - b[0] for a, b in zip(anchors, bounds))
+    W, H = int(left_ext + right_ext) + 20, int(top_ext) + 20
     ax, ay = int(left_ext) + 10, int(top_ext) + 10
-    print(f"canvas {W}x{H}, anchor at ({ax},{ay})")
+    print(f"  캔버스 {W}x{H}, 발 기준점 ({ax},{ay})")
 
     for i, (c, a) in enumerate(zip(crops, anchors), start=1):
-        rgba = np.zeros((c["mask"].shape[0], c["mask"].shape[1], 4), np.uint8)
-        rgba[..., :3] = c["rgb"]
-        rgba[..., 3] = c["mask"].astype(np.uint8) * 255
+        px = c["rgb"].copy()
+        px[c["bites"]] = 0                           # 되메운 자리는 검정(외곽선)으로
+        rgba = np.dstack([px, c["mask"].astype(np.uint8) * 255])
         frame = Image.fromarray(rgba)
         canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         canvas.paste(frame, (ax - int(a[0]), ay - int(a[1])), frame)
-        path = f"{OUT_DIR}/rock_throw_{i}.png"
-        canvas.save(path)
-        print(f"  saved {path}  (body {c['right']-c['left']}x{c['bottom']-c['top']})")
+        canvas.save(f"{OUT_DIR}/{PREFIX}_{i}.png")
+    print(f"  저장 완료: {PREFIX}_1..{len(crops)}.png")
 
 
 if __name__ == "__main__":
