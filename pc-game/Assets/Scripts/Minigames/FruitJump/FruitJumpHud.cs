@@ -41,7 +41,7 @@ public class FruitJumpHud : MonoBehaviour
         _p1Score.text = "0";
         _p2Score.text = "0";
 
-        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadFruitJump("hud_time_remaining"),
+        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadUi("time_remaining"),
             new Vector2(0.5f, 1f), new Vector2(0f, -24f), 480f);
         _timer = HudWidgets.CreateText(timerPlate, "TimerText", new Vector2(0.72f, 0.5f), 300f, 50);
         _timer.text = Mathf.CeilToInt(matchSeconds).ToString();

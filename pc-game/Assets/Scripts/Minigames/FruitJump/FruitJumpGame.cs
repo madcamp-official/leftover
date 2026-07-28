@@ -1,10 +1,15 @@
 // 점프해서 과일따기 - 우가우가게임_기획_프롬프트.md "3. 점프해서 과일따기" 스펙.
 //
-// 규칙: 각자 독립된 나무(상대와 자원 경쟁 없음). JumpHeightCalibrator.GetJumpHeight()로 3단계
-// 높이 판정 -> tierScores 점수. 해당 높이에 처음 도달한 순간 IsMouthOpen()이 true여야 획득
-// 인정. 한 번의 점프(이륙~착지)당 과일은 정확히 하나만 채점된다 - 점프 중 이미 하나를
-// 먹었으면 그 점프가 끝나고 착지(기준선 근처로 복귀)할 때까지 추가 채점을 막는다. 채점된
-// 과일은 화면에서 사라졌다가 착지 시 다시 나타난다(재수확 가능).
+// 규칙: 각자 독립된 나무(상대와 자원 경쟁 없음). JumpHeightCalibrator.GetJumpHeight()(엉덩이
+// 중점 기반)로 점프 중 도달한 최고 높이(정점, PeakHeight)를 계속 갱신하고, 정점이 갱신될
+// 때마다 그 순간 IsMouthOpen()이었는지도 같이 기록한다(MouthOpenAtPeak) - 정점 갱신이 멈추면
+// (=하강 시작) 자연히 "진짜 정점 프레임"의 입 상태만 남는다. 판정 자체는 실시간이 아니라
+// 착지한 순간 한 번만 한다: 이번 점프의 최종 정점 높이가 어느 단(tierHeightThresholds)을
+// 넘었는지 보고, 그 정점에서 입이 벌어져 있었으면 그 단 하나만 채점한다. 입을 점프 내내
+// 벌리고 있었어도 정점이 3단이면 3단 과일만 채점된다(1/2단은 별도로 채점되지 않음) - 판정이
+// 프레임 단위가 아니라 "이번 점프 전체의 결과" 하나이기 때문이다.
+//
+// 채점된 과일은 화면에서 사라졌다가 다음 점프를 시작하는 순간(이륙) 다시 나타난다.
 //
 // 화면은 image/games/fruit_jump/의 실제 아트(나무가 그려진 배경 + 점수 네임플레이트)로
 // 구성한다. 낮은/중간/높은 단은 각각 사과/포도/파인애플 실제 소품으로 표시하고, 점프
@@ -39,7 +44,9 @@ public class FruitJumpGame : MonoBehaviour
         public Vector3 BasePosition;
         public SpriteRenderer[] Fruits;
         public Vector3[] FruitBaseScales;
-        public bool ScoredThisJump;
+        public bool WasAirborne;
+        public float PeakHeight;
+        public bool MouthOpenAtPeak;
     }
 
     private TreeState _p1Tree;
@@ -108,35 +115,45 @@ public class FruitJumpGame : MonoBehaviour
         // 점프 높이만큼 캐릭터를 실제로 위로 띄워서 화면에서 보이게 한다.
         tree.Silhouette.transform.position = tree.BasePosition + Vector3.up * (height * jumpBounceHeight);
 
-        // 기준선 근처로 완전히 내려오면 "착지"로 보고, 이번 점프에서 먹은 과일을 되돌리고
-        // 다음 점프을 새로 채점할 수 있게 리셋한다.
-        bool landed = height < tierHeightThresholds[0] * 0.5f;
-        if (landed)
+        bool airborne = height >= tierHeightThresholds[0] * 0.5f;
+
+        if (airborne && !tree.WasAirborne)
         {
-            if (tree.ScoredThisJump) RespawnFruits(tree);
-            tree.ScoredThisJump = false;
-            return; // 땅에 있는 동안은 채점할 것이 없다.
+            // 이륙(새 점프 시작): 이전 점프에서 먹은 과일을 되돌리고 정점 추적을 초기화.
+            RespawnFruits(tree);
+            tree.PeakHeight = 0f;
+            tree.MouthOpenAtPeak = false;
         }
 
-        // 한 점프당 과일은 하나만 - 이미 이번 점프에서 먹었으면 착지 전까지 더 채점하지 않는다.
-        if (tree.ScoredThisJump) return;
-
-        // 그 프레임에 도달한 가장 높은 단 하나만 후보로 삼는다(중간 단을 거쳐왔더라도
-        // 이 프레임에서 판정하는 건 최고 단 하나뿐).
-        int currentTier = -1;
-        for (int i = tierHeightThresholds.Length - 1; i >= 0; i--)
+        if (airborne)
         {
-            if (height >= tierHeightThresholds[i]) { currentTier = i; break; }
+            // 정점이 갱신될 때마다 그 순간의 입 상태를 같이 기록한다. 하강이 시작되면 더
+            // 이상 갱신되지 않으므로, 결국 "실제 정점 프레임"의 입 상태만 남게 된다.
+            if (height > tree.PeakHeight)
+            {
+                tree.PeakHeight = height;
+                tree.MouthOpenAtPeak = state != null && state.IsTracked && state.IsMouthOpen();
+            }
         }
-        if (currentTier < 0) return; // 낮은 단 임계값에도 못 미치는 높이 - 채점 대상 아님.
+        else if (tree.WasAirborne)
+        {
+            // 착지(점프 종료): 이번 점프의 최종 정점 높이 하나로 단을 판정한다.
+            int tier = -1;
+            for (int i = tierHeightThresholds.Length - 1; i >= 0; i--)
+            {
+                if (tree.PeakHeight >= tierHeightThresholds[i]) { tier = i; break; }
+            }
 
-        if (state == null || !state.IsTracked || !state.IsMouthOpen()) return; // 입을 안 벌렸으면 이번 프레임은 실패, 다음 프레임에 같은 점프로 재시도 가능.
+            if (tier >= 0 && tree.MouthOpenAtPeak)
+            {
+                score += tierScores[tier];
+                hud?.SetScore(tree.Silhouette.player, score);
+                hud?.ShowEvent($"{tree.Silhouette.player} +{tierScores[tier]}!");
+                StartCoroutine(EatFruit(tree.Fruits[tier], tree.FruitBaseScales[tier]));
+            }
+        }
 
-        score += tierScores[currentTier];
-        tree.ScoredThisJump = true;
-        hud?.SetScore(tree.Silhouette.player, score);
-        hud?.ShowEvent($"{tree.Silhouette.player} +{tierScores[currentTier]}!");
-        StartCoroutine(EatFruit(tree.Fruits[currentTier], tree.FruitBaseScales[currentTier]));
+        tree.WasAirborne = airborne;
     }
 
     // 채점된 과일이 줄어들며 사라진다 - 착지해서 RespawnFruits가 불릴 때까지 비활성 상태.

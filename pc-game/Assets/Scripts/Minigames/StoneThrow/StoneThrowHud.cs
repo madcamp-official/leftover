@@ -57,7 +57,7 @@ public class StoneThrowHud : MonoBehaviour
         _p2Hits.text = "0";
 
         // 타이머: 상단 중앙.
-        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadStoneThrow("hud_time_remaining"),
+        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadUi("time_remaining"),
             new Vector2(0.5f, 1f), new Vector2(0f, -24f), 480f);
         _timer = HudWidgets.CreateText(timerPlate, "TimerText", new Vector2(0.72f, 0.5f), 300f, 50);
         _timer.text = Mathf.CeilToInt(matchSeconds).ToString();

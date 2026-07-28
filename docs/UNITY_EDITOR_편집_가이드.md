@@ -95,6 +95,29 @@ Caveman_P1/P2
 배경은 카메라를 덮도록 미리 Scale이 설정돼 있다. Camera의 `Orthographic Size`를 바꾸면 보이는
 월드 범위가 달라지므로 배경 Scale도 함께 확인한다. 캐릭터 배치만 바꿀 때는 Camera를 먼저 고정한다.
 
+### Scene 창의 서로 다른 화면 크기와 흰색 사각형
+
+모든 씬의 최종 출력 기준과 UI 기준 해상도는 16:9, `2048 × 1152`로 같으며, Main Camera의
+`Orthographic Size`도 **5**로 통일돼 있다. 즉, 모든 씬이 세로 10 월드 유닛을 동일하게 보여 준다.
+이 값은 카메라가 세로로 보여 주는 월드 높이의 절반이다.
+
+| Orthographic Size | 씬 | 의미 |
+|---:|---|---|
+| 5 | Hub와 미니게임 6개 전체 | 세로 10 월드 유닛을 보는 공통 구도 |
+
+Scene 창에서 보이는 **배경 이미지의 사각형**은 SpriteRenderer에 배치된 PNG 자체의 실제 영역이다.
+그 바깥 또는 안쪽에 보이는 **흰색 선 사각형**은 Main Camera가 실제 게임에 출력하는 영역이다.
+즉, 배경 테두리보다 흰 카메라 선을 최종 화면 기준으로 삼는다. 각 미니게임의
+`CameraBackgroundFitter`가 현재 화면비에 맞춰 배경을 자동 확대하므로 흰 선 전체가 항상 덮인다.
+원본 비율은 유지하며, 화면비가 다른 경우 배경의 남는 위·아래 또는 좌·우 부분만 카메라 밖으로 잘린다.
+
+Game 창의 비율이 `Free Aspect`이면 창 모양에 따라 흰 카메라 사각형 비율도 계속 바뀌므로 16:9
+배경 테두리가 흰 선보다 크게 보일 수 있지만 실제 Game 화면에는 빈 공간이 생기지 않는다. 정확한 16:9
+구도를 다듬을 때는 Game 탭 왼쪽 위 비율 메뉴를 `16:9` 또는 `1920 × 1080`으로 고정한다.
+Scene 창의 줌은 단순한 편집용 확대라 결과 화면 크기와 관계없다.
+카메라 값은 직접 바꾸지 말고 캐릭터·소품의 Transform을 조절해 구도를 다듬는다. 배경과 HUD Canvas는
+공통 카메라 크기에 맞춰져 있으므로 Canvas 루트 Scale 대신 자식 UI의 Rect Transform을 수정한다.
+
 ## 5. HUD 크기와 배치 수정
 
 각 HUD Canvas는 `Render Mode = World Space`, 기준 해상도 `2048 × 1152`이며 카메라 높이에
@@ -112,6 +135,26 @@ Rect Transform으로 조절한다.
    Hierarchy 체크박스로 잠시 켜고 배치한 뒤 두 오브젝트를 다시 꺼서 저장한다.
 
 Canvas 전체 Transform Scale로 UI를 줄이기보다 각 패널의 Rect Transform을 조절하는 편이 좋다.
+
+### 공용 타이머와 6경기 결과판
+
+미니게임 6개 씬의 `TimerPlate`는 모두 `Assets/Resources/UI/time_remaining.png`를 사용한다.
+각 HUD Canvas 아래의 `MatchScoreboard`는 현재 매치 진행 상황을 공통 표시한다.
+
+```text
+MatchScoreboard
+├── Board
+├── GameIcon_1_stone_throw ... GameIcon_6_staring_contest
+├── Player1Face, Player2Face
+├── P1Result_1 ... P1Result_6
+└── P2Result_1 ... P2Result_6
+```
+
+게임 아이콘 순서는 `StoneThrow → PoseCopy → FruitJump → CoconutCrack → StoneOrBanana →
+StaringContest`다. 라운드가 끝나면 승자는 `result_win`, 패자는 `result_loss`, 무승부는 양쪽 모두
+`result_draw`가 표시된다. 아직 진행하지 않은 슬롯은 비어 있다. `MatchScoreboard` 루트의 Rect Transform을
+이동하거나 크기를 바꾸면 결과판 전체 구도를 조절할 수 있고, 개별 아이콘·얼굴·결과 슬롯도 자식
+Rect Transform으로 따로 조절할 수 있다. 오브젝트 이름은 코드 참조와 수동 편의를 위해 유지한다.
 
 ## 6. 이미지 교체
 
@@ -151,6 +194,7 @@ Tier 배열, CoconutCrack의 Hit/Release Distance, StaringContest의 EAR 값을 
 ## 9. 씬 전환 페이드
 
 게임 시작, 미니게임 간 이동, 최종 Hub 복귀는 `SceneFadeTransition`이 공통 처리한다. 기본값은
-검은 화면으로 0.45초 fade out 후 새 씬을 로드하고 0.45초 fade in한다. 전환 오버레이는 실행
+검은 화면으로 0.45초 fade out 후 새 씬을 로드하고, 완전한 검정을 최소 한 프레임+0.08초
+유지한 다음 0.45초 fade in한다. 따라서 새 씬은 항상 검은 화면에서 서서히 등장한다. 전환 오버레이는 실행
 중에만 생성되는 `DontDestroyOnLoad` 오브젝트라 씬 배치 편집 대상이 아니다. 속도를 바꾸려면
-`SceneFadeTransition.cs`의 `fadeOutSeconds`, `fadeInSeconds` 기본값을 조절한다.
+`SceneFadeTransition.cs`의 `fadeOutSeconds`, `blackHoldSeconds`, `fadeInSeconds` 기본값을 조절한다.
