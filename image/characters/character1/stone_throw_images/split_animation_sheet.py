@@ -18,9 +18,9 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-SRC = r"C:/Users/idote/몰입캠프4주차/leftover/image/characters/character1/charactor1_animation_rock _throw.png"
+SRC = r"C:/Users/idote/몰입캠프4주차/leftover/image/characters/character1/character1_animation_stone_throw.png"
 OUT_DIR = r"C:/Users/idote/몰입캠프4주차/leftover/image/characters/character1/stone_throw_images"
-PREFIX = "rock_throw"
+PREFIX = "stone_throw"
 
 # 빈 영역의 체커 경계를 선형회귀로 실측한 값.
 PERIOD_X, PHASE_X = 43.05444, 42.963
