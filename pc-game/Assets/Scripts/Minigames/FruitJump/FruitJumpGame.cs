@@ -22,7 +22,14 @@ public class FruitJumpGame : MonoBehaviour
     public float fruitWidth = 0.4f;
     public float jumpBounceHeight = 1.5f; // 점프 높이 1.0(=몸통 길이만큼 뜸) 기준 캐릭터가 튀어오르는 월드 유닛
 
-    private static readonly string[] TierProps = { "fruit_apple", "fruit_grapes", "fruit_pineapple" };
+    [Header("씬에 배치된 오브젝트")]
+    [SerializeField] private CavemanSilhouette p1Silhouette;
+    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [SerializeField] private JumpHeightCalibrator p1Jump;
+    [SerializeField] private JumpHeightCalibrator p2Jump;
+    [SerializeField] private SpriteRenderer[] p1Fruits;
+    [SerializeField] private SpriteRenderer[] p2Fruits;
+    [SerializeField] private FruitJumpHud hud;
 
     private class TreeState
     {
@@ -40,65 +47,26 @@ public class FruitJumpGame : MonoBehaviour
     private int _p1Score;
     private int _p2Score;
     private bool _ended;
-    private FruitJumpHud _hud;
-
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
 
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var camObj = new GameObject("Main Camera");
-            cam = camObj.AddComponent<Camera>();
-            camObj.tag = "MainCamera";
-        }
-        cam.orthographic = true;
-        cam.orthographicSize = 4f;
-        cam.transform.position = new Vector3(0, 1f, -10f);
-
-        ArtAssets.CreateBackground(cam, ArtAssets.LoadFruitJump("background"));
-
-        _p1Tree = BuildTree(PlayerId.P1, new Vector3(-2.5f, 0f, 0f));
-        _p2Tree = BuildTree(PlayerId.P2, new Vector3(2.5f, 0f, 0f));
-
-        _hud = FruitJumpHud.Build(matchSeconds);
+        _p1Tree = BuildTree(p1Silhouette, p1Jump, p1Fruits);
+        _p2Tree = BuildTree(p2Silhouette, p2Jump, p2Fruits);
+        hud?.SetTimeRemaining(matchSeconds);
     }
 
-    private TreeState BuildTree(PlayerId id, Vector3 basePosition)
+    private TreeState BuildTree(CavemanSilhouette silhouette, JumpHeightCalibrator jump, SpriteRenderer[] fruits)
     {
-        var jumpObj = new GameObject($"{id} JumpCalibrator");
-        var jump = jumpObj.AddComponent<JumpHeightCalibrator>();
-        jump.player = id;
-
-        var go = new GameObject($"Caveman_{id}");
-        go.transform.position = basePosition;
-        var silhouette = go.AddComponent<CavemanSilhouette>();
-        silhouette.player = id;
-
         var state = new TreeState
         {
             Jump = jump,
             Silhouette = silhouette,
-            BasePosition = basePosition,
-            Fruits = new SpriteRenderer[tierHeightThresholds.Length],
+            BasePosition = silhouette.transform.position,
+            Fruits = fruits,
             CooldownTimers = new float[tierHeightThresholds.Length],
         };
-
-        for (int i = 0; i < tierHeightThresholds.Length; i++)
-        {
-            var fruit = new GameObject($"Fruit_Tier{i}");
-            fruit.transform.SetParent(go.transform, false);
-            float visualHeight = 1f + tierHeightThresholds[i] * 3.5f;
-            fruit.transform.localPosition = new Vector3(0f, visualHeight, 0.5f);
-            var sr = fruit.AddComponent<SpriteRenderer>();
-            sr.sprite = ArtAssets.LoadProp(TierProps[i]);
-            sr.sortingOrder = 2;
-            ArtAssets.FitWidth(sr, fruitWidth);
-            state.Fruits[i] = sr;
-        }
-
         return state;
     }
 
@@ -119,7 +87,7 @@ public class FruitJumpGame : MonoBehaviour
 
         TickTree(_p1Tree, p1, ref _p1Score);
         TickTree(_p2Tree, p2, ref _p2Score);
-        _hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
 
         if (_elapsed >= matchSeconds)
         {
@@ -154,8 +122,8 @@ public class FruitJumpGame : MonoBehaviour
             score += tierScores[currentTier];
             tree.LastScoredTier = currentTier;
             tree.CooldownTimers[currentTier] = tierCooldowns[currentTier];
-            _hud?.SetScore(tree.Silhouette.player, score);
-            _hud?.ShowEvent($"{tree.Silhouette.player} +{tierScores[currentTier]}!");
+            hud?.SetScore(tree.Silhouette.player, score);
+            hud?.ShowEvent($"{tree.Silhouette.player} +{tierScores[currentTier]}!");
             StartCoroutine(PulseFruit(tree.Fruits[currentTier]));
         }
     }
@@ -180,7 +148,7 @@ public class FruitJumpGame : MonoBehaviour
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
-        _hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }

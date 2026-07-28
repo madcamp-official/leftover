@@ -1,7 +1,7 @@
 // 머리로 코코넛 깨기 (반복 속도 경쟁) - 우가우가게임_기획_프롬프트.md "4. 머리로 코코넛
 // 깨기" 스펙.
 //
-// 규칙 요약 (구현 필요):
+// 규칙 요약 (구현됨):
 //   - PoseInputHub의 Get(player).HandToHeadDistance()가 hitDistance 이하로 좁혀졌다가
 //     releaseDistance 이상으로 다시 벌어지는 한 사이클을 "1회 타격"으로 카운트.
 //   - matchSeconds(기본 15초) 동안 더 많이 타격한 사람이 승리 (내구도/단계 없음, 순수
@@ -24,18 +24,18 @@ public class CoconutCrackGame : MonoBehaviour
     private Sprite _coconutBreakLeftSprite;
     private Sprite _coconutBreakRightSprite;
 
-    private CavemanSilhouette _p1Silhouette;
-    private CavemanSilhouette _p2Silhouette;
-    private SpriteRenderer _p1Coconut;
-    private SpriteRenderer _p2Coconut;
+    [Header("씬에 배치된 오브젝트")]
+    [SerializeField] private CavemanSilhouette p1Silhouette;
+    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [SerializeField] private SpriteRenderer p1Coconut;
+    [SerializeField] private SpriteRenderer p2Coconut;
+    [SerializeField] private CoconutBreakHud hud;
     private float _elapsed;
     private int _p1Hits;
     private int _p2Hits;
     private bool _p1ReadyToHit = true;
     private bool _p2ReadyToHit = true;
     private bool _ended;
-    private CoconutBreakHud _hud;
-
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
@@ -45,60 +45,7 @@ public class CoconutCrackGame : MonoBehaviour
         _coconutBreakLeftSprite = ArtAssets.LoadProp("coconut_break_left");
         _coconutBreakRightSprite = ArtAssets.LoadProp("coconut_break_right");
 
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var camObj = new GameObject("Main Camera");
-            cam = camObj.AddComponent<Camera>();
-            camObj.tag = "MainCamera";
-        }
-        cam.orthographic = true;
-        cam.orthographicSize = 3f;
-        cam.transform.position = new Vector3(0, 1f, -10f);
-
-        ArtAssets.CreateBackground(cam, ArtAssets.LoadCoconutBreak("background"));
-
-        SpawnStoneTable(ArtAssets.LoadCoconutBreak("prop_stone_table_p1"), new Vector3(-2f, -0.6f, 1f));
-        SpawnStoneTable(ArtAssets.LoadCoconutBreak("prop_stone_table_p2"), new Vector3(2f, -0.6f, 1f));
-
-        _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2f, 0f, 0f));
-        _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2f, 0f, 0f));
-        _p1Coconut = SpawnCoconut(_p1Silhouette.transform);
-        _p2Coconut = SpawnCoconut(_p2Silhouette.transform);
-
-        _hud = CoconutBreakHud.Build(matchSeconds);
-    }
-
-    private void SpawnStoneTable(Sprite sprite, Vector3 worldPos)
-    {
-        if (sprite == null) return;
-        var go = new GameObject("StoneTable");
-        go.transform.position = worldPos;
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
-        sr.sortingOrder = -1;
-        ArtAssets.FitWidth(sr, 1.6f);
-    }
-
-    private SpriteRenderer SpawnCoconut(Transform parent)
-    {
-        var go = new GameObject("Coconut");
-        go.transform.SetParent(parent, false);
-        go.transform.localPosition = new Vector3(0f, 1.6f, 0f);
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = _coconutSprite;
-        sr.sortingOrder = 3;
-        ArtAssets.FitWidth(sr, coconutWidth);
-        return sr;
-    }
-
-    private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
-    {
-        var go = new GameObject($"Caveman_{id}");
-        go.transform.position = pos;
-        var s = go.AddComponent<CavemanSilhouette>();
-        s.player = id;
-        return s;
+        hud?.SetTimeRemaining(matchSeconds);
     }
 
     private void Update()
@@ -106,16 +53,16 @@ public class CoconutCrackGame : MonoBehaviour
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
-        _p1Silhouette.ApplyPose(p1);
-        _p2Silhouette.ApplyPose(p2);
+        p1Silhouette?.ApplyPose(p1);
+        p2Silhouette?.ApplyPose(p2);
 
         if (_ended) return;
 
-        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, _p1Coconut);
-        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, _p2Coconut);
+        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, p1Coconut);
+        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, p2Coconut);
 
         _elapsed += Time.deltaTime;
-        _hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
         if (_elapsed >= matchSeconds)
         {
             PlayerId? winner = _p1Hits == _p2Hits ? null : (_p1Hits > _p2Hits ? PlayerId.P1 : PlayerId.P2);
@@ -132,7 +79,7 @@ public class CoconutCrackGame : MonoBehaviour
         {
             hitCount++;
             readyToHit = false;
-            _hud?.SetHits(id, hitCount);
+            hud?.SetHits(id, hitCount);
             StartCoroutine(PunchCoconut(coconut));
         }
         else if (!readyToHit && distance >= releaseDistance)
@@ -193,7 +140,7 @@ public class CoconutCrackGame : MonoBehaviour
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
-        _hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }

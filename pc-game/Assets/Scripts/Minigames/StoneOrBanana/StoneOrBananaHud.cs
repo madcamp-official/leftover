@@ -8,14 +8,15 @@ public class StoneOrBananaHud : MonoBehaviour
     private const float RefWidth = 2048f;
     private const float RefHeight = 1152f;
 
-    private Text _p1Status, _p2Status, _timer;
-    private RectTransform _throwPrompt, _receivePrompt;
+    [Header("씬에 배치된 UI")]
+    [SerializeField] private Text _p1Status, _p2Status, _timer;
+    [SerializeField] private RectTransform _throwPrompt, _receivePrompt;
 
     public static StoneOrBananaHud Build()
     {
         var canvasGo = new GameObject("StoneOrBananaHud");
         var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        HudWidgets.ConfigureForGameCamera(canvas);
         var scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(RefWidth, RefHeight);

@@ -1,6 +1,5 @@
 // 코코넛깨기 HUD - image/games/coconut_break/hud/의 "타격 횟수" 네임플레이트와
-// image/common/ui/hud/의 공용 타이머 위에 숫자만 얹는다. StoneThrowHud와 같은 uGUI 조립
-// 방식(코드로 Canvas 구성).
+// image/common/ui/hud/의 공용 타이머 위에 숫자만 얹는다. Canvas는 씬에 저장되어 직접 편집 가능.
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,14 +9,15 @@ public class CoconutBreakHud : MonoBehaviour
     private const float RefHeight = 1152f;
     private static readonly Vector2 SlotAnchor = new Vector2(0.775f, 0.51f);
 
-    private Text _p1Hits, _p2Hits, _timer, _eventText;
+    [Header("씬에 배치된 UI")]
+    [SerializeField] private Text _p1Hits, _p2Hits, _timer, _eventText;
     private float _eventTimer;
 
     public static CoconutBreakHud Build(float matchSeconds)
     {
         var canvasGo = new GameObject("CoconutBreakHud");
         var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        HudWidgets.ConfigureForGameCamera(canvas);
         var scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(RefWidth, RefHeight);

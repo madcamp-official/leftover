@@ -25,16 +25,16 @@ public class StoneThrowGame : MonoBehaviour
     private enum Side { Left, Right }
 
     private Sprite _stoneSprite;
-    private CavemanSilhouette _p1Silhouette;
-    private CavemanSilhouette _p2Silhouette;
+    [Header("씬에 배치된 오브젝트")]
+    [SerializeField] private CavemanSilhouette p1Silhouette;
+    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [SerializeField] private StoneThrowHud hud;
     private float _elapsed;
     private float _p1FireTimer;
     private float _p2FireTimer;
     private int _p1Hits;
     private int _p2Hits;
     private bool _ended;
-
-    private StoneThrowHud _hud;
 
     private void Start()
     {
@@ -43,34 +43,7 @@ public class StoneThrowGame : MonoBehaviour
 
         _stoneSprite = ArtAssets.LoadProp("stone");
 
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var camObj = new GameObject("Main Camera");
-            cam = camObj.AddComponent<Camera>();
-            camObj.tag = "MainCamera";
-        }
-        cam.orthographic = true;
-        cam.orthographicSize = 3f;
-        cam.transform.position = new Vector3(0, 1f, -10f);
-        cam.backgroundColor = new Color(0.79f, 0.69f, 0.53f);
-        cam.clearFlags = CameraClearFlags.SolidColor;
-
-        ArtAssets.CreateBackground(cam, ArtAssets.LoadStoneThrow("background"));
-
-        _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2.5f, 0f, 0f));
-        _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2.5f, 0f, 0f));
-
-        _hud = StoneThrowHud.Build(matchSeconds);
-    }
-
-    private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
-    {
-        var go = new GameObject($"Caveman_{id}");
-        go.transform.position = pos;
-        var s = go.AddComponent<CavemanSilhouette>();
-        s.player = id;
-        return s;
+        hud?.SetTimeRemaining(matchSeconds);
     }
 
     private void Update()
@@ -78,8 +51,8 @@ public class StoneThrowGame : MonoBehaviour
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
-        _p1Silhouette.ApplyPose(p1);
-        _p2Silhouette.ApplyPose(p2);
+        p1Silhouette?.ApplyPose(p1);
+        p2Silhouette?.ApplyPose(p2);
 
         if (_ended) return;
 
@@ -88,7 +61,7 @@ public class StoneThrowGame : MonoBehaviour
         TickFiring(PlayerId.P1, p1, p2, ref _p1FireTimer);
         TickFiring(PlayerId.P2, p2, p1, ref _p2FireTimer);
 
-        _hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
 
         if (_elapsed >= matchSeconds)
         {
@@ -137,17 +110,17 @@ public class StoneThrowGame : MonoBehaviour
             // HUD의 "맞은 돌"은 각자 플레이트에 자신이 맞은 횟수를 보여준다(누가 맞혔는지가
             // 아니라 누가 맞았는지) - target의 받은 횟수는 곧 thrower가 지금까지 맞힌 횟수와
             // 같으므로 targetHitCount를 그대로 target 쪽 플레이트에 표시한다.
-            _hud?.SetHits(target, targetHitCount);
-            _hud?.ShowEvent($"{Label(thrower)} 명중!");
+            hud?.SetHits(target, targetHitCount);
+            hud?.ShowEvent($"{Label(thrower)} 명중!");
             StartCoroutine(ReactToHit(target, targetHitCount));
         }
         else
         {
-            _hud?.ShowEvent($"{Label(target)} 회피!");
+            hud?.ShowEvent($"{Label(target)} 회피!");
         }
 
-        CavemanSilhouette throwerSil = thrower == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
-        CavemanSilhouette targetSil = thrower == PlayerId.P1 ? _p2Silhouette : _p1Silhouette;
+        CavemanSilhouette throwerSil = thrower == PlayerId.P1 ? p1Silhouette : p2Silhouette;
+        CavemanSilhouette targetSil = thrower == PlayerId.P1 ? p2Silhouette : p1Silhouette;
         StartCoroutine(FlyStone(throwerSil.transform.position + Vector3.up * 0.6f,
             targetSil.transform.position + Vector3.up * 0.6f, hit));
     }
@@ -157,7 +130,7 @@ public class StoneThrowGame : MonoBehaviour
     // 맞은 쪽 표정을 잠깐 바꿔준다 - 많이 맞을수록 이빨이 더 나간 얼굴로.
     private IEnumerator ReactToHit(PlayerId target, int timesHit)
     {
-        CavemanSilhouette sil = target == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
+        CavemanSilhouette sil = target == PlayerId.P1 ? p1Silhouette : p2Silhouette;
         string face = timesHit >= 6 ? "face_stone_hit_two_teeth_broken"
             : timesHit >= 3 ? "face_stone_hit_one_tooth_broken"
             : "face_grimacing";
@@ -191,8 +164,8 @@ public class StoneThrowGame : MonoBehaviour
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
-        _hud?.SetTimeRemaining(0f);
-        _hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
+        hud?.SetTimeRemaining(0f);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }

@@ -6,26 +6,26 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/StaringContest.unity
-    guid: 5219971c3adce4b559b9e1b0a879fae7
-  - enabled: 1
     path: Assets/Scenes/Hub.unity
     guid: 257d168e9009e42eba4ab184429fcc94
   - enabled: 1
-    path: Assets/Scenes/CoconutCrack.unity
-    guid: bab2138937a9843aa92fa2e267bc6861
-  - enabled: 1
-    path: Assets/Scenes/FruitJump.unity
-    guid: 37a2dcbede5794c06a403eae7d114615
+    path: Assets/Scenes/StoneThrow.unity
+    guid: 728eec58aa856447b8802a0324be5a8e
   - enabled: 1
     path: Assets/Scenes/PoseCopy.unity
     guid: 048ca1a0ed4fe4897b2afe68ccf8c2af
   - enabled: 1
+    path: Assets/Scenes/FruitJump.unity
+    guid: 37a2dcbede5794c06a403eae7d114615
+  - enabled: 1
+    path: Assets/Scenes/CoconutCrack.unity
+    guid: bab2138937a9843aa92fa2e267bc6861
+  - enabled: 1
     path: Assets/Scenes/StoneOrBanana.unity
     guid: a9b87be0805a94fd091aaa808c165ad5
   - enabled: 1
-    path: Assets/Scenes/StoneThrow.unity
-    guid: 728eec58aa856447b8802a0324be5a8e
+    path: Assets/Scenes/StaringContest.unity
+    guid: 5219971c3adce4b559b9e1b0a879fae7
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}

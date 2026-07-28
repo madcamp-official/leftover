@@ -21,80 +21,32 @@ public class StaringContestGame : MonoBehaviour
     public float ruleBannerSeconds = 2.5f;
     public float headWidth = 2.2f;
 
-    private SpriteRenderer _p1Head, _p2Head;
+    [Header("씬에 배치된 오브젝트")]
+    [SerializeField] private SpriteRenderer p1Head;
+    [SerializeField] private SpriteRenderer p2Head;
+    [SerializeField] private EyeCloseTimer p1Timer;
+    [SerializeField] private EyeCloseTimer p2Timer;
+    [SerializeField] private StaringContestHud hud;
     private Sprite _p1DefaultHead, _p2DefaultHead;
-    private EyeCloseTimer _p1Timer;
-    private EyeCloseTimer _p2Timer;
     private float _elapsed;
     private bool _ended;
-    private StaringContestHud _hud;
-
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
 
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var camObj = new GameObject("Main Camera");
-            cam = camObj.AddComponent<Camera>();
-            camObj.tag = "MainCamera";
-        }
-        cam.orthographic = true;
-        cam.orthographicSize = 3f;
-        cam.transform.position = new Vector3(0, 1f, -10f);
-
-        ArtAssets.CreateBackground(cam, ArtAssets.LoadStaringContest("background"));
-
-        _p1DefaultHead = ArtAssets.LoadCharacter(PlayerId.P1, "head");
-        _p2DefaultHead = ArtAssets.LoadCharacter(PlayerId.P2, "head");
-        _p1Head = SpawnHead(_p1DefaultHead, new Vector3(-1.6f, 0.2f, 0f));
-        _p2Head = SpawnHead(_p2DefaultHead, new Vector3(1.6f, 0.2f, 0f));
-
-        SpawnClashEffect();
-
-        var p1TimerObj = new GameObject("P1 EyeTimer");
-        _p1Timer = p1TimerObj.AddComponent<EyeCloseTimer>();
-        _p1Timer.player = PlayerId.P1;
-        _p1Timer.earThreshold = earThreshold;
-
-        var p2TimerObj = new GameObject("P2 EyeTimer");
-        _p2Timer = p2TimerObj.AddComponent<EyeCloseTimer>();
-        _p2Timer.player = PlayerId.P2;
-        _p2Timer.earThreshold = earThreshold;
-
-        _hud = StaringContestHud.Build(maxMatchSeconds);
+        _p1DefaultHead = p1Head != null ? p1Head.sprite : ArtAssets.LoadCharacter(PlayerId.P1, "head");
+        _p2DefaultHead = p2Head != null ? p2Head.sprite : ArtAssets.LoadCharacter(PlayerId.P2, "head");
+        if (p1Timer != null) p1Timer.earThreshold = earThreshold;
+        if (p2Timer != null) p2Timer.earThreshold = earThreshold;
+        hud?.SetTimeRemaining(maxMatchSeconds);
         StartCoroutine(HideRuleBannerAfterDelay());
-    }
-
-    private SpriteRenderer SpawnHead(Sprite sprite, Vector3 pos)
-    {
-        var go = new GameObject($"Head_{pos.x}");
-        go.transform.position = pos;
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
-        sr.sortingOrder = 1;
-        ArtAssets.FitWidth(sr, headWidth);
-        return sr;
-    }
-
-    private void SpawnClashEffect()
-    {
-        Sprite sprite = ArtAssets.LoadStaringContest("effect_stare_clash");
-        if (sprite == null) return;
-        var go = new GameObject("StareClash");
-        go.transform.position = new Vector3(0f, 0.2f, 0f);
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
-        sr.sortingOrder = 2;
-        ArtAssets.FitWidth(sr, 2f);
     }
 
     private IEnumerator HideRuleBannerAfterDelay()
     {
         yield return new WaitForSeconds(ruleBannerSeconds);
-        _hud.HideRuleBanner();
+        hud?.HideRuleBanner();
     }
 
     private void Update()
@@ -103,16 +55,16 @@ public class StaringContestGame : MonoBehaviour
 
         _elapsed += Time.deltaTime;
 
-        float p1Ratio = _p1Timer.ClosedDuration / loseAfterClosedSeconds;
-        float p2Ratio = _p2Timer.ClosedDuration / loseAfterClosedSeconds;
-        _hud.SetDanger(PlayerId.P1, p1Ratio);
-        _hud.SetDanger(PlayerId.P2, p2Ratio);
-        _hud.SetTimeRemaining(maxMatchSeconds - _elapsed);
-        UpdateFace(_p1Head, _p1DefaultHead, PlayerId.P1, p1Ratio);
-        UpdateFace(_p2Head, _p2DefaultHead, PlayerId.P2, p2Ratio);
+        float p1Ratio = (p1Timer?.ClosedDuration ?? 0f) / loseAfterClosedSeconds;
+        float p2Ratio = (p2Timer?.ClosedDuration ?? 0f) / loseAfterClosedSeconds;
+        hud?.SetDanger(PlayerId.P1, p1Ratio);
+        hud?.SetDanger(PlayerId.P2, p2Ratio);
+        hud?.SetTimeRemaining(maxMatchSeconds - _elapsed);
+        UpdateFace(p1Head, _p1DefaultHead, PlayerId.P1, p1Ratio);
+        UpdateFace(p2Head, _p2DefaultHead, PlayerId.P2, p2Ratio);
 
-        bool p1Closed = _p1Timer.IsClosedContinuously(loseAfterClosedSeconds);
-        bool p2Closed = _p2Timer.IsClosedContinuously(loseAfterClosedSeconds);
+        bool p1Closed = p1Timer != null && p1Timer.IsClosedContinuously(loseAfterClosedSeconds);
+        bool p2Closed = p2Timer != null && p2Timer.IsClosedContinuously(loseAfterClosedSeconds);
 
         if (p1Closed || p2Closed)
         {
@@ -141,7 +93,7 @@ public class StaringContestGame : MonoBehaviour
     private void EndRound(PlayerId? winner)
     {
         _ended = true;
-        _hud.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!");
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!");
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }

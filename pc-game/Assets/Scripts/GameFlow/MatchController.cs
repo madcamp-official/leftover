@@ -3,7 +3,6 @@
 // 결과 집계는 전부 여기서 처리하므로 미니게임 쪽은 "누가 이겼는지"만 알면 된다.
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public sealed class MatchController : MonoBehaviour
 {
@@ -44,13 +43,14 @@ public sealed class MatchController : MonoBehaviour
 
     public void LoadNextRound()
     {
-        CurrentRoundIndex++;
-        if (CurrentRoundIndex >= RoundScenes.Count)
-        {
-            SceneManager.LoadScene(HubSceneName);
-            return;
-        }
-        SceneManager.LoadScene(RoundScenes[CurrentRoundIndex]);
+        int nextRoundIndex = CurrentRoundIndex + 1;
+        string nextScene = nextRoundIndex >= RoundScenes.Count
+            ? HubSceneName
+            : RoundScenes[nextRoundIndex];
+
+        // 더블클릭이나 중복 코루틴으로 전환 요청이 겹치면 인덱스도 두 번 증가하지 않게 한다.
+        if (SceneFadeTransition.TryLoadScene(nextScene))
+            CurrentRoundIndex = nextRoundIndex;
     }
 
     // null = 무승부(승자 없음). 각 미니게임은 규칙에 따라 승자가 정해지는 순간 이걸 한 번만

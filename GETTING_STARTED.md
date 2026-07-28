@@ -33,16 +33,15 @@
     `HeadTiltRatio`/`IsMouthOpen`/`IsEyeClosedNow`/`HandToHeadDistance` 등 공용 제스처 판정)
   - `PoseStreamReceiver.cs` — UDP 9100 수신 후 `PoseInputHub`에 반영
   - `EyeCloseTimer.cs` / `JumpHeightCalibrator.cs` — 지속시간·캘리브레이션이 필요한 판정용 유틸
-  - `RuntimeSpriteFactory.cs` / `CavemanSilhouette.cs` — 아트 리소스 없이 도형으로 원시인 캐릭터
-    표현 (원/캡슐 프로시저럴 스프라이트)
+  - `CavemanSilhouette.cs` — `Caveman_P1/P2.prefab`에 저장된 머리·몸통·관절 파츠를 포즈에 맞춰 회전
   - `GameBootstrap.cs` — 각 미니게임 씬을 단독으로 열어도 필요한 싱글턴을 자동 생성
 - `pc-game/Assets/Scripts/GameFlow/`: `MatchController.cs`(6판 진행/점수), `HubController.cs`
   (시작/최종결과 화면)
-- `pc-game/Assets/Scripts/Minigames/`:
-  - `StaringContest/` — **완전히 구현됨**. 다른 5개를 맡을 사람은 이 파일을 참고용 예시로 볼 것.
-  - `StoneThrow/`, `PoseCopy/`, `FruitJump/`, `CoconutCrack/`, `StoneOrBanana/` — 부트스트랩과
-    씬 뼈대까지만 채워진 스캐폴드. 각 파일 상단 주석에 우가우가게임_기획_프롬프트.md 스펙 요약과
-    `TODO` 위치가 명시돼 있음.
+- `pc-game/Assets/Scripts/Minigames/`: 6개 게임 모두 핵심 판정, 승패, 다음 라운드 전환,
+  배경/캐릭터/HUD 연출이 구현됨. 각 씬의 `EditableLayout` 아래 정적 오브젝트는 저장되며,
+  투사체·코코넛 조각·다가오는 벽 같은 일회성 연출만 실행 중 생성됨.
+- `pc-game/Assets/Prefabs/`: 시작 화면과 P1/P2 캐릭터 원본 프리팹.
+- Unity 수동 편집 강좌: [docs/UNITY_EDITOR_편집_가이드.md](docs/UNITY_EDITOR_편집_가이드.md)
 - 이전 3D 검투 게임 관련 코드/에셋/기획서는 전부 삭제했다.
 
 ## 실행 방법

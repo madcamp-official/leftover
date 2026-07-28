@@ -26,8 +26,10 @@ public class StoneOrBananaGame : MonoBehaviour
 
     private Sprite _stoneSprite;
     private Sprite _bananaSprite;
-    private CavemanSilhouette _p1Silhouette;
-    private CavemanSilhouette _p2Silhouette;
+    [Header("씬에 배치된 오브젝트")]
+    [SerializeField] private CavemanSilhouette p1Silhouette;
+    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [SerializeField] private StoneOrBananaHud hud;
     private float _p1Fullness, _p2Fullness;
     private float _p1Teeth = 3f, _p2Teeth = 3f;
     private PlayerId _currentThrower = PlayerId.P1;
@@ -35,8 +37,6 @@ public class StoneOrBananaGame : MonoBehaviour
     private float _turnTimer;
     private ThrowKind _thrownKind;
     private bool _ended;
-    private StoneOrBananaHud _hud;
-
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
@@ -45,68 +45,25 @@ public class StoneOrBananaGame : MonoBehaviour
         _stoneSprite = ArtAssets.LoadProp("stone");
         _bananaSprite = ArtAssets.LoadProp("banana");
 
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var camObj = new GameObject("Main Camera");
-            cam = camObj.AddComponent<Camera>();
-            camObj.tag = "MainCamera";
-        }
-        cam.orthographic = true;
-        cam.orthographicSize = 3f;
-        cam.transform.position = new Vector3(0, 1f, -10f);
-
-        ArtAssets.CreateBackground(cam, ArtAssets.LoadStoneOrBanana("background"));
-
-        _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2f, 0f, 0f));
-        _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2f, 0f, 0f));
         _p1Teeth = _p2Teeth = maxTeeth;
-
-        // README 정렬 순서: background -> character -> cover bush -> UI. 은폐 수풀은 캐릭터
-        // 앞에 겹쳐서 "덤불 뒤에 숨어있다" 느낌을 준다.
-        SpawnCoverBush(ArtAssets.LoadStoneOrBanana("prop_cover_bush_p1"), _p1Silhouette.transform);
-        SpawnCoverBush(ArtAssets.LoadStoneOrBanana("prop_cover_bush_p2"), _p2Silhouette.transform);
-
-        _hud = StoneOrBananaHud.Build();
         RefreshStatusHud();
-    }
-
-    private static void SpawnCoverBush(Sprite sprite, Transform parent)
-    {
-        if (sprite == null) return;
-        var go = new GameObject("CoverBush");
-        go.transform.SetParent(parent, false);
-        go.transform.localPosition = new Vector3(0f, 0.35f, -0.5f);
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
-        sr.sortingOrder = 3;
-        ArtAssets.FitWidth(sr, 1.3f);
-    }
-
-    private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
-    {
-        var go = new GameObject($"Caveman_{id}");
-        go.transform.position = pos;
-        var s = go.AddComponent<CavemanSilhouette>();
-        s.player = id;
-        return s;
     }
 
     private void RefreshStatusHud()
     {
-        _hud.SetStatus(PlayerId.P1, _p1Teeth, maxTeeth, _p1Fullness, maxFullness);
-        _hud.SetStatus(PlayerId.P2, _p2Teeth, maxTeeth, _p2Fullness, maxFullness);
+        hud?.SetStatus(PlayerId.P1, _p1Teeth, maxTeeth, _p1Fullness, maxFullness);
+        hud?.SetStatus(PlayerId.P2, _p2Teeth, maxTeeth, _p2Fullness, maxFullness);
     }
 
     private PlayerPoseState State(PlayerId id) => PoseInputHub.Instance?.Get(id);
-    private CavemanSilhouette Silhouette(PlayerId id) => id == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
+    private CavemanSilhouette Silhouette(PlayerId id) => id == PlayerId.P1 ? p1Silhouette : p2Silhouette;
     private PlayerId Other(PlayerId id) => id == PlayerId.P1 ? PlayerId.P2 : PlayerId.P1;
 
     private void Update()
     {
         PoseInputHub hub = PoseInputHub.Instance;
-        _p1Silhouette.ApplyPose(hub?.Get(PlayerId.P1));
-        _p2Silhouette.ApplyPose(hub?.Get(PlayerId.P2));
+        p1Silhouette?.ApplyPose(hub?.Get(PlayerId.P1));
+        p2Silhouette?.ApplyPose(hub?.Get(PlayerId.P2));
 
         if (_ended) return;
 
@@ -116,11 +73,11 @@ public class StoneOrBananaGame : MonoBehaviour
                 TickWaitingThrow();
                 break;
             case TurnPhase.WaitingCatch:
-                _hud.SetTurnTimeRemaining(turnTimeoutSeconds - _turnTimer);
+                hud?.SetTurnTimeRemaining(turnTimeoutSeconds - _turnTimer);
                 TickWaitingCatch(catcher: Other(_currentThrower), onEaten: HandleFirstCatchResolved);
                 break;
             case TurnPhase.BoomerangBackToThrower:
-                _hud.SetTurnTimeRemaining(turnTimeoutSeconds - _turnTimer);
+                hud?.SetTurnTimeRemaining(turnTimeoutSeconds - _turnTimer);
                 TickWaitingCatch(catcher: _currentThrower, onEaten: HandleBoomerangResolved);
                 break;
         }
@@ -128,7 +85,7 @@ public class StoneOrBananaGame : MonoBehaviour
 
     private void TickWaitingThrow()
     {
-        _hud.ShowThrowPrompt(true);
+        hud?.ShowThrowPrompt(true);
 
         PlayerPoseState thrower = State(_currentThrower);
         if (thrower == null || !thrower.IsTracked) return;
@@ -138,7 +95,7 @@ public class StoneOrBananaGame : MonoBehaviour
         if (!rightRaised && !leftRaised) return;
 
         _thrownKind = rightRaised ? ThrowKind.Stone : ThrowKind.Banana;
-        _hud.ShowThrowPrompt(false);
+        hud?.ShowThrowPrompt(false);
         _turnTimer = 0f;
         _phase = TurnPhase.WaitingCatch;
         StartCoroutine(FlyItem(Silhouette(_currentThrower).transform.position,
@@ -148,19 +105,19 @@ public class StoneOrBananaGame : MonoBehaviour
     // catcher가 입을 벌리면 즉시 onEaten(true), turnTimeoutSeconds 안에 못 벌리면 onEaten(false).
     private void TickWaitingCatch(PlayerId catcher, System.Action<bool> onEaten)
     {
-        _hud.ShowReceivePrompt(true);
+        hud?.ShowReceivePrompt(true);
         _turnTimer += Time.deltaTime;
         PlayerPoseState catcherState = State(catcher);
         bool ate = catcherState != null && catcherState.IsTracked && catcherState.IsMouthOpen();
 
         if (ate)
         {
-            _hud.ShowReceivePrompt(false);
+            hud?.ShowReceivePrompt(false);
             onEaten(true);
         }
         else if (_turnTimer >= turnTimeoutSeconds)
         {
-            _hud.ShowReceivePrompt(false);
+            hud?.ShowReceivePrompt(false);
             onEaten(false);
         }
     }
@@ -247,8 +204,8 @@ public class StoneOrBananaGame : MonoBehaviour
     private void EndMatch(PlayerId winner)
     {
         _ended = true;
-        _hud.ShowThrowPrompt(false);
-        _hud.ShowReceivePrompt(false);
+        hud?.ShowThrowPrompt(false);
+        hud?.ShowReceivePrompt(false);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }

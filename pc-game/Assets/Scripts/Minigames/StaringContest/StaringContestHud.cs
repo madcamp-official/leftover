@@ -12,15 +12,16 @@ public class StaringContestHud : MonoBehaviour
     private static readonly Vector2 GaugeAnchorMin = new Vector2(0.4f, 0.32f);
     private static readonly Vector2 GaugeAnchorMax = new Vector2(0.96f, 0.62f);
 
-    private Image _p1Gauge, _p2Gauge;
-    private Text _timer, _eventText;
-    private RectTransform _ruleBanner;
+    [Header("씬에 배치된 UI")]
+    [SerializeField] private Image _p1Gauge, _p2Gauge;
+    [SerializeField] private Text _timer, _eventText;
+    [SerializeField] private RectTransform _ruleBanner;
 
     public static StaringContestHud Build(float maxMatchSeconds)
     {
         var canvasGo = new GameObject("StaringContestHud");
         var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        HudWidgets.ConfigureForGameCamera(canvas);
         var scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(RefWidth, RefHeight);

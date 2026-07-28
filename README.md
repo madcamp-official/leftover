@@ -13,6 +13,8 @@
 
 시작 가이드: [GETTING_STARTED.md](GETTING_STARTED.md)
 
+Unity 화면과 캐릭터를 직접 다듬는 법: [docs/UNITY_EDITOR_편집_가이드.md](docs/UNITY_EDITOR_편집_가이드.md)
+
 > 이전에 있던 3D 검투 게임 컨셉과 관련 코드/에셋/기획서는 전부 정리했다 — 그 작업은
 > `feature/duel-polish-round3` 등 기존 브랜치 히스토리에 남아있지만, 이 방향으로는 더 이상
 > 진행하지 않는다.
@@ -24,7 +26,7 @@
 | [`vision-server/`](vision-server/) | 카메라로 포즈+표정을 인식해서 UDP로 연속 스트리밍하는 Python 프로세스(플레이어별로 1대씩 실행) | **입력팀** |
 | [`pc-game/Assets/Scripts/Common/`](pc-game/Assets/Scripts/Common/) | UDP 스트림을 받아 정리된 API로 노출하는 공용 계층(`PoseInputHub` 등) - 게임팀이 참조하는 계약 | **입력팀** |
 | [`pc-game/Assets/Scripts/GameFlow/`](pc-game/Assets/Scripts/GameFlow/) | 6판 진행/점수 관리 (`MatchController`, `HubController`) | 공용 |
-| [`pc-game/Assets/Scripts/Minigames/`](pc-game/Assets/Scripts/Minigames/) | 미니게임 6종, 게임별 폴더 분리 - `StaringContest`는 완전히 구현된 예시, 나머지 5개는 스캐폴드 | **게임팀** |
+| [`pc-game/Assets/Scripts/Minigames/`](pc-game/Assets/Scripts/Minigames/) | 판정·연출·HUD가 구현된 미니게임 6종. 정적 화면 오브젝트는 씬/프리팹에서 직접 편집 가능 | **게임팀** |
 | [`shared/PROTOCOL.md`](shared/PROTOCOL.md) | 두 팀이 합의하는 통신 규약 - 이거 하나만 지키면 서로 독립적으로 작업 가능 | 공용 |
 
 **분업 원칙**: 입력팀은 `PoseInputHub`의 public API(어떤 값을 어떻게 노출할지)까지만 책임지고,

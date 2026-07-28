@@ -8,14 +8,15 @@ public class FruitJumpHud : MonoBehaviour
     private const float RefHeight = 1152f;
     private static readonly Vector2 SlotAnchor = new Vector2(0.775f, 0.51f);
 
-    private Text _p1Score, _p2Score, _timer, _eventText;
+    [Header("씬에 배치된 UI")]
+    [SerializeField] private Text _p1Score, _p2Score, _timer, _eventText;
     private float _eventTimer;
 
     public static FruitJumpHud Build(float matchSeconds)
     {
         var canvasGo = new GameObject("FruitJumpHud");
         var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        HudWidgets.ConfigureForGameCamera(canvas);
         var scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(RefWidth, RefHeight);

@@ -27,23 +27,23 @@ public class PoseCopyGame : MonoBehaviour
     public float resultDisplaySeconds = 2f;
     public int maxFootholds = 4;
 
-    private const float BaseP1X = -3f;
-    private const float BaseP2X = 3f;
-
     private static readonly string[] PoseWalls =
     {
         "pose_wall_01_arms_up_v", "pose_wall_02_t_pose", "pose_wall_03_one_arm_up",
         "pose_wall_04_hands_on_waist", "pose_wall_05_leaning_side", "pose_wall_06_wide_squat",
     };
 
-    private CavemanSilhouette _p1Silhouette;
-    private CavemanSilhouette _p2Silhouette;
+    [Header("씬에 배치된 오브젝트")]
+    [SerializeField] private CavemanSilhouette p1Silhouette;
+    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [SerializeField] private PoseMatchHud hud;
+    private Vector3 _p1StartPosition;
+    private Vector3 _p2StartPosition;
     private float _p1TrackPosition; // 0 = 원점, 커질수록 많이 밀려남
     private float _p2TrackPosition;
     private int _p1KnockbackCount;
     private int _p2KnockbackCount;
     private bool _ended;
-    private PoseMatchHud _hud;
     private int _wallCycle;
 
     private void Start()
@@ -51,36 +51,13 @@ public class PoseCopyGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
 
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var camObj = new GameObject("Main Camera");
-            cam = camObj.AddComponent<Camera>();
-            camObj.tag = "MainCamera";
-        }
-        cam.orthographic = true;
-        cam.orthographicSize = 4f;
-        cam.transform.position = new Vector3(0, 1f, -10f);
-
-        ArtAssets.CreateBackground(cam, ArtAssets.LoadPoseMatch("background"));
-
-        _p1Silhouette = Spawn(PlayerId.P1, new Vector3(BaseP1X, 0f, 0f));
-        _p2Silhouette = Spawn(PlayerId.P2, new Vector3(BaseP2X, 0f, 0f));
-
-        _hud = PoseMatchHud.Build(roundCount * 2 * (poseHoldSeconds + wallApproachSeconds + 0.8f));
-        _hud.SetFootholds(PlayerId.P1, maxFootholds);
-        _hud.SetFootholds(PlayerId.P2, maxFootholds);
+        _p1StartPosition = p1Silhouette.transform.position;
+        _p2StartPosition = p2Silhouette.transform.position;
+        hud?.SetTimeRemaining(roundCount * 2 * (poseHoldSeconds + wallApproachSeconds + 0.8f));
+        hud?.SetFootholds(PlayerId.P1, maxFootholds);
+        hud?.SetFootholds(PlayerId.P2, maxFootholds);
 
         StartCoroutine(RunMatch());
-    }
-
-    private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
-    {
-        var go = new GameObject($"Caveman_{id}");
-        go.transform.position = pos;
-        var s = go.AddComponent<CavemanSilhouette>();
-        s.player = id;
-        return s;
     }
 
     private PlayerPoseState State(PlayerId id) => PoseInputHub.Instance?.Get(id);
@@ -88,8 +65,8 @@ public class PoseCopyGame : MonoBehaviour
     private void Update()
     {
         PoseInputHub hub = PoseInputHub.Instance;
-        _p1Silhouette.ApplyPose(hub?.Get(PlayerId.P1));
-        _p2Silhouette.ApplyPose(hub?.Get(PlayerId.P2));
+        p1Silhouette?.ApplyPose(hub?.Get(PlayerId.P1));
+        p2Silhouette?.ApplyPose(hub?.Get(PlayerId.P2));
     }
 
     private IEnumerator RunMatch()
@@ -109,11 +86,11 @@ public class PoseCopyGame : MonoBehaviour
 
     private IEnumerator RunOneDirection(PlayerId poser, PlayerId copier, int roundIndex)
     {
-        _hud.ShowEvent($"{poser}가 포즈를 정하는 중... ({roundIndex + 1}/{roundCount})", poseHoldSeconds + 0.5f);
+        hud?.ShowEvent($"{poser}가 포즈를 정하는 중... ({roundIndex + 1}/{roundCount})", poseHoldSeconds + 0.5f);
         Vector2[] captured = null;
         yield return CapturePose(poser, snap => captured = snap);
 
-        _hud.ShowEvent($"{copier}, 저 포즈를 따라하세요!", wallApproachSeconds + 0.5f);
+        hud?.ShowEvent($"{copier}, 저 포즈를 따라하세요!", wallApproachSeconds + 0.5f);
         GameObject wall = SpawnApproachingWall(copier);
         float t = 0f;
         while (t < wallApproachSeconds)
@@ -138,11 +115,11 @@ public class PoseCopyGame : MonoBehaviour
 
         if (matched)
         {
-            _hud.ShowEvent($"{copier} 통과!");
+            hud?.ShowEvent($"{copier} 통과!");
         }
         else
         {
-            _hud.ShowEvent($"{copier} 벽에 부딪힘 - 밀려남!");
+            hud?.ShowEvent($"{copier} 벽에 부딪힘 - 밀려남!");
             Knockback(copier);
         }
         yield return new WaitForSeconds(0.8f);
@@ -156,7 +133,7 @@ public class PoseCopyGame : MonoBehaviour
         _wallCycle++;
         if (sprite == null) return null;
 
-        CavemanSilhouette target = copier == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
+        CavemanSilhouette target = copier == PlayerId.P1 ? p1Silhouette : p2Silhouette;
         var go = new GameObject("ApproachingWall");
         go.transform.SetParent(target.transform, false);
         go.transform.localPosition = WallStartLocalPos(copier);
@@ -215,22 +192,22 @@ public class PoseCopyGame : MonoBehaviour
         {
             _p1TrackPosition += amount;
             _p1KnockbackCount++;
-            _p1Silhouette.transform.position = new Vector3(BaseP1X - _p1TrackPosition, 0f, 0f);
-            _hud.SetFootholds(PlayerId.P1, Mathf.Max(0, maxFootholds - _p1KnockbackCount));
+            p1Silhouette.transform.position = _p1StartPosition + Vector3.left * _p1TrackPosition;
+            hud?.SetFootholds(PlayerId.P1, Mathf.Max(0, maxFootholds - _p1KnockbackCount));
         }
         else
         {
             _p2TrackPosition += amount;
             _p2KnockbackCount++;
-            _p2Silhouette.transform.position = new Vector3(BaseP2X + _p2TrackPosition, 0f, 0f);
-            _hud.SetFootholds(PlayerId.P2, Mathf.Max(0, maxFootholds - _p2KnockbackCount));
+            p2Silhouette.transform.position = _p2StartPosition + Vector3.right * _p2TrackPosition;
+            hud?.SetFootholds(PlayerId.P2, Mathf.Max(0, maxFootholds - _p2KnockbackCount));
         }
     }
 
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
-        _hud.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }

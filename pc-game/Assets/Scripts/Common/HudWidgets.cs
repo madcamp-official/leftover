@@ -5,6 +5,30 @@ using UnityEngine.UI;
 
 public static class HudWidgets
 {
+    // 미니게임 HUD를 카메라 프레임 크기의 World Space Canvas로 만든다. Overlay는 2048px UI
+    // 좌표와 몇 Unity 단위짜리 월드 좌표가 Scene 창에서 따로 놀고, ScreenSpaceCamera는 Scene
+    // 창에서 UI 이미지를 숨겨 보여 직접 편집하기 어렵다. WorldSpace + 계산된 scale을 쓰면
+    // 배경/캐릭터/UI를 같은 프레임에서 보면서 드래그할 수 있고 Game 출력도 동일하게 유지된다.
+    public static void ConfigureForGameCamera(Canvas canvas)
+    {
+        if (canvas == null) return;
+        Camera cam = Camera.main;
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.worldCamera = cam;
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = 100;
+
+        RectTransform rt = canvas.GetComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(2048f, 1152f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.position = cam != null
+            ? new Vector3(cam.transform.position.x, cam.transform.position.y, -1f)
+            : new Vector3(0f, 1f, -1f);
+        float worldScale = cam != null ? cam.orthographicSize * 2f / 1152f : 6f / 1152f;
+        rt.localScale = Vector3.one * worldScale;
+        rt.localRotation = Quaternion.identity;
+    }
+
     public static RectTransform CreateImage(Transform parent, string name, Sprite sprite,
         Vector2 anchor, Vector2 offset, float width)
     {

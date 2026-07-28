@@ -8,14 +8,15 @@ public class PoseMatchHud : MonoBehaviour
     private const float RefWidth = 2048f;
     private const float RefHeight = 1152f;
 
-    private Text _p1Footholds, _p2Footholds, _timer, _eventText;
+    [Header("씬에 배치된 UI")]
+    [SerializeField] private Text _p1Footholds, _p2Footholds, _timer, _eventText;
     private float _eventTimer;
 
     public static PoseMatchHud Build(float matchSeconds)
     {
         var canvasGo = new GameObject("PoseMatchHud");
         var canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        HudWidgets.ConfigureForGameCamera(canvas);
         var scaler = canvasGo.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(RefWidth, RefHeight);
