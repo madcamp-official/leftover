@@ -11,6 +11,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
     [SerializeField, Min(0f)] private float fadeOutSeconds = 0.45f;
     [SerializeField, Min(0f)] private float fadeInSeconds = 0.45f;
+    [SerializeField, Min(0f)] private float blackHoldSeconds = 0.08f;
 
     private CanvasGroup _group;
     private bool _isTransitioning;
@@ -38,7 +39,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
         // 에디터에서 어느 씬을 직접 Play해도 검은 화면에서 자연스럽게 시작한다.
         _group.alpha = 1f;
         _group.blocksRaycasts = true;
-        yield return null;
+        yield return HoldBlackFrame();
         yield return FadeTo(0f, fadeInSeconds);
         _group.blocksRaycasts = false;
     }
@@ -59,11 +60,24 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
         AsyncOperation load = SceneManager.LoadSceneAsync(sceneName);
         while (!load.isDone) yield return null;
-        yield return null; // 새 씬의 Awake/Start와 첫 레이아웃 계산을 검은 화면 뒤에서 완료한다.
+
+        // 새 씬이 로드된 뒤에도 검정을 다시 확정하고 실제 한 프레임을 렌더한다. 이렇게 해야
+        // 새 화면이 잠깐 노출된 다음 어두워지는 현상 없이 반드시 "검정 → 새 화면 fade in"이 된다.
+        _group.alpha = 1f;
+        yield return HoldBlackFrame();
 
         yield return FadeTo(0f, fadeInSeconds);
         _group.blocksRaycasts = false;
         _isTransitioning = false;
+    }
+
+    private IEnumerator HoldBlackFrame()
+    {
+        _group.alpha = 1f;
+        Canvas.ForceUpdateCanvases();
+        yield return new WaitForEndOfFrame();
+        if (blackHoldSeconds > 0f)
+            yield return new WaitForSecondsRealtime(blackHoldSeconds);
     }
 
     private IEnumerator FadeTo(float target, float duration)
