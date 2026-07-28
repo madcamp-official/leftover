@@ -1,8 +1,8 @@
 # pc-game
 
 Unity 프로젝트 (2D). 우가우가게임 미니게임 6종 + 진행 관리. 전체 개요는
-[../GETTING_STARTED.md](../GETTING_STARTED.md), 기획은
-[../우가우가게임_기획_프롬프트.md](../우가우가게임_기획_프롬프트.md) 참고.
+[../docs/게임_구동방식_정리.md](../docs/게임_구동방식_정리.md), 기획은
+[../docs/우가우가게임_기획_프롬프트.md](../docs/우가우가게임_기획_프롬프트.md) 참고.
 
 ## 씬 구조
 
@@ -34,7 +34,7 @@ fade out한 뒤 새 씬을 로드하고 0.45초 fade in하며, 전환 중 중복
 
 ## 실행
 
-[../GETTING_STARTED.md](../GETTING_STARTED.md) "실행 방법" 참고 - 요약하면 vision-server를
+[../docs/게임_구동방식_정리.md](../docs/게임_구동방식_정리.md) "6. 전체 실행 절차 요약" 참고 - 요약하면 vision-server를
 켜고 Unity에서 `Hub` 씬을 Play.
 
 ## 에디터에서 화면 편집
