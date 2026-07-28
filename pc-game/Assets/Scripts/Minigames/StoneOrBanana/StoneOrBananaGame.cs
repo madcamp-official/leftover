@@ -34,8 +34,8 @@ public class StoneOrBananaGame : MonoBehaviour
     private TurnPhase _phase = TurnPhase.WaitingThrow;
     private float _turnTimer;
     private ThrowKind _thrownKind;
-    private string _statusText = "";
     private bool _ended;
+    private StoneOrBananaHud _hud;
 
     private void Start()
     {
@@ -56,9 +56,31 @@ public class StoneOrBananaGame : MonoBehaviour
         cam.orthographicSize = 3f;
         cam.transform.position = new Vector3(0, 1f, -10f);
 
+        ArtAssets.CreateBackground(cam, ArtAssets.LoadStoneOrBanana("background"));
+
         _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2f, 0f, 0f));
         _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2f, 0f, 0f));
         _p1Teeth = _p2Teeth = maxTeeth;
+
+        // README 정렬 순서: background -> character -> cover bush -> UI. 은폐 수풀은 캐릭터
+        // 앞에 겹쳐서 "덤불 뒤에 숨어있다" 느낌을 준다.
+        SpawnCoverBush(ArtAssets.LoadStoneOrBanana("prop_cover_bush_p1"), _p1Silhouette.transform);
+        SpawnCoverBush(ArtAssets.LoadStoneOrBanana("prop_cover_bush_p2"), _p2Silhouette.transform);
+
+        _hud = StoneOrBananaHud.Build();
+        RefreshStatusHud();
+    }
+
+    private static void SpawnCoverBush(Sprite sprite, Transform parent)
+    {
+        if (sprite == null) return;
+        var go = new GameObject("CoverBush");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = new Vector3(0f, 0.35f, -0.5f);
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = 3;
+        ArtAssets.FitWidth(sr, 1.3f);
     }
 
     private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
@@ -68,6 +90,12 @@ public class StoneOrBananaGame : MonoBehaviour
         var s = go.AddComponent<CavemanSilhouette>();
         s.player = id;
         return s;
+    }
+
+    private void RefreshStatusHud()
+    {
+        _hud.SetStatus(PlayerId.P1, _p1Teeth, maxTeeth, _p1Fullness, maxFullness);
+        _hud.SetStatus(PlayerId.P2, _p2Teeth, maxTeeth, _p2Fullness, maxFullness);
     }
 
     private PlayerPoseState State(PlayerId id) => PoseInputHub.Instance?.Get(id);
@@ -88,9 +116,11 @@ public class StoneOrBananaGame : MonoBehaviour
                 TickWaitingThrow();
                 break;
             case TurnPhase.WaitingCatch:
+                _hud.SetTurnTimeRemaining(turnTimeoutSeconds - _turnTimer);
                 TickWaitingCatch(catcher: Other(_currentThrower), onEaten: HandleFirstCatchResolved);
                 break;
             case TurnPhase.BoomerangBackToThrower:
+                _hud.SetTurnTimeRemaining(turnTimeoutSeconds - _turnTimer);
                 TickWaitingCatch(catcher: _currentThrower, onEaten: HandleBoomerangResolved);
                 break;
         }
@@ -98,6 +128,8 @@ public class StoneOrBananaGame : MonoBehaviour
 
     private void TickWaitingThrow()
     {
+        _hud.ShowThrowPrompt(true);
+
         PlayerPoseState thrower = State(_currentThrower);
         if (thrower == null || !thrower.IsTracked) return;
 
@@ -106,7 +138,7 @@ public class StoneOrBananaGame : MonoBehaviour
         if (!rightRaised && !leftRaised) return;
 
         _thrownKind = rightRaised ? ThrowKind.Stone : ThrowKind.Banana;
-        _statusText = $"{_currentThrower}가 {(_thrownKind == ThrowKind.Stone ? "돌" : "바나나")}을 던졌다!";
+        _hud.ShowThrowPrompt(false);
         _turnTimer = 0f;
         _phase = TurnPhase.WaitingCatch;
         StartCoroutine(FlyItem(Silhouette(_currentThrower).transform.position,
@@ -116,16 +148,19 @@ public class StoneOrBananaGame : MonoBehaviour
     // catcher가 입을 벌리면 즉시 onEaten(true), turnTimeoutSeconds 안에 못 벌리면 onEaten(false).
     private void TickWaitingCatch(PlayerId catcher, System.Action<bool> onEaten)
     {
+        _hud.ShowReceivePrompt(true);
         _turnTimer += Time.deltaTime;
         PlayerPoseState catcherState = State(catcher);
         bool ate = catcherState != null && catcherState.IsTracked && catcherState.IsMouthOpen();
 
         if (ate)
         {
+            _hud.ShowReceivePrompt(false);
             onEaten(true);
         }
         else if (_turnTimer >= turnTimeoutSeconds)
         {
+            _hud.ShowReceivePrompt(false);
             onEaten(false);
         }
     }
@@ -139,12 +174,10 @@ public class StoneOrBananaGame : MonoBehaviour
             if (ate)
             {
                 AddFullness(catcher, 1f);
-                _statusText = $"{catcher}가 바나나를 먹었다! 포만감 +1";
                 EndTurnAndAdvance();
             }
             else
             {
-                _statusText = "바나나를 피했다 - 부메랑처럼 돌아온다!";
                 _turnTimer = 0f;
                 _phase = TurnPhase.BoomerangBackToThrower;
                 StartCoroutine(FlyItem(Silhouette(catcher).transform.position,
@@ -153,30 +186,14 @@ public class StoneOrBananaGame : MonoBehaviour
         }
         else // Stone
         {
-            if (ate)
-            {
-                AddTeeth(catcher, -1f);
-                _statusText = $"{catcher}가 돌을 먹어버렸다! 이빨 -1 (페널티)";
-            }
-            else
-            {
-                _statusText = $"{catcher}가 돌을 피했다.";
-            }
+            if (ate) AddTeeth(catcher, -1f);
             EndTurnAndAdvance();
         }
     }
 
     private void HandleBoomerangResolved(bool ate)
     {
-        if (ate)
-        {
-            AddFullness(_currentThrower, 1f);
-            _statusText = $"{_currentThrower}가 돌아온 바나나를 먹었다! 포만감 +1";
-        }
-        else
-        {
-            _statusText = "돌아온 바나나를 놓쳤다.";
-        }
+        if (ate) AddFullness(_currentThrower, 1f);
         EndTurnAndAdvance();
     }
 
@@ -184,12 +201,14 @@ public class StoneOrBananaGame : MonoBehaviour
     {
         if (player == PlayerId.P1) _p1Fullness = Mathf.Min(maxFullness, _p1Fullness + amount);
         else _p2Fullness = Mathf.Min(maxFullness, _p2Fullness + amount);
+        RefreshStatusHud();
     }
 
     private void AddTeeth(PlayerId player, float amount)
     {
         if (player == PlayerId.P1) _p1Teeth = Mathf.Max(0f, _p1Teeth + amount);
         else _p2Teeth = Mathf.Max(0f, _p2Teeth + amount);
+        RefreshStatusHud();
     }
 
     private void EndTurnAndAdvance()
@@ -228,7 +247,8 @@ public class StoneOrBananaGame : MonoBehaviour
     private void EndMatch(PlayerId winner)
     {
         _ended = true;
-        _statusText = $"{winner} 승리!";
+        _hud.ShowThrowPrompt(false);
+        _hud.ShowReceivePrompt(false);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }
@@ -237,18 +257,5 @@ public class StoneOrBananaGame : MonoBehaviour
     {
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
-    }
-
-    private void OnGUI()
-    {
-        GUI.Label(new Rect(20, 20, 400, 30), $"P1 포만감 {_p1Fullness:F0}/{maxFullness}  이빨 {_p1Teeth:F0}/{maxTeeth}");
-        GUI.Label(new Rect(20, 50, 400, 30), $"P2 포만감 {_p2Fullness:F0}/{maxFullness}  이빨 {_p2Teeth:F0}/{maxTeeth}");
-        GUI.Label(new Rect(20, 80, 400, 30), $"현재 던지는 사람: {_currentThrower}   (오른손=돌, 왼손=바나나)");
-
-        if (!string.IsNullOrEmpty(_statusText))
-        {
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 22, alignment = TextAnchor.UpperCenter };
-            GUI.Label(new Rect(0, 120, Screen.width, 40), _statusText, style);
-        }
     }
 }

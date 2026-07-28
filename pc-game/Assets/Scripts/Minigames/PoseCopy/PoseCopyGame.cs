@@ -7,6 +7,12 @@
 // poseMatchTolerance(기본 15%) 이내면 통과, 아니면 트랙에서 knockbackRatio만큼 밀려난다.
 // roundCount 왕복 후 덜 밀려난 사람이 승리. 전체 진행은 순서가 있는 대기/판정의 연속이라
 // 단일 코루틴(RunMatch)으로 턴을 몰고, Update()는 매 프레임 실루엣 포즈 반영만 담당한다.
+//
+// 화면은 image/games/pose_match/의 실제 아트(강가 배경 + "남은 발판" 네임플레이트)로
+// 구성한다. 실제 판정은 캡처된 포즈와의 관절 오차 비교 그대로지만, 시각적으로는
+// obstacles/의 돌 벽 그림이 판정 직전 플레이어 쪽으로 다가왔다 사라지는 연출을 붙였다
+// (6종을 라운드마다 돌아가며 사용 - 실제 캡처된 포즈 모양과 정확히 일치하진 않지만 "벽이
+// 다가온다"는 느낌을 주는 장식용).
 using System.Collections;
 using UnityEngine;
 
@@ -19,18 +25,26 @@ public class PoseCopyGame : MonoBehaviour
     public float wallApproachSeconds = 3f;
     public float trackLength = 4f;
     public float resultDisplaySeconds = 2f;
+    public int maxFootholds = 4;
 
     private const float BaseP1X = -3f;
     private const float BaseP2X = 3f;
+
+    private static readonly string[] PoseWalls =
+    {
+        "pose_wall_01_arms_up_v", "pose_wall_02_t_pose", "pose_wall_03_one_arm_up",
+        "pose_wall_04_hands_on_waist", "pose_wall_05_leaning_side", "pose_wall_06_wide_squat",
+    };
 
     private CavemanSilhouette _p1Silhouette;
     private CavemanSilhouette _p2Silhouette;
     private float _p1TrackPosition; // 0 = 원점, 커질수록 많이 밀려남
     private float _p2TrackPosition;
-    private string _statusText = "";
-    private float _wallCountdown;
-    private bool _showCountdown;
+    private int _p1KnockbackCount;
+    private int _p2KnockbackCount;
     private bool _ended;
+    private PoseMatchHud _hud;
+    private int _wallCycle;
 
     private void Start()
     {
@@ -48,23 +62,16 @@ public class PoseCopyGame : MonoBehaviour
         cam.orthographicSize = 4f;
         cam.transform.position = new Vector3(0, 1f, -10f);
 
+        ArtAssets.CreateBackground(cam, ArtAssets.LoadPoseMatch("background"));
+
         _p1Silhouette = Spawn(PlayerId.P1, new Vector3(BaseP1X, 0f, 0f));
         _p2Silhouette = Spawn(PlayerId.P2, new Vector3(BaseP2X, 0f, 0f));
 
-        BuildTrackVisual(BaseP1X, -1f);
-        BuildTrackVisual(BaseP2X, 1f);
+        _hud = PoseMatchHud.Build(roundCount * 2 * (poseHoldSeconds + wallApproachSeconds + 0.8f));
+        _hud.SetFootholds(PlayerId.P1, maxFootholds);
+        _hud.SetFootholds(PlayerId.P2, maxFootholds);
 
         StartCoroutine(RunMatch());
-    }
-
-    private void BuildTrackVisual(float baseX, float direction)
-    {
-        var go = new GameObject("Track");
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = RuntimeSpriteFactory.CreateCapsule((int)(trackLength * 100), 20, new Color(0.5f, 0.45f, 0.4f));
-        sr.transform.rotation = Quaternion.Euler(0, 0, 90);
-        sr.transform.position = new Vector3(baseX + direction * trackLength * 0.5f, -1.3f, 0f);
-        sr.sortingOrder = -2;
     }
 
     private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
@@ -102,20 +109,21 @@ public class PoseCopyGame : MonoBehaviour
 
     private IEnumerator RunOneDirection(PlayerId poser, PlayerId copier, int roundIndex)
     {
-        _statusText = $"{poser}가 포즈를 정하는 중... ({roundIndex + 1}/{roundCount})";
+        _hud.ShowEvent($"{poser}가 포즈를 정하는 중... ({roundIndex + 1}/{roundCount})", poseHoldSeconds + 0.5f);
         Vector2[] captured = null;
         yield return CapturePose(poser, snap => captured = snap);
 
-        _statusText = $"{copier}, 저 포즈를 따라하세요!";
-        _showCountdown = true;
+        _hud.ShowEvent($"{copier}, 저 포즈를 따라하세요!", wallApproachSeconds + 0.5f);
+        GameObject wall = SpawnApproachingWall(copier);
         float t = 0f;
         while (t < wallApproachSeconds)
         {
             t += Time.deltaTime;
-            _wallCountdown = Mathf.Max(0f, wallApproachSeconds - t);
+            if (wall != null)
+                wall.transform.localPosition = Vector3.Lerp(WallStartLocalPos(copier), Vector3.zero, t / wallApproachSeconds);
             yield return null;
         }
-        _showCountdown = false;
+        if (wall != null) Destroy(wall);
 
         bool matched = false;
         PlayerPoseState copierState = State(copier);
@@ -130,15 +138,37 @@ public class PoseCopyGame : MonoBehaviour
 
         if (matched)
         {
-            _statusText = $"{copier} 통과!";
+            _hud.ShowEvent($"{copier} 통과!");
         }
         else
         {
-            _statusText = $"{copier} 벽에 부딪힘 - 밀려남!";
+            _hud.ShowEvent($"{copier} 벽에 부딪힘 - 밀려남!");
             Knockback(copier);
         }
         yield return new WaitForSeconds(0.8f);
     }
+
+    // 판정용 실제 캡처 모양과는 별개로, 그때그때 다가오는 돌벽 그림(장식용)을 카메라
+    // 프레임 밖에서 copier 쪽으로 슬라이드시킨다.
+    private GameObject SpawnApproachingWall(PlayerId copier)
+    {
+        Sprite sprite = ArtAssets.LoadPoseMatch(PoseWalls[_wallCycle % PoseWalls.Length]);
+        _wallCycle++;
+        if (sprite == null) return null;
+
+        CavemanSilhouette target = copier == PlayerId.P1 ? _p1Silhouette : _p2Silhouette;
+        var go = new GameObject("ApproachingWall");
+        go.transform.SetParent(target.transform, false);
+        go.transform.localPosition = WallStartLocalPos(copier);
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = -1;
+        ArtAssets.FitWidth(sr, 1.4f);
+        return go;
+    }
+
+    private static Vector3 WallStartLocalPos(PlayerId copier) =>
+        new Vector3(copier == PlayerId.P1 ? -3.5f : 3.5f, 1f, 0f);
 
     // 캡처 대상 8관절(어깨/팔꿈치/손목/무릎, 좌우) - 엉덩이 중점 기준, 몸통 길이로 정규화한
     // 오프셋. poseHoldSeconds 동안 매 프레임 누적해서 평균낸 값을 최종 스냅샷으로 쓴다.
@@ -184,19 +214,23 @@ public class PoseCopyGame : MonoBehaviour
         if (who == PlayerId.P1)
         {
             _p1TrackPosition += amount;
+            _p1KnockbackCount++;
             _p1Silhouette.transform.position = new Vector3(BaseP1X - _p1TrackPosition, 0f, 0f);
+            _hud.SetFootholds(PlayerId.P1, Mathf.Max(0, maxFootholds - _p1KnockbackCount));
         }
         else
         {
             _p2TrackPosition += amount;
+            _p2KnockbackCount++;
             _p2Silhouette.transform.position = new Vector3(BaseP2X + _p2TrackPosition, 0f, 0f);
+            _hud.SetFootholds(PlayerId.P2, Mathf.Max(0, maxFootholds - _p2KnockbackCount));
         }
     }
 
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
-        _statusText = winner == null ? "무승부!" : $"{winner} 승리!";
+        _hud.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }
@@ -205,17 +239,5 @@ public class PoseCopyGame : MonoBehaviour
     {
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
-    }
-
-    private void OnGUI()
-    {
-        GUI.Label(new Rect(20, 20, 400, 30), $"P1 밀림: {_p1TrackPosition:F2}   P2 밀림: {_p2TrackPosition:F2}");
-
-        var style = new GUIStyle(GUI.skin.label) { fontSize = 24, alignment = TextAnchor.UpperCenter };
-        GUI.Label(new Rect(0, 60, Screen.width, 40), _statusText, style);
-
-        if (_showCountdown)
-            GUI.Label(new Rect(0, 100, Screen.width, 30), $"{_wallCountdown:F1}초 후 판정",
-                new GUIStyle(style) { fontSize = 18 });
     }
 }

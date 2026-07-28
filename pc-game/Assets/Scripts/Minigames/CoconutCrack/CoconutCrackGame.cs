@@ -34,6 +34,7 @@ public class CoconutCrackGame : MonoBehaviour
     private bool _p1ReadyToHit = true;
     private bool _p2ReadyToHit = true;
     private bool _ended;
+    private CoconutBreakHud _hud;
 
     private void Start()
     {
@@ -55,10 +56,28 @@ public class CoconutCrackGame : MonoBehaviour
         cam.orthographicSize = 3f;
         cam.transform.position = new Vector3(0, 1f, -10f);
 
+        ArtAssets.CreateBackground(cam, ArtAssets.LoadCoconutBreak("background"));
+
+        SpawnStoneTable(ArtAssets.LoadCoconutBreak("prop_stone_table_p1"), new Vector3(-2f, -0.6f, 1f));
+        SpawnStoneTable(ArtAssets.LoadCoconutBreak("prop_stone_table_p2"), new Vector3(2f, -0.6f, 1f));
+
         _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2f, 0f, 0f));
         _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2f, 0f, 0f));
         _p1Coconut = SpawnCoconut(_p1Silhouette.transform);
         _p2Coconut = SpawnCoconut(_p2Silhouette.transform);
+
+        _hud = CoconutBreakHud.Build(matchSeconds);
+    }
+
+    private void SpawnStoneTable(Sprite sprite, Vector3 worldPos)
+    {
+        if (sprite == null) return;
+        var go = new GameObject("StoneTable");
+        go.transform.position = worldPos;
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = -1;
+        ArtAssets.FitWidth(sr, 1.6f);
     }
 
     private SpriteRenderer SpawnCoconut(Transform parent)
@@ -92,10 +111,11 @@ public class CoconutCrackGame : MonoBehaviour
 
         if (_ended) return;
 
-        CountHits(p1, ref _p1ReadyToHit, ref _p1Hits, _p1Coconut);
-        CountHits(p2, ref _p2ReadyToHit, ref _p2Hits, _p2Coconut);
+        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, _p1Coconut);
+        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, _p2Coconut);
 
         _elapsed += Time.deltaTime;
+        _hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
         if (_elapsed >= matchSeconds)
         {
             PlayerId? winner = _p1Hits == _p2Hits ? null : (_p1Hits > _p2Hits ? PlayerId.P1 : PlayerId.P2);
@@ -103,7 +123,7 @@ public class CoconutCrackGame : MonoBehaviour
         }
     }
 
-    private void CountHits(PlayerPoseState state, ref bool readyToHit, ref int hitCount, SpriteRenderer coconut)
+    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref int hitCount, SpriteRenderer coconut)
     {
         if (state == null || !state.IsTracked) return;
         float distance = state.HandToHeadDistance();
@@ -112,6 +132,7 @@ public class CoconutCrackGame : MonoBehaviour
         {
             hitCount++;
             readyToHit = false;
+            _hud?.SetHits(id, hitCount);
             StartCoroutine(PunchCoconut(coconut));
         }
         else if (!readyToHit && distance >= releaseDistance)
@@ -172,6 +193,7 @@ public class CoconutCrackGame : MonoBehaviour
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
+        _hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
     }
@@ -180,17 +202,5 @@ public class CoconutCrackGame : MonoBehaviour
     {
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
-    }
-
-    private void OnGUI()
-    {
-        GUI.Label(new Rect(20, 20, 400, 30), $"P1: {_p1Hits}회   P2: {_p2Hits}회");
-        GUI.Label(new Rect(20, 50, 400, 30), $"남은 시간: {Mathf.Max(0f, matchSeconds - _elapsed):F0}초");
-        if (_ended)
-        {
-            PlayerId? winner = _p1Hits == _p2Hits ? null : (_p1Hits > _p2Hits ? PlayerId.P1 : PlayerId.P2);
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 28, alignment = TextAnchor.UpperCenter };
-            GUI.Label(new Rect(0, 90, Screen.width, 40), winner == null ? "무승부!" : $"{winner} 승리!", style);
-        }
     }
 }

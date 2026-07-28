@@ -56,32 +56,12 @@ public class StoneThrowGame : MonoBehaviour
         cam.backgroundColor = new Color(0.79f, 0.69f, 0.53f);
         cam.clearFlags = CameraClearFlags.SolidColor;
 
-        CreateBackground(cam);
+        ArtAssets.CreateBackground(cam, ArtAssets.LoadStoneThrow("background"));
 
         _p1Silhouette = Spawn(PlayerId.P1, new Vector3(-2.5f, 0f, 0f));
         _p2Silhouette = Spawn(PlayerId.P2, new Vector3(2.5f, 0f, 0f));
 
         _hud = StoneThrowHud.Build(matchSeconds);
-    }
-
-    // 배경을 카메라 뷰에 꽉 차게 깐다. 화면비가 배경비(16:9)와 달라도 빈 곳이 안 보이도록
-    // 가로/세로 중 더 크게 키워야 하는 쪽에 맞춘다(cover 방식).
-    private void CreateBackground(Camera cam)
-    {
-        Sprite sprite = ArtAssets.LoadStoneThrow("background");
-        if (sprite == null) return;
-
-        var go = new GameObject("Background");
-        go.transform.position = new Vector3(cam.transform.position.x, cam.transform.position.y, 0f);
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
-        sr.sortingOrder = -100;
-
-        float viewHeight = cam.orthographicSize * 2f;
-        float viewWidth = viewHeight * cam.aspect;
-        Vector2 size = sprite.bounds.size;
-        if (size.x <= 0f || size.y <= 0f) return;
-        go.transform.localScale = Vector3.one * Mathf.Max(viewWidth / size.x, viewHeight / size.y);
     }
 
     private CavemanSilhouette Spawn(PlayerId id, Vector3 pos)
