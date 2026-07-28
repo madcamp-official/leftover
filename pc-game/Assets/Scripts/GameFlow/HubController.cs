@@ -63,7 +63,7 @@ public class HubController : MonoBehaviour
 
     private static void EnsureEventSystem()
     {
-        if (FindFirstObjectByType<EventSystem>() != null) return;
+        if (FindAnyObjectByType<EventSystem>() != null) return;
         var go = new GameObject("EventSystem");
         go.AddComponent<EventSystem>();
         // 프로젝트가 Input System(새 방식) 전용(activeInputHandler=1)이라, 레거시

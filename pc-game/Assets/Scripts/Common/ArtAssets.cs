@@ -28,6 +28,11 @@ public static class ArtAssets
     public static Sprite LoadProp(string name) => LoadSprite($"Props/{name}");
     public static Sprite LoadUi(string name) => LoadSprite($"UI/{name}");
     public static Sprite LoadStoneThrow(string name) => LoadSprite($"StoneThrow/{name}");
+    public static Sprite LoadPoseMatch(string name) => LoadSprite($"PoseMatch/{name}");
+    public static Sprite LoadFruitJump(string name) => LoadSprite($"FruitJump/{name}");
+    public static Sprite LoadCoconutBreak(string name) => LoadSprite($"CoconutBreak/{name}");
+    public static Sprite LoadStoneOrBanana(string name) => LoadSprite($"StoneOrBanana/{name}");
+    public static Sprite LoadStaringContest(string name) => LoadSprite($"StaringContest/{name}");
 
     // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래에서
     // front/back/faces와 공통 파츠명으로 정리되어 있다. Resources로 들여올 때는
@@ -46,5 +51,24 @@ public static class ArtAssets
         float nativeWidth = renderer.sprite.bounds.size.x;
         if (nativeWidth <= 0f) return;
         renderer.transform.localScale = Vector3.one * (targetWidth / nativeWidth);
+    }
+
+    // 배경을 카메라 뷰에 꽉 차게 깐다 - 화면비가 배경비(보통 16:9)와 달라도 빈 곳이 안 보이게
+    // 가로/세로 중 더 크게 키워야 하는 쪽에 맞춘다(cover 방식). 모든 미니게임이 공유하는 로직.
+    public static void CreateBackground(Camera cam, Sprite sprite)
+    {
+        if (sprite == null) return;
+
+        var go = new GameObject("Background");
+        go.transform.position = new Vector3(cam.transform.position.x, cam.transform.position.y, 0f);
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = sprite;
+        sr.sortingOrder = -100;
+
+        float viewHeight = cam.orthographicSize * 2f;
+        float viewWidth = viewHeight * cam.aspect;
+        Vector2 size = sprite.bounds.size;
+        if (size.x <= 0f || size.y <= 0f) return;
+        go.transform.localScale = Vector3.one * Mathf.Max(viewWidth / size.x, viewHeight / size.y);
     }
 }

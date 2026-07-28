@@ -41,74 +41,25 @@ public class StoneThrowHud : MonoBehaviour
     {
         // 네임플레이트: 좌상단 P1, 우상단 P2.
         const float plateWidth = 620f;
-        RectTransform p1Plate = CreateImage(root, "P1Plate", ArtAssets.LoadStoneThrow("hud_received_stones_p1"),
+        RectTransform p1Plate = HudWidgets.CreateImage(root, "P1Plate", ArtAssets.LoadStoneThrow("hud_received_stones_p1"),
             new Vector2(0f, 1f), new Vector2(30f, -30f), plateWidth);
-        RectTransform p2Plate = CreateImage(root, "P2Plate", ArtAssets.LoadStoneThrow("hud_received_stones_p2"),
+        RectTransform p2Plate = HudWidgets.CreateImage(root, "P2Plate", ArtAssets.LoadStoneThrow("hud_received_stones_p2"),
             new Vector2(1f, 1f), new Vector2(-30f, -30f), plateWidth);
 
-        _p1Hits = CreateText(p1Plate, "HitCount", SlotAnchor, 260f, 64);
-        _p2Hits = CreateText(p2Plate, "HitCount", SlotAnchor, 260f, 64);
+        _p1Hits = HudWidgets.CreateText(p1Plate, "HitCount", SlotAnchor, 260f, 64);
+        _p2Hits = HudWidgets.CreateText(p2Plate, "HitCount", SlotAnchor, 260f, 64);
         _p1Hits.text = "0";
         _p2Hits.text = "0";
 
         // 타이머: 상단 중앙.
-        RectTransform timerPlate = CreateImage(root, "TimerPlate", ArtAssets.LoadStoneThrow("hud_time_remaining"),
+        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadStoneThrow("hud_time_remaining"),
             new Vector2(0.5f, 1f), new Vector2(0f, -24f), 480f);
-        _timer = CreateText(timerPlate, "TimerText", new Vector2(0.72f, 0.5f), 300f, 50);
+        _timer = HudWidgets.CreateText(timerPlate, "TimerText", new Vector2(0.72f, 0.5f), 300f, 50);
         _timer.text = Mathf.CeilToInt(matchSeconds).ToString();
 
         // 명중/회피/승리 같은 순간 피드백 - 화면 중앙 위쪽.
-        _eventText = CreateText(root, "EventText", new Vector2(0.5f, 0.72f), 900f, 60);
+        _eventText = HudWidgets.CreateText(root, "EventText", new Vector2(0.5f, 0.72f), 900f, 60);
         _eventText.text = "";
-    }
-
-    private static RectTransform CreateImage(Transform parent, string name, Sprite sprite,
-        Vector2 anchor, Vector2 offset, float width)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = anchor;
-        rt.pivot = anchor;
-        rt.anchoredPosition = offset;
-        rt.sizeDelta = new Vector2(width, HeightFor(sprite, width));
-
-        var image = go.AddComponent<Image>();
-        image.sprite = sprite;
-        image.preserveAspect = true;
-        return rt;
-    }
-
-    private static Text CreateText(RectTransform parent, string name, Vector2 anchor, float width, int fontSize)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = anchor;
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(width, fontSize * 1.6f);
-
-        var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = fontSize;
-        text.fontStyle = FontStyle.Bold;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
-        text.color = Color.white;
-
-        // 슬롯 배경이 짙은 갈색이라 흰 글씨만으로는 대비가 약하다 - 검은 외곽선을 준다.
-        var outline = go.AddComponent<Outline>();
-        outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
-        outline.effectDistance = new Vector2(3f, -3f);
-        return text;
-    }
-
-    private static float HeightFor(Sprite sprite, float width)
-    {
-        if (sprite == null || sprite.rect.width <= 0f) return width * 0.32f;
-        return width * sprite.rect.height / sprite.rect.width;
     }
 
     private void Update()
