@@ -44,7 +44,7 @@ public class StaringContestHud : MonoBehaviour
         _p1Gauge = CreateGauge(p1Plate);
         _p2Gauge = CreateGauge(p2Plate);
 
-        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadStaringContest("hud_time_remaining"),
+        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadUi("time_remaining"),
             new Vector2(0.5f, 1f), new Vector2(0f, -24f), 420f);
         _timer = HudWidgets.CreateText(timerPlate, "TimerText", new Vector2(0.72f, 0.5f), 260f, 40);
         _timer.text = Mathf.CeilToInt(maxMatchSeconds).ToString();

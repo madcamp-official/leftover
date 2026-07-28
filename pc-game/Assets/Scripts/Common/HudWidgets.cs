@@ -19,7 +19,7 @@ public static class HudWidgets
         canvas.sortingOrder = 100;
 
         RectTransform rt = canvas.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(2048f, 1152f);
+        rt.sizeDelta = new Vector2(cam != null ? 1152f * cam.aspect : 2048f, 1152f);
         rt.pivot = new Vector2(0.5f, 0.5f);
         rt.position = cam != null
             ? new Vector3(cam.transform.position.x, cam.transform.position.y, -1f)
@@ -27,6 +27,10 @@ public static class HudWidgets
         float worldScale = cam != null ? cam.orthographicSize * 2f / 1152f : 6f / 1152f;
         rt.localScale = Vector3.one * worldScale;
         rt.localRotation = Quaternion.identity;
+
+        CameraCanvasFitter fitter = canvas.GetComponent<CameraCanvasFitter>();
+        if (fitter == null) fitter = canvas.gameObject.AddComponent<CameraCanvasFitter>();
+        fitter.Fit();
     }
 
     public static RectTransform CreateImage(Transform parent, string name, Sprite sprite,

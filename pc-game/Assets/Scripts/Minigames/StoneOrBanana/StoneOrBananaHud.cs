@@ -39,7 +39,7 @@ public class StoneOrBananaHud : MonoBehaviour
         _p1Status = HudWidgets.CreateText(p1Plate, "Status", new Vector2(0.5f, 0.5f), 560f, 34);
         _p2Status = HudWidgets.CreateText(p2Plate, "Status", new Vector2(0.5f, 0.5f), 560f, 34);
 
-        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadStoneOrBanana("hud_time_remaining"),
+        RectTransform timerPlate = HudWidgets.CreateImage(root, "TimerPlate", ArtAssets.LoadUi("time_remaining"),
             new Vector2(0.5f, 1f), new Vector2(0f, -24f), 380f);
         _timer = HudWidgets.CreateText(timerPlate, "TimerText", new Vector2(0.72f, 0.5f), 250f, 40);
         _timer.text = "";

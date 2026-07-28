@@ -25,6 +25,10 @@ public sealed class MatchController : MonoBehaviour
     public int CurrentRoundIndex { get; private set; } = -1;
     public int P1Wins { get; private set; }
     public int P2Wins { get; private set; }
+    public int ResultsVersion { get; private set; }
+
+    private readonly PlayerId?[] _roundWinners = new PlayerId?[6];
+    private readonly bool[] _roundReported = new bool[6];
 
     private void Awake()
     {
@@ -38,6 +42,12 @@ public sealed class MatchController : MonoBehaviour
         CurrentRoundIndex = -1;
         P1Wins = 0;
         P2Wins = 0;
+        for (int i = 0; i < _roundWinners.Length; i++)
+        {
+            _roundWinners[i] = null;
+            _roundReported[i] = false;
+        }
+        ResultsVersion++;
         LoadNextRound();
     }
 
@@ -57,9 +67,21 @@ public sealed class MatchController : MonoBehaviour
     // 호출하고, 이후 알아서 다음 라운드로 넘어가거나(자동 진행) Hub 씬의 버튼을 기다리면 된다.
     public void ReportRoundResult(PlayerId? winner)
     {
+        if (CurrentRoundIndex < 0 || CurrentRoundIndex >= RoundScenes.Count) return;
+        if (_roundReported[CurrentRoundIndex]) return;
+
+        _roundReported[CurrentRoundIndex] = true;
+        _roundWinners[CurrentRoundIndex] = winner;
         if (winner == PlayerId.P1) P1Wins++;
         else if (winner == PlayerId.P2) P2Wins++;
+        ResultsVersion++;
     }
+
+    public bool HasRoundResult(int roundIndex)
+        => roundIndex >= 0 && roundIndex < _roundReported.Length && _roundReported[roundIndex];
+
+    public PlayerId? RoundWinner(int roundIndex)
+        => roundIndex >= 0 && roundIndex < _roundWinners.Length ? _roundWinners[roundIndex] : null;
 
     public bool IsMatchComplete => CurrentRoundIndex >= RoundScenes.Count;
 
