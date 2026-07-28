@@ -164,8 +164,21 @@ def table_anchor(rgb, mask):
     return (float(xs.mean()), float(ys.max()))
 
 
+def load_rgb(path):
+    """알파가 있는 시트(eye_fight.png 등)는 흰 배경에 합성해서 읽는다.
+
+    그냥 convert('RGB')하면 투명 픽셀의 밑색이 그대로 드러나 배경 판정이 어긋난다.
+    어차피 투명한 곳은 배경이므로 흰색으로 깔아주면 흰 배경 시트와 동일하게 처리된다."""
+    im = Image.open(path)
+    if im.mode in ("RGBA", "LA") or "transparency" in im.info:
+        im = im.convert("RGBA")
+        base = Image.new("RGBA", im.size, (255, 255, 255, 255))
+        im = Image.alpha_composite(base, im)
+    return np.array(im.convert("RGB"))
+
+
 def main(src, out_dir, prefix, expect=None):
-    rgb_full = np.array(Image.open(src).convert("RGB"))
+    rgb_full = load_rgb(src)
     fg_full = panel_mask(rgb_full)
     panels, lbl = find_panels(fg_full, rgb_full.shape)
     print(f"{prefix}: 컷 {len(panels)}개")
