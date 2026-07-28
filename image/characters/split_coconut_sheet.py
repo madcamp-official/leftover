@@ -21,6 +21,9 @@ FLOOD_MIN_BRIGHT = 120
 CHROMA_MIN = 25
 GRAY_LO, GRAY_HI = 110, 232   # 돌 탁자로 볼 밝기 범위
 MIN_TABLE = 3000
+MIN_PANEL = 15000   # 컷 하나로 볼 최소 면적
+PANEL_PAD = 80      # 별/파편 같은 떨어진 효과까지 담을 여유
+MIN_BLOB = 50       # 이보다 작으면 JPEG 잡티로 보고 버린다(별/파편은 70px 이상)
 MAX_EYE_RATIO = 0.008   # 갇힌 흰색이 프레임 면적의 이 비율을 넘으면 눈이 아니라 배경 틈
 
 
@@ -51,13 +54,50 @@ def _spans(profile, thr=0.004):
     return [s for s in spans if s[1] - s[0] > 30]
 
 
-def find_panels(ink):
-    """행을 먼저 나누고 행별로 열을 찾는다 - 줄마다 패널 간격이 다르다."""
-    panels = []
-    for y0, y1 in _spans(ink.mean(axis=1)):
-        for x0, x1 in _spans(ink[y0:y1].mean(axis=0)):
-            panels.append((x0, y0, x1, y1))
-    return panels
+def find_panels(fg, shape):
+    """컷을 연결요소로 찾는다.
+
+    개정판 시트는 컷이 격자가 아니라 엇갈려 배치돼 있어(c1은 3번컷과 4번컷이 세로로 겹침)
+    행/열 투영으로는 못 나눈다. 컷마다 '캐릭터+의자'가 붙어 한 덩어리라 연결요소가 안전하다.
+    읽는 순서(위→아래, 같은 줄이면 왼→오른쪽)로 정렬해서 돌려준다."""
+    lbl, n = ndimage.label(fg, ndimage.generate_binary_structure(2, 2))
+    sizes = ndimage.sum(fg, lbl, range(1, n + 1))
+    keep = [i + 1 for i, s in enumerate(sizes) if s >= MIN_PANEL]
+    boxes = ndimage.find_objects(lbl)
+
+    items = []
+    for i in keep:
+        sl = boxes[i - 1]
+        items.append({"id": i, "sl": sl,
+                      "cy": (sl[0].start + sl[0].stop) / 2,
+                      "cx": (sl[1].start + sl[1].stop) / 2})
+    # 세로로 비슷한 높이면 같은 줄로 묶는다(이미지 높이의 20% 이내).
+    items.sort(key=lambda d: d["cy"])
+    rows, cur = [], [items[0]] if items else []
+    for it in items[1:]:
+        if it["cy"] - cur[0]["cy"] <= shape[0] * 0.20:
+            cur.append(it)
+        else:
+            rows.append(cur)
+            cur = [it]
+    if cur:
+        rows.append(cur)
+
+    ordered = []
+    for row in rows:
+        ordered.extend(sorted(row, key=lambda d: d["cx"]))
+    return ordered, lbl
+
+
+def _panel_distance(cy, cx, sl):
+    """조각에서 컷 '중심'까지의 거리.
+
+    상자 가장자리까지의 거리로 재면 안 된다 - 아래 컷의 타격 이펙트(머리 위로 튀는 별)가
+    위 컷 상자의 아래 모서리에 더 붙어 있어서 엉뚱한 컷으로 배정된다. 중심 거리로 재면
+    가로 위치가 반영돼 제 컷으로 간다."""
+    cyp = (sl[0].start + sl[0].stop) / 2
+    cxp = (sl[1].start + sl[1].stop) / 2
+    return ((cy - cyp) ** 2 + (cx - cxp) ** 2) ** 0.5
 
 
 def strip_border(rgb):
@@ -87,12 +127,12 @@ def panel_mask(rgb):
 
     fg = ndimage.binary_opening(~bg, np.ones((3, 3)))
     fg = ndimage.binary_closing(fg, np.ones((5, 5)))
-    # 자잘한 잉크 얼룩 제거, 큰 덩어리(캐릭터/탁자/효과음)만 남긴다.
+    # JPEG 잡티만 걷어낸다. 별/코코넛 파편이 70~300px라 문턱을 높이면 효과가 통째로 날아간다.
     lbl, n = ndimage.label(fg, ndimage.generate_binary_structure(2, 2))
     if n:
         sizes = np.bincount(lbl.ravel())
         sizes[0] = 0
-        fg = np.isin(lbl, np.nonzero(sizes > 400)[0])
+        fg = np.isin(lbl, np.nonzero(sizes > MIN_BLOB)[0])
 
     # 다리 사이/팔과 몸통 사이처럼 실루엣에 갇힌 종이 배경이 흰 얼룩으로 남는다. 눈/이빨도
     # 갇힌 흰색이라 색으로는 못 가르고, 실측상 눈은 프레임 면적의 0.75%를 안 넘는 반면
@@ -108,7 +148,7 @@ def panel_mask(rgb):
 
 
 def table_anchor(rgb, mask):
-    """가장 큰 회색 덩어리 = 돌 탁자. 그 bbox의 가로중심/바닥을 기준점으로 쓴다."""
+    """가장 큰 회색 덩어리 = 앉는 의자(돌/나무). 그 가로중심/바닥을 기준점으로 쓴다."""
     rgbi = rgb.astype(np.int16)
     mx = rgbi.max(axis=2)
     mn = rgbi.min(axis=2)
@@ -126,24 +166,39 @@ def table_anchor(rgb, mask):
 
 def main(src, out_dir, prefix, expect=None):
     rgb_full = np.array(Image.open(src).convert("RGB"))
-    a = rgb_full.astype(np.int16)
-    ink = ~((((a.max(axis=2) - a.min(axis=2)) < CHROMA_MIN)) & (a.max(axis=2) >= WHITE_MIN))
-    panels = find_panels(ink)
-    print(f"{prefix}: 패널 {len(panels)}개")
+    fg_full = panel_mask(rgb_full)
+    panels, lbl = find_panels(fg_full, rgb_full.shape)
+    print(f"{prefix}: 컷 {len(panels)}개")
     if expect and len(panels) != expect:
         print(f"  !! 예상 {expect}개와 다름")
 
+    # 별/코코넛 파편처럼 본체에서 떨어진 조각은 '가장 가까운 컷'에 배정한다. 컷 상자를
+    # 넓혀서 담으면 아래 컷의 별이 위 컷에 딸려 들어간다.
+    panel_ids = {p["id"] for p in panels}
+    extras = {p["id"]: [] for p in panels}
+    for i, sl in enumerate(ndimage.find_objects(lbl), start=1):
+        if sl is None or i in panel_ids:
+            continue
+        cy = (sl[0].start + sl[0].stop) / 2
+        cx = (sl[1].start + sl[1].stop) / 2
+        # 작은 조각은 전부 어느 한 컷의 효과이므로 가장 가까운 컷에 그냥 배정한다.
+        best = min(panels, key=lambda p: _panel_distance(cy, cx, p["sl"]))
+        extras[best["id"]].append(i)
+
     frames = []
-    for x0, y0, x1, y1 in panels:
+    for p in panels:
+        own = np.isin(lbl, [p["id"]] + extras[p["id"]])
+        ys, xs = np.nonzero(own)
+        y0, y1 = max(0, ys.min() - 6), min(rgb_full.shape[0], ys.max() + 7)
+        x0, x1 = max(0, xs.min() - 6), min(rgb_full.shape[1], xs.max() + 7)
+
         sub = rgb_full[y0:y1, x0:x1]
-        rs, cs = strip_border(sub)
-        sub = sub[rs, cs]
-        m = panel_mask(sub)
+        m = own[y0:y1, x0:x1]
         anc = table_anchor(sub, m)
-        if anc is None:                       # 탁자를 못 찾으면 전체 bbox 하단 중심으로 대체
+        if anc is None:                       # 의자를 못 찾으면 전체 bbox 하단 중심으로 대체
             ys, xs = np.nonzero(m)
             anc = (float(xs.mean()), float(ys.max()))
-            print("  (탁자 미검출 - 전체 기준으로 정렬)")
+            print("  (의자 미검출 - 전체 기준으로 정렬)")
         frames.append({"rgb": sub, "mask": m, "anchor": anc})
 
     bounds = []
@@ -157,7 +212,7 @@ def main(src, out_dir, prefix, expect=None):
     by = max(b[1] - f["anchor"][1] for f, b in zip(frames, bounds))
     W, H = int(lx + rx) + 20, int(ty + by) + 20
     ax, ay = int(lx) + 10, int(ty) + 10
-    print(f"  캔버스 {W}x{H}, 탁자 기준점 ({ax},{ay})")
+    print(f"  캔버스 {W}x{H}, 의자 기준점 ({ax},{ay})")
 
     for i, f in enumerate(frames, start=1):
         rgba = np.dstack([f["rgb"], f["mask"].astype(np.uint8) * 255])
