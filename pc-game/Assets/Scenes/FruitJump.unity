@@ -306,7 +306,7 @@ Camera:
   near clip plane: 0.3
   far clip plane: 1000
   field of view: 60
-  orthographic: 0
+  orthographic: 1
   orthographic size: 5
   m_Depth: -1
   m_CullingMask:
@@ -373,6 +373,13 @@ MonoBehaviour:
   - 0.35
   - 0.55
   tierScores: 010000000300000005000000
+  tierCooldowns:
+  - 0.3
+  - 0.6
+  - 1
+  resultDisplaySeconds: 2
+  fruitWidth: 0.4
+  jumpBounceHeight: 1.5
 --- !u!4 &1343515394
 Transform:
   m_ObjectHideFlags: 0
