@@ -33,6 +33,8 @@ public class FeatherFlightGame : MonoBehaviour
     public float jumpIntroSeconds = .5f;  // 인트로 홉(제자리 도약) 재생 시간
     public float introHopHeight = .5f;    // 인트로 중 원래 Y에서 살짝 떴다가 다시 돌아오는 높이(유닛)
     public float wingAnimationSmoothing = 10f; // 날갯짓 프레임 전환이 뚝뚝 끊기지 않게 하는 속도
+    [Min(.05f)] public float flapSfxSeconds = .45f; // 12초 원본 중 날갯짓 한 번에 해당하는 구간
+    [Min(.05f)] public float flapSfxCooldown = .55f; // 추적 흔들림에 의한 짧은 간격의 중복 재생 방지
 
     [Header("씬에 배치된 오브젝트")]
     [Tooltip("이 플레이어의 절벽 - 움직이지 않는다. 이 오브젝트의 Y가 height=0 기준선이다.")]
@@ -52,6 +54,8 @@ public class FeatherFlightGame : MonoBehaviour
     private float _p1RestHeight, _p2RestHeight; // 캐릭터의 원래 스폰 Y를 height로 환산한 값 - 인트로 홉이 끝나 돌아오는 자리(실제 게임플레이 시작 height)
     private bool _p1PrevRaised, _p2PrevRaised;
     private float _p1WingProgress, _p2WingProgress;
+    private float _p1LastFlapSfxAt = float.NegativeInfinity;
+    private float _p2LastFlapSfxAt = float.NegativeInfinity;
     private float _elapsed;
     private bool _ended;
     private bool _introDone;
@@ -142,9 +146,9 @@ public class FeatherFlightGame : MonoBehaviour
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
 
         bool p1Landed = TickPlayer(p1, ref _p1Height, ref _p1PrevRaised, ref _p1WingProgress,
-            p1View, p1RestPoint.position.x, _p1FloorY, _p1Ceiling, _p1Floor);
+            ref _p1LastFlapSfxAt, p1View, p1RestPoint.position.x, _p1FloorY, _p1Ceiling, _p1Floor);
         bool p2Landed = TickPlayer(p2, ref _p2Height, ref _p2PrevRaised, ref _p2WingProgress,
-            p2View, p2RestPoint.position.x, _p2FloorY, _p2Ceiling, _p2Floor);
+            ref _p2LastFlapSfxAt, p2View, p2RestPoint.position.x, _p2FloorY, _p2Ceiling, _p2Floor);
 
         if (p1Landed || p2Landed)
         {
@@ -166,7 +170,7 @@ public class FeatherFlightGame : MonoBehaviour
 
     // 반환값: 이 플레이어가 이번 프레임에 화면 아래쪽 끝(height<=floor)에 닿았는지.
     private bool TickPlayer(PlayerPoseState state, ref float height, ref bool prevRaised,
-        ref float wingProgress, FeatherFlightCharacterView view, float fixedX, float floorY,
+        ref float wingProgress, ref float lastFlapSfxAt, FeatherFlightCharacterView view, float fixedX, float floorY,
         float ceiling, float floor)
     {
         bool raisedNow = state != null && state.IsTracked
@@ -177,7 +181,14 @@ public class FeatherFlightGame : MonoBehaviour
 
         // 날갯짓 1회 = 양손이 "안 든 상태"에서 "든 상태"로 바뀌는 그 프레임에만 카운트.
         if (raisedNow && !prevRaised)
+        {
             height = Mathf.Min(ceiling, height + flapBoost);
+            if (Time.unscaledTime - lastFlapSfxAt >= flapSfxCooldown)
+            {
+                lastFlapSfxAt = Time.unscaledTime;
+                GameSfx.Play("eagle_wings", maxDuration: flapSfxSeconds);
+            }
+        }
 
         prevRaised = raisedNow;
         height = Mathf.Min(ceiling, height);
@@ -221,5 +232,7 @@ public class FeatherFlightGame : MonoBehaviour
         jumpIntroSeconds = Mathf.Max(0f, jumpIntroSeconds);
         introHopHeight = Mathf.Max(0f, introHopHeight);
         wingAnimationSmoothing = Mathf.Max(.01f, wingAnimationSmoothing);
+        flapSfxSeconds = Mathf.Max(.05f, flapSfxSeconds);
+        flapSfxCooldown = Mathf.Max(.05f, flapSfxCooldown);
     }
 }

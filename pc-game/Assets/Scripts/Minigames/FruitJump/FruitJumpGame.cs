@@ -36,6 +36,7 @@ public class FruitJumpGame : MonoBehaviour
     public float resultDisplaySeconds = 2f;
     public float fruitWidth = 0.4f;
     public float fruitEatSeconds = 0.2f; // 채점된 과일이 사라지는 데 걸리는 시간(연출용)
+    [Min(0.01f)] public float fruitEatSfxSeconds = 0.3f; // 먹는 음원에서 가장 잘 들리는 짧은 구간만 사용
     // PlayScoreBounce의 기본 재생 시간 - 디버그 키(A/B/C)처럼 실제 점프 시간을 잴 수 없을 때만
     // 이 값을 그대로 쓴다. 실제 착지 판정에서는 대신 이번 점프가 실제로 공중에 떠 있던
     // 시간(이륙~착지)을 측정해서 그 길이로 재생한다(아래 minScoreBounceSeconds/
@@ -269,6 +270,7 @@ public class FruitJumpGame : MonoBehaviour
         score += tierScores[tier];
         hud?.SetScore(tree.Player, score);
         hud?.ShowEvent($"{tree.Player} +{tierScores[tier]}!");
+        GameSfx.Play(tier == 1 ? "eat_grapes" : "eat_fruit", maxDuration: fruitEatSfxSeconds);
         StartCoroutine(EatFruit(tree.Fruits[tier], tree.FruitBaseScales[tier]));
         StartCoroutine(PlayScoreBounce(tree, tier, bounceSeconds));
 
@@ -358,6 +360,7 @@ public class FruitJumpGame : MonoBehaviour
     {
         if (tree.ScoreBounceActive) yield break;
         tree.ScoreBounceActive = true;
+        GameSfx.Play("jump");
 
         SpriteRenderer fruit = tree.Fruits[tier];
         // 발(anchor) 기준 목표 높이를 과일 Y에 그대로 맞추면 발이 과일 자리까지 가면서 캐릭터

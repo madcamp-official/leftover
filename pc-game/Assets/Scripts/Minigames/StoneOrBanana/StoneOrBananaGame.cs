@@ -178,6 +178,7 @@ public class StoneOrBananaGame : MonoBehaviour
         Vector3 frontReturnEnd = throwerFront != null ? throwerFront.ReceivePosition() : Vector3.zero;
         Vector3 backReturnEnd = throwerBack != null ? throwerBack.ReceivePosition() : Vector3.zero;
 
+        GameSfx.Play("throw");
         bool projectileArrived = false;
         int frameCount = Mathf.Max(throwerFront?.FrameCount(hand) ?? 0, throwerBack?.FrameCount(hand) ?? 0);
         if (frameCount <= 0) frameCount = 1;
@@ -211,6 +212,7 @@ public class StoneOrBananaGame : MonoBehaviour
 
             AddFullness(thrower);
             throwerFront?.ShowBananaChewing();
+            GameSfx.Play("gulp");
             hud?.ShowEvent($"{Label(thrower)} 포만감 +1");
             yield return new WaitForSeconds(reactionDisplaySeconds);
         }
@@ -218,6 +220,7 @@ public class StoneOrBananaGame : MonoBehaviour
         {
             AddFullness(receiver);
             receiverFront?.ShowBananaChewing();
+            GameSfx.Play("gulp");
             hud?.ShowEvent($"{Label(receiver)} 바나나 먹기! 포만감 +1");
             yield return new WaitForSeconds(reactionDisplaySeconds);
         }
@@ -225,6 +228,7 @@ public class StoneOrBananaGame : MonoBehaviour
         {
             int lostTeeth = RemoveTooth(receiver);
             receiverFront?.ShowStoneHit(lostTeeth);
+            GameSfx.Play("window_break");
             hud?.ShowEvent($"{Label(receiver)} 돌을 먹었습니다! 이빨 -1");
             yield return new WaitForSeconds(reactionDisplaySeconds);
         }

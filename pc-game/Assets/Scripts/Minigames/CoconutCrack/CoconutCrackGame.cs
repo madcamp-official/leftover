@@ -321,6 +321,7 @@ public class CoconutCrackGame : MonoBehaviour
         if (effect.IsBusy) return;
 
         effect.IsBusy = true;
+        GameSfx.Play("coconut_break");
         StartCoroutine(PunchCoconut(coconut, effect, sourceWorldWidth, breakStartPosition));
     }
 

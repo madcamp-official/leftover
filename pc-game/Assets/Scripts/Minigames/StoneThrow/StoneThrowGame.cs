@@ -278,6 +278,7 @@ public class StoneThrowGame : MonoBehaviour
         int frameCount = Mathf.Max(front?.FrameCount(hand) ?? 0, back?.FrameCount(hand) ?? 0);
         if (frameCount == 0) yield break;
 
+        GameSfx.Play("throw");
         float frameSeconds = throwAnimationSeconds / frameCount;
         for (int frame = 0; frame < frameCount; frame++)
         {
@@ -361,6 +362,8 @@ public class StoneThrowGame : MonoBehaviour
             return;
         }
         if (thrower == PlayerId.P1) _p1Hits++; else _p2Hits++;
+        GameSfx.Play("hit_pan");
+        GameSfx.Play("hit_cry");
         int receivedHits = thrower == PlayerId.P1 ? _p1Hits : _p2Hits;
         hud?.SetHits(target, receivedHits);
         hud?.ShowEvent($"{Label(thrower)} 명중!");
