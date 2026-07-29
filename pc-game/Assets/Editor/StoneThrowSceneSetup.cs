@@ -24,6 +24,34 @@ public static class StoneThrowSceneSetup
         Debug.Log("[Uga Uga] StoneThrow 애니메이션 캐릭터/앵커/투사체를 씬 오브젝트로 저장했습니다.");
     }
 
+    [MenuItem("Tools/Uga Uga/StoneThrow/Fix Front View Left Right Anchors")]
+    public static void FixFrontViewLeftRightAnchors()
+    {
+        Scene scene = SceneManager.GetActiveScene();
+        if (scene.name != "StoneThrow")
+            scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+
+        Transform layout = scene.GetRootGameObjects().FirstOrDefault(x => x.name == "EditableLayout")?.transform;
+        if (layout == null) throw new InvalidOperationException("StoneThrow 씬에서 EditableLayout을 찾지 못했습니다.");
+
+        StoneThrowCharacterView[] frontViews = layout.GetComponentsInChildren<StoneThrowCharacterView>(true)
+            .Where(x => !x.IsBackView).ToArray();
+        foreach (StoneThrowCharacterView view in frontViews)
+        {
+            SerializedObject serialized = new SerializedObject(view);
+            Transform dodgeLeft = serialized.FindProperty("leftDodgeAnchor").objectReferenceValue as Transform;
+            Transform dodgeRight = serialized.FindProperty("rightDodgeAnchor").objectReferenceValue as Transform;
+            Transform targetLeft = serialized.FindProperty("leftTargetAnchor").objectReferenceValue as Transform;
+            Transform targetRight = serialized.FindProperty("rightTargetAnchor").objectReferenceValue as Transform;
+            SwapLocalPositions(dodgeLeft, dodgeRight);
+            SwapLocalPositions(targetLeft, targetRight);
+        }
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log($"[Uga Uga] 정면 뷰 {frontViews.Length}개의 논리적 좌/우 Dodge·Target 앵커를 교환했습니다.");
+    }
+
     public static void RebuildScene(Scene scene)
     {
         ConfigureImportedArt();
@@ -65,21 +93,9 @@ public static class StoneThrowSceneSetup
         templateGo.transform.SetParent(projectileContainer, false);
         SpriteRenderer stoneTemplate = templateGo.AddComponent<SpriteRenderer>();
         stoneTemplate.sprite = ArtAssets.LoadProp("stone");
-        stoneTemplate.sortingOrder = 40;
+        // Back 캐릭터(20) 바로 아래, Front 캐릭터(0) 위: Back > 돌 > Front.
+        stoneTemplate.sortingOrder = 19;
         templateGo.SetActive(false);
-
-        // 캘리브레이션/카메라 연결 전 게임플레이 검수용. 이 오브젝트를 끄면 즉시 실제
-        // PoseInputHub 입력만 사용한다. 기본값은 P1 오른손, P2 왼손 투척을 반복한다.
-        Transform testInputRoot = Child(layout, "TEMP_StoneThrowTestInput", Vector3.zero);
-        PoseSimulator testInput = testInputRoot.gameObject.AddComponent<PoseSimulator>();
-        testInput.p1Tracked = true;
-        testInput.p1RightHandRaised = true;
-        testInput.p1LeftHandRaised = false;
-        testInput.p1HeadTilt = -.5f;
-        testInput.p2Tracked = true;
-        testInput.p2RightHandRaised = false;
-        testInput.p2LeftHandRaised = true;
-        testInput.p2HeadTilt = .5f;
 
         StoneThrowGame game = UnityEngine.Object.FindAnyObjectByType<StoneThrowGame>();
         if (game == null) throw new InvalidOperationException("StoneThrowGame을 찾지 못했습니다.");
@@ -90,19 +106,23 @@ public static class StoneThrowSceneSetup
             ("stoneTemplate", stoneTemplate), ("projectileContainer", projectileContainer), ("hud", hud));
         SetFloats(game,
             ("fireIntervalSeconds", 1f), ("matchSeconds", 30f), ("headSideThreshold", .12f),
-            ("headSideHoldSeconds", .1f), ("stoneTravelSeconds", .25f),
-            ("throwAnimationSeconds", .6f), ("hitFaceDisplaySeconds", .7f),
-            ("resultDisplaySeconds", 2f), ("nearStoneWidth", .52f), ("farStoneWidth", .16f));
+            ("headSideHoldSeconds", .1f), ("stoneTravelSeconds", 1f),
+            ("throwAnimationSeconds", .6f), ("hitReactionDisplaySeconds", .7f),
+            ("resultDisplaySeconds", 2f), ("nearStoneWidth", 2.6f), ("farStoneWidth", .25f),
+            ("stoneSpinDegreesPerSecond", 1440f));
     }
 
     private static StoneThrowCharacterView CreateView(Transform parent, string name, PlayerId player,
         bool backView, Vector3 position, float characterWidth, int sortingOrder)
     {
         Transform slot = Child(parent, name, position);
-        Transform dodgeLeft = Child(slot, "DodgeLeftAnchor", new Vector3(-.38f, 0f, 0f));
-        Transform dodgeRight = Child(slot, "DodgeRightAnchor", new Vector3(.38f, 0f, 0f));
-        Transform targetLeft = Child(slot, "TargetLeftAnchor", new Vector3(-.38f, backView ? .95f : .35f, 0f));
-        Transform targetRight = Child(slot, "TargetRightAnchor", new Vector3(.38f, backView ? .95f : .35f, 0f));
+        // 논리적인 캐릭터 좌/우는 후면에서는 화면 방향과 같고 정면에서는 반대로 보인다.
+        float leftX = backView ? -.38f : .38f;
+        float rightX = -leftX;
+        Transform dodgeLeft = Child(slot, "DodgeLeftAnchor", new Vector3(leftX, 0f, 0f));
+        Transform dodgeRight = Child(slot, "DodgeRightAnchor", new Vector3(rightX, 0f, 0f));
+        Transform targetLeft = Child(slot, "TargetLeftAnchor", new Vector3(leftX, backView ? .95f : .35f, 0f));
+        Transform targetRight = Child(slot, "TargetRightAnchor", new Vector3(rightX, backView ? .95f : .35f, 0f));
         Transform visualRoot = Child(slot, "VisualRoot", player == PlayerId.P1 ? dodgeLeft.localPosition : dodgeRight.localPosition);
 
         Sprite[] leftFrames = LoadFrames(player, backView ? "back_left" : "front_left");
@@ -120,22 +140,13 @@ public static class StoneThrowSceneSetup
         Transform leftRelease = Child(visualRoot, "LeftHandRelease", new Vector3(backView ? -handX : handX, handY, 0f));
         Transform rightRelease = Child(visualRoot, "RightHandRelease", new Vector3(backView ? handX : -handX, handY, 0f));
 
-        SpriteRenderer face = null;
-        if (!backView)
-        {
-            GameObject faceGo = new GameObject("HitFaceOverlay");
-            faceGo.transform.SetParent(visualRoot, false);
-            faceGo.transform.localPosition = new Vector3(0f, player == PlayerId.P1 ? .62f : .7f, -.01f);
-            face = faceGo.AddComponent<SpriteRenderer>();
-            face.sprite = LoadSprite(CharacterPath + $"p{(player == PlayerId.P1 ? 1 : 2)}_face_grimacing.png");
-            face.sortingOrder = sortingOrder + 2;
-            FitWidth(face, player == PlayerId.P1 ? 1.22f : .72f);
-            face.enabled = false;
-        }
+        Sprite hitFullBody = !backView
+            ? LoadSprite(CharacterPath + $"p{(player == PlayerId.P1 ? 1 : 2)}_stone_throw_hit_fullbody.png")
+            : null;
 
         StoneThrowCharacterView view = slot.gameObject.AddComponent<StoneThrowCharacterView>();
         SetRefs(view,
-            ("visualRoot", visualRoot), ("characterRenderer", character), ("hitFaceRenderer", face),
+            ("visualRoot", visualRoot), ("characterRenderer", character), ("hitFullBodySprite", hitFullBody),
             ("leftDodgeAnchor", dodgeLeft), ("rightDodgeAnchor", dodgeRight),
             ("leftHandReleaseAnchor", leftRelease), ("rightHandReleaseAnchor", rightRelease),
             ("leftTargetAnchor", targetLeft), ("rightTargetAnchor", targetRight),
@@ -166,7 +177,7 @@ public static class StoneThrowSceneSetup
             foreach (string view in new[] { "front_right", "front_left", "back_right", "back_left" })
                 for (int frame = 1; frame <= 6; frame++)
                     ConfigureTexture(CharacterPath + $"p{player}_stone_throw_{view}_{frame}.png");
-            ConfigureTexture(CharacterPath + $"p{player}_face_grimacing.png");
+            ConfigureTexture(CharacterPath + $"p{player}_stone_throw_hit_fullbody.png");
         }
         ConfigureTexture("Assets/Resources/StoneThrow/background.png");
     }
@@ -203,6 +214,18 @@ public static class StoneThrowSceneSetup
     {
         Transform child = parent.Find(name);
         if (child != null) UnityEngine.Object.DestroyImmediate(child.gameObject);
+    }
+
+    private static void SwapLocalPositions(Transform first, Transform second)
+    {
+        if (first == null || second == null)
+            throw new InvalidOperationException("교환할 StoneThrow 앵커 참조가 비어 있습니다.");
+        Undo.RecordObjects(new UnityEngine.Object[] { first, second }, "Fix StoneThrow Front View Anchors");
+        Vector3 firstPosition = first.localPosition;
+        first.localPosition = second.localPosition;
+        second.localPosition = firstPosition;
+        EditorUtility.SetDirty(first);
+        EditorUtility.SetDirty(second);
     }
 
     private static void SetRefs(UnityEngine.Object target, params (string name, object value)[] values)
