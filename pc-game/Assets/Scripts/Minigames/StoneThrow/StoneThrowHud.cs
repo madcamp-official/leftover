@@ -5,9 +5,6 @@
 // hud_angle/hud_power/hud_wind는 쓰지 않는다 - 건바운드류 포격 조작 전제로 그려진 것이라
 // 실제 조작(손 들기 자동발사 + 머리 기울여 회피)과 맞지 않아 v2에서 아예 빠졌다.
 //
-// 체력바(P1/P2HealthBar)는 전용 아트가 아직 없어서 단색 Filled Image로 Awake()에서 항상
-// 코드로 만든다(씬에 미리 배치된 다른 위젯과 달리 이것만 런타임 생성) - 나중에 전용 프레임
-// 아트가 생기면 HudWidgets.CreateImage로 바꿔서 씬에 배치하면 된다.
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -24,7 +21,6 @@ public class StoneThrowHud : MonoBehaviour
     [Header("씬에 배치된 UI")]
     [SerializeField] private Text _p1Hits, _p2Hits, _timer, _eventText;
     private float _eventTimer;
-    private Image _p1HealthFill, _p2HealthFill;
 
     public static StoneThrowHud Build(float matchSeconds)
     {
@@ -67,44 +63,6 @@ public class StoneThrowHud : MonoBehaviour
         _eventText.text = "";
     }
 
-    private void Awake()
-    {
-        var root = (RectTransform)transform;
-        // 네임플레이트 폭 620 기준 실측 높이(약 271px) 아래에 여백을 두고 배치.
-        _p1HealthFill = BuildHealthBar(root, "P1HealthBar", new Vector2(0f, 1f), new Vector2(30f, -320f), flip: false);
-        _p2HealthFill = BuildHealthBar(root, "P2HealthBar", new Vector2(1f, 1f), new Vector2(-30f, -320f), flip: true);
-    }
-
-    // 전용 아트가 없어 트랙(반투명 검정) + 채움(플레이어 색) 두 장짜리 단색 게이지로 만든다.
-    // flip=true(P2)는 오른쪽 정렬이라 채움이 오른쪽에서 왼쪽으로 줄어들게 fillOrigin을 반대로.
-    private static Image BuildHealthBar(RectTransform root, string name, Vector2 anchor, Vector2 offset, bool flip)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(root, false);
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = anchor;
-        rt.pivot = anchor;
-        rt.anchoredPosition = offset;
-        rt.sizeDelta = new Vector2(320f, 26f);
-        var track = go.AddComponent<Image>();
-        track.color = new Color(0f, 0f, 0f, 0.45f);
-
-        var fillGo = new GameObject("Fill");
-        fillGo.transform.SetParent(go.transform, false);
-        var frt = fillGo.AddComponent<RectTransform>();
-        frt.anchorMin = Vector2.zero;
-        frt.anchorMax = Vector2.one;
-        frt.offsetMin = new Vector2(3f, 3f);
-        frt.offsetMax = new Vector2(-3f, -3f);
-        var fill = fillGo.AddComponent<Image>();
-        fill.color = flip ? new Color(0.95f, 0.3f, 0.25f) : new Color(0.25f, 0.55f, 0.95f);
-        fill.type = Image.Type.Filled;
-        fill.fillMethod = Image.FillMethod.Horizontal;
-        fill.fillOrigin = flip ? 1 : 0;
-        fill.fillAmount = 1f;
-        return fill;
-    }
-
     private void Update()
     {
         if (_eventTimer > 0f)
@@ -118,13 +76,6 @@ public class StoneThrowHud : MonoBehaviour
     {
         Text label = player == PlayerId.P1 ? _p1Hits : _p2Hits;
         if (label != null) label.text = hits.ToString();
-    }
-
-    // ratio: 1 = 풀피, 0 = 사망.
-    public void SetHealth(PlayerId player, float ratio)
-    {
-        Image bar = player == PlayerId.P1 ? _p1HealthFill : _p2HealthFill;
-        if (bar != null) bar.fillAmount = Mathf.Clamp01(ratio);
     }
 
     public void SetTimeRemaining(float seconds)
