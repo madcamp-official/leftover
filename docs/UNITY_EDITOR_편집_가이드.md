@@ -32,6 +32,11 @@ Hub 씬에 배치된 시작 화면 인스턴스와 결과 화면은 미니게임
 맞춘 World Space Canvas다. Hub 씬의 Canvas 루트 Position/Scale은 건드리지 말고, 프리팹 안의
 Background/Logo/Button Rect Transform을 조절한다.
 
+Hub의 `Background`에는 `CameraBackgroundImageFitter`가 붙어 있다. 미니게임 배경과 똑같이
+원본 비율을 유지한 cover 방식으로 카메라 프레임 전체를 덮기 때문에 화면비가 달라져도 빈 공간이
+생기지 않는다. Background의 Rect Transform 크기는 자동 계산되므로 배경 구도는 원본 PNG에서
+조절하고, 로고와 버튼 위치는 각각의 Rect Transform으로 수정한다.
+
 최종 결과 화면은 Hub 씬의 `ResultScreenCanvas`에 별도로 저장돼 있다. 평소 비활성 상태이므로
 Hierarchy 체크박스로 잠시 켜서 `ResultPanel`, `ResultText`, `RestartButton`을 편집한 뒤 다시
 꺼서 저장한다.
@@ -108,7 +113,8 @@ Caveman_P1/P2
 Scene 창에서 보이는 **배경 이미지의 사각형**은 SpriteRenderer에 배치된 PNG 자체의 실제 영역이다.
 그 바깥 또는 안쪽에 보이는 **흰색 선 사각형**은 Main Camera가 실제 게임에 출력하는 영역이다.
 즉, 배경 테두리보다 흰 카메라 선을 최종 화면 기준으로 삼는다. 각 미니게임의
-`CameraBackgroundFitter`가 현재 화면비에 맞춰 배경을 자동 확대하므로 흰 선 전체가 항상 덮인다.
+`CameraBackgroundFitter`와 Hub의 `CameraBackgroundImageFitter`가 현재 화면비에 맞춰 배경을
+자동 확대하므로 흰 선 전체가 항상 덮인다.
 원본 비율은 유지하며, 화면비가 다른 경우 배경의 남는 위·아래 또는 좌·우 부분만 카메라 밖으로 잘린다.
 
 Game 창의 비율이 `Free Aspect`이면 창 모양에 따라 흰 카메라 사각형 비율도 계속 바뀌므로 16:9

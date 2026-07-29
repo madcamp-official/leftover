@@ -118,12 +118,74 @@ public static class EditableSceneLayoutBuilder
         Debug.Log("[Uga Uga] 미니게임 6개 씬 공용 타이머 + 매치 결과판 적용 완료");
     }
 
+    [MenuItem("Tools/Uga Uga/Hub/Apply Camera Cover Background")]
+    public static void ApplyHubCameraCoverBackground()
+    {
+        string path = PrefabDir + "StartScreenCanvas.prefab";
+        GameObject prefabRoot = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            Image background = prefabRoot.GetComponentsInChildren<Image>(true)
+                .FirstOrDefault(x => x.name == "Background");
+            if (background == null)
+                throw new InvalidOperationException("StartScreenCanvas.prefab에서 Background Image를 찾지 못했습니다.");
+
+            CameraBackgroundImageFitter fitter = background.GetComponent<CameraBackgroundImageFitter>();
+            if (fitter == null) fitter = background.gameObject.AddComponent<CameraBackgroundImageFitter>();
+            background.preserveAspect = true;
+            fitter.Fit();
+            EditorUtility.SetDirty(background);
+            EditorUtility.SetDirty(fitter);
+            PrefabUtility.SaveAsPrefabAsset(prefabRoot, path);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(prefabRoot);
+        }
+
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+        Debug.Log("[Uga Uga] Hub 배경을 카메라 cover 방식으로 적용 완료");
+    }
+
+    [MenuItem("Tools/Uga Uga/StoneThrow/Apply Split Over-the-Shoulder Characters")]
+    public static void ApplyStoneThrowSplitCharacters()
+    {
+        AssetDatabase.Refresh();
+        BuildCavemanPrefab(PlayerId.P1, backView: true);
+        BuildCavemanPrefab(PlayerId.P2, backView: true);
+
+        Scene scene = SceneManager.GetActiveScene();
+        if (scene.name != "StoneThrow")
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            scene = Open("StoneThrow");
+        }
+        Transform layout = scene.GetRootGameObjects().FirstOrDefault(x => x.name == "EditableLayout")?.transform;
+        if (layout == null) throw new InvalidOperationException("StoneThrow 씬에서 EditableLayout을 찾지 못했습니다.");
+
+        foreach (CavemanSilhouette old in layout.GetComponentsInChildren<CavemanSilhouette>(true))
+            UnityEngine.Object.DestroyImmediate(old.gameObject);
+
+        CreateStoneThrowCharacters(layout, out CavemanSilhouette p1Front, out CavemanSilhouette p1Back,
+            out CavemanSilhouette p2Front, out CavemanSilhouette p2Back);
+
+        StoneThrowGame game = Controller<StoneThrowGame>();
+        SetRefs(game, ("p1FrontSilhouette", p1Front), ("p1BackSilhouette", p1Back),
+            ("p2FrontSilhouette", p2Front), ("p2BackSilhouette", p2Back));
+        Save(scene);
+        AssetDatabase.SaveAssets();
+        Debug.Log("[Uga Uga] StoneThrow 분할 오버더숄더 캐릭터 배치 완료");
+    }
+
     // -executeMethod EditableSceneLayoutBuilder.RebuildAll 로 CI/초기 마이그레이션에서도 호출 가능.
     public static void RebuildAll()
     {
         AssetDatabase.Refresh();
         BuildCavemanPrefab(PlayerId.P1);
         BuildCavemanPrefab(PlayerId.P2);
+        BuildCavemanPrefab(PlayerId.P1, backView: true);
+        BuildCavemanPrefab(PlayerId.P2, backView: true);
         BuildHub();
         BuildStoneThrow();
         BuildPoseCopy();
@@ -136,28 +198,38 @@ public static class EditableSceneLayoutBuilder
     }
 
     private static void BuildCavemanPrefab(PlayerId player)
+        => BuildCavemanPrefab(player, backView: false);
+
+    private static void BuildCavemanPrefab(PlayerId player, bool backView)
     {
-        GameObject root = BuildCavemanObject($"Caveman_{player}", player);
-        PrefabUtility.SaveAsPrefabAsset(root, PrefabDir + $"Caveman_{player}.prefab");
+        string suffix = backView ? "_Back" : "";
+        GameObject root = BuildCavemanObject($"Caveman_{player}{suffix}", player, backView);
+        PrefabUtility.SaveAsPrefabAsset(root, PrefabDir + $"Caveman_{player}{suffix}.prefab");
         UnityEngine.Object.DestroyImmediate(root);
     }
 
-    private static GameObject BuildCavemanObject(string name, PlayerId player)
+    private static GameObject BuildCavemanObject(string name, PlayerId player, bool backView)
     {
         var root = new GameObject(name);
         var silhouette = root.AddComponent<CavemanSilhouette>();
         silhouette.player = player;
 
-        Sprite headSprite = ArtAssets.LoadCharacter(player, "head");
-        Sprite torsoSprite = ArtAssets.LoadCharacter(player, "torso");
-        Sprite lua = ArtAssets.LoadCharacter(player, "left_upper_arm");
-        Sprite lla = ArtAssets.LoadCharacter(player, "left_lower_arm_hand");
-        Sprite rua = ArtAssets.LoadCharacter(player, "right_upper_arm");
-        Sprite rla = ArtAssets.LoadCharacter(player, "right_lower_arm_hand");
-        Sprite lul = ArtAssets.LoadCharacter(player, "left_upper_leg");
-        Sprite lll = ArtAssets.LoadCharacter(player, "left_lower_leg_foot");
-        Sprite rul = ArtAssets.LoadCharacter(player, "right_upper_leg");
-        Sprite rll = ArtAssets.LoadCharacter(player, "right_lower_leg_foot");
+        Func<string, Sprite> load = part => backView
+            ? ArtAssets.LoadCharacterBack(player, part)
+            : ArtAssets.LoadCharacter(player, part);
+        Sprite headSprite = load("head");
+        Sprite torsoSprite = load("torso");
+        Sprite lua = load("left_upper_arm");
+        Sprite lla = load("left_lower_arm_hand");
+        Sprite rua = load("right_upper_arm");
+        Sprite rla = load("right_lower_arm_hand");
+        Sprite lul = load("left_upper_leg");
+        Sprite lll = load("left_lower_leg_foot");
+        Sprite rul = load("right_upper_leg");
+        Sprite rll = load("right_lower_leg_foot");
+
+        if (new[] { headSprite, torsoSprite, lua, lla, rua, rla, lul, lll, rul, rll }.Any(x => x == null))
+            throw new InvalidOperationException($"{player} {(backView ? "back" : "front")} 캐릭터 파츠를 모두 불러오지 못했습니다.");
 
         const float torsoHeight = 0.75f;
         float scale = torsoHeight / Mathf.Max(0.01f, torsoSprite.bounds.size.y);
@@ -188,7 +260,8 @@ public static class EditableSceneLayoutBuilder
 
         SetRefs(silhouette, ("head", head), ("leftShoulderPivot", leftShoulder), ("rightShoulderPivot", rightShoulder),
             ("leftElbowPivot", leftElbow), ("rightElbowPivot", rightElbow), ("leftUpperArm", leftUpper),
-            ("rightUpperArm", rightUpper), ("leftLowerArm", leftLower), ("rightLowerArm", rightLower));
+            ("rightUpperArm", rightUpper), ("leftLowerArm", leftLower), ("rightLowerArm", rightLower),
+            ("mirrorTrackedPoseHorizontally", backView));
         return root;
     }
 
@@ -255,12 +328,37 @@ public static class EditableSceneLayoutBuilder
     }
 
     private static CavemanSilhouette AddCaveman(Transform root, PlayerId id, Vector3 pos)
+        => AddCaveman(root, id, backView: false, $"Caveman_{id}", pos, 1f, 0);
+
+    private static CavemanSilhouette AddCaveman(Transform root, PlayerId id, bool backView, string name,
+        Vector3 pos, float scale, int sortingOffset)
     {
-        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabDir + $"Caveman_{id}.prefab");
+        string suffix = backView ? "_Back" : "";
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabDir + $"Caveman_{id}{suffix}.prefab");
+        if (prefab == null) throw new InvalidOperationException($"Caveman_{id}{suffix}.prefab을 찾지 못했습니다.");
         var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         go.transform.SetParent(root, false);
+        go.name = name;
         go.transform.position = pos;
+        go.transform.localScale = Vector3.one * scale;
+        foreach (SpriteRenderer renderer in go.GetComponentsInChildren<SpriteRenderer>(true))
+            renderer.sortingOrder += sortingOffset;
         return go.GetComponent<CavemanSilhouette>();
+    }
+
+    private static void CreateStoneThrowCharacters(Transform root, out CavemanSilhouette p1Front,
+        out CavemanSilhouette p1Back, out CavemanSilhouette p2Front, out CavemanSilhouette p2Back)
+    {
+        // 문서 5장: 왼쪽=P2 앞모습 와이드 + P1 뒷모습 바스트,
+        // 오른쪽=P1 앞모습 와이드 + P2 뒷모습 바스트.
+        p2Front = AddCaveman(root, PlayerId.P2, false, "Left View - P2 Front (Target)",
+            new Vector3(-4.45f, -3.15f, 0f), 1.35f, 0);
+        p1Back = AddCaveman(root, PlayerId.P1, true, "Left View - P1 Back (Thrower)",
+            new Vector3(-0.85f, -5.0f, 0f), 2.1f, 20);
+        p1Front = AddCaveman(root, PlayerId.P1, false, "Right View - P1 Front (Target)",
+            new Vector3(4.45f, -3.15f, 0f), 1.35f, 0);
+        p2Back = AddCaveman(root, PlayerId.P2, true, "Right View - P2 Back (Thrower)",
+            new Vector3(8.0f, -5.0f, 0f), 2.1f, 20);
     }
 
     private static T Controller<T>() where T : Component => UnityEngine.Object.FindAnyObjectByType<T>();
@@ -269,11 +367,12 @@ public static class EditableSceneLayoutBuilder
     {
         Scene s = Open("StoneThrow"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
         AddBackground(root, ArtAssets.LoadStoneThrow("background"), StandardCameraSize);
-        var p1 = AddCaveman(root, PlayerId.P1, new Vector3(-2.5f, 0, 0));
-        var p2 = AddCaveman(root, PlayerId.P2, new Vector3(2.5f, 0, 0));
+        CreateStoneThrowCharacters(root, out CavemanSilhouette p1Front, out CavemanSilhouette p1Back,
+            out CavemanSilhouette p2Front, out CavemanSilhouette p2Back);
         StoneThrowHud hud = StoneThrowHud.Build(30); hud.transform.SetParent(root, false);
         MatchScoreboardHud.Build(hud.transform);
-        SetRefs(Controller<StoneThrowGame>(), ("p1Silhouette", p1), ("p2Silhouette", p2), ("hud", hud)); Save(s);
+        SetRefs(Controller<StoneThrowGame>(), ("p1FrontSilhouette", p1Front), ("p1BackSilhouette", p1Back),
+            ("p2FrontSilhouette", p2Front), ("p2BackSilhouette", p2Back), ("hud", hud)); Save(s);
     }
 
     private static void BuildPoseCopy()
@@ -361,6 +460,13 @@ public static class EditableSceneLayoutBuilder
         GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabDir + "StartScreenCanvas.prefab");
         var canvas = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         HudWidgets.ConfigureForGameCamera(canvas.GetComponent<Canvas>());
+        Image hubBackground = canvas.GetComponentsInChildren<Image>(true).FirstOrDefault(x => x.name == "Background");
+        if (hubBackground != null)
+        {
+            CameraBackgroundImageFitter fitter = hubBackground.GetComponent<CameraBackgroundImageFitter>();
+            if (fitter == null) fitter = hubBackground.gameObject.AddComponent<CameraBackgroundImageFitter>();
+            fitter.Fit();
+        }
         var eventGo = new GameObject("EventSystem"); eventGo.AddComponent<EventSystem>(); eventGo.AddComponent<InputSystemUIInputModule>();
         Button[] buttons = canvas.GetComponentsInChildren<Button>(true);
         GameObject resultCanvas = BuildResultCanvas(out Text resultText, out Button restartButton);
@@ -410,6 +516,7 @@ public static class EditableSceneLayoutBuilder
             SerializedProperty p = so.FindProperty(name);
             if (p == null) throw new InvalidOperationException($"{target.GetType().Name}.{name} 직렬화 필드를 찾을 수 없습니다.");
             if (value is UnityEngine.Object obj) p.objectReferenceValue = obj;
+            else if (value is bool boolean) p.boolValue = boolean;
             else if (value is Array array)
             {
                 p.arraySize = array.Length;

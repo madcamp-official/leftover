@@ -44,6 +44,11 @@ public static class ArtAssets
     public static Sprite LoadCharacter(PlayerId player, string part)
         => LoadSprite($"Characters/{(player == PlayerId.P1 ? "p1" : "p2")}_{part}");
 
+    // 돌던지기의 오버더숄더 구도처럼 같은 플레이어를 앞/뒤에서 동시에 보여줄 때 사용한다.
+    // 기존 6개 게임은 이름 호환성을 위해 앞모습 로더(위 메서드)를 그대로 쓴다.
+    public static Sprite LoadCharacterBack(PlayerId player, string part)
+        => LoadSprite($"Characters/{(player == PlayerId.P1 ? "p1" : "p2")}_back_{part}");
+
     // 원본 이미지 해상도가 몇 px든(AI 생성 이미지라 보통 1024px 안팎으로 큼) 상관없이 항상 같은
     // 인게임 크기로 보이도록, SpriteRenderer의 가로 폭을 targetWidth(월드 유닛)에 맞춰 균일
     // 스케일을 적용한다.

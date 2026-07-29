@@ -32,8 +32,14 @@ public class StoneThrowGame : MonoBehaviour
 
     private Sprite _stoneSprite;
     [Header("씬에 배치된 오브젝트")]
-    [SerializeField] private CavemanSilhouette p1Silhouette;
-    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [Tooltip("오른쪽 절반 중앙의 P1 앞모습(피격 표정/돌 목표점)")]
+    [SerializeField] private CavemanSilhouette p1FrontSilhouette;
+    [Tooltip("왼쪽 절반 하단 전경의 P1 뒷모습(돌 발사점)")]
+    [SerializeField] private CavemanSilhouette p1BackSilhouette;
+    [Tooltip("왼쪽 절반 중앙의 P2 앞모습(피격 표정/돌 목표점)")]
+    [SerializeField] private CavemanSilhouette p2FrontSilhouette;
+    [Tooltip("오른쪽 절반 하단 전경의 P2 뒷모습(돌 발사점)")]
+    [SerializeField] private CavemanSilhouette p2BackSilhouette;
     [SerializeField] private StoneThrowHud hud;
     private float _elapsed;
     private float _p1FireTimer;
@@ -65,15 +71,16 @@ public class StoneThrowGame : MonoBehaviour
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
-        p1Silhouette?.ApplyPose(p1);
-        p2Silhouette?.ApplyPose(p2);
+        ApplyPoseToBothViews(p1FrontSilhouette, p1BackSilhouette, p1);
+        ApplyPoseToBothViews(p2FrontSilhouette, p2BackSilhouette, p2);
 
         if (_ended) return;
 
         _elapsed += Time.deltaTime;
 
         TickFiring(PlayerId.P1, p1, p2, ref _p1FireTimer, ref _p1RightRaisedAt, ref _p1LeftRaisedAt);
-        TickFiring(PlayerId.P2, p2, p1, ref _p2FireTimer, ref _p2RightRaisedAt, ref _p2LeftRaisedAt);
+        if (!_ended)
+            TickFiring(PlayerId.P2, p2, p1, ref _p2FireTimer, ref _p2RightRaisedAt, ref _p2LeftRaisedAt);
 
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
 
@@ -157,18 +164,35 @@ public class StoneThrowGame : MonoBehaviour
             hud?.ShowEvent($"{Label(target)} 회피!");
         }
 
-        StartCoroutine(FlyStone(Silhouette(thrower).transform.position + Vector3.up * 0.6f,
-            Silhouette(target).transform.position + Vector3.up * 0.6f, hit));
+        CavemanSilhouette throwerBack = BackSilhouette(thrower);
+        CavemanSilhouette targetFront = FrontSilhouette(target);
+        if (throwerBack != null && targetFront != null)
+        {
+            Vector3 from = throwerBack.transform.position + Vector3.up * 1.65f;
+            Vector3 to = targetFront.transform.position + Vector3.up * 1.35f;
+            StartCoroutine(FlyStone(from, to, hit));
+        }
     }
 
-    private CavemanSilhouette Silhouette(PlayerId id) => id == PlayerId.P1 ? p1Silhouette : p2Silhouette;
+    private static void ApplyPoseToBothViews(CavemanSilhouette front, CavemanSilhouette back, PlayerPoseState state)
+    {
+        front?.ApplyPose(state);
+        back?.ApplyPose(state);
+    }
+
+    private CavemanSilhouette FrontSilhouette(PlayerId id)
+        => id == PlayerId.P1 ? p1FrontSilhouette : p2FrontSilhouette;
+
+    private CavemanSilhouette BackSilhouette(PlayerId id)
+        => id == PlayerId.P1 ? p1BackSilhouette : p2BackSilhouette;
 
     private static string Label(PlayerId id) => id == PlayerId.P1 ? "플레이어 1" : "플레이어 2";
 
     // 맞은 쪽 표정을 잠깐 바꿔준다 - 많이 맞을수록 이빨이 더 나간 얼굴로.
     private IEnumerator ReactToHit(PlayerId target, int timesHit)
     {
-        CavemanSilhouette sil = Silhouette(target);
+        CavemanSilhouette sil = FrontSilhouette(target);
+        if (sil == null) yield break;
         string face = timesHit >= 6 ? "face_stone_hit_two_teeth_broken"
             : timesHit >= 3 ? "face_stone_hit_one_tooth_broken"
             : "face_grimacing";

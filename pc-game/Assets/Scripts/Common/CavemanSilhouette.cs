@@ -11,6 +11,9 @@ public class CavemanSilhouette : MonoBehaviour
 {
     public PlayerId player;
 
+    [Tooltip("뒷모습처럼 카메라 반대편에서 본 캐릭터는 포즈의 좌우를 반전해 같은 동작으로 보이게 합니다.")]
+    [SerializeField] private bool mirrorTrackedPoseHorizontally;
+
     [Header("씬/프리팹에 고정 배치된 파츠")]
     [SerializeField] private SpriteRenderer head;
     [SerializeField] private Transform leftShoulderPivot;
@@ -56,28 +59,35 @@ public class CavemanSilhouette : MonoBehaviour
     {
         if (leftShoulderPivot == null || state == null || !state.IsTracked) return;
 
-        ApplyArm(leftShoulderPivot, leftElbowPivot, _leftUpperArmLength, state.Joints.leftShoulder, state.Joints.leftElbow, state.Joints.leftWrist);
-        ApplyArm(rightShoulderPivot, rightElbowPivot, _rightUpperArmLength, state.Joints.rightShoulder, state.Joints.rightElbow, state.Joints.rightWrist);
+        ApplyArm(leftShoulderPivot, leftElbowPivot, _leftUpperArmLength, state.Joints.leftShoulder,
+            state.Joints.leftElbow, state.Joints.leftWrist, mirrorTrackedPoseHorizontally);
+        ApplyArm(rightShoulderPivot, rightElbowPivot, _rightUpperArmLength, state.Joints.rightShoulder,
+            state.Joints.rightElbow, state.Joints.rightWrist, mirrorTrackedPoseHorizontally);
 
-        float tiltDeg = Mathf.Clamp(state.HeadTiltRatio(), -1f, 1f) * -25f;
+        float tilt = state.HeadTiltRatio() * (mirrorTrackedPoseHorizontally ? -1f : 1f);
+        float tiltDeg = Mathf.Clamp(tilt, -1f, 1f) * -25f;
         if (head != null) head.transform.localRotation = Quaternion.Euler(0, 0, tiltDeg);
     }
 
     private static void ApplyArm(Transform shoulderPivot, Transform elbowPivot, float upperArmLength,
-        Vector2 shoulder, Vector2 elbow, Vector2 wrist)
+        Vector2 shoulder, Vector2 elbow, Vector2 wrist, bool mirrorHorizontally)
     {
-        Vector2 upperDir = ImageDirection(shoulder, elbow);
+        Vector2 upperDir = ImageDirection(shoulder, elbow, mirrorHorizontally);
         shoulderPivot.rotation = Quaternion.Euler(0, 0, RotationZFromDirection(upperDir));
-        elbowPivot.position = shoulderPivot.position + (Vector3)(upperDir * upperArmLength);
+        // StoneThrow의 전경/원거리 캐릭터처럼 루트 Scale이 1이 아닐 때도 팔꿈치가 상완 끝에
+        // 붙어 있도록 로컬 파츠 길이를 현재 월드 스케일로 변환한다.
+        float worldUpperArmLength = upperArmLength * Mathf.Abs(shoulderPivot.lossyScale.y);
+        elbowPivot.position = shoulderPivot.position + (Vector3)(upperDir * worldUpperArmLength);
 
-        Vector2 lowerDir = ImageDirection(elbow, wrist);
+        Vector2 lowerDir = ImageDirection(elbow, wrist, mirrorHorizontally);
         elbowPivot.rotation = Quaternion.Euler(0, 0, RotationZFromDirection(lowerDir));
     }
 
     // MediaPipe 이미지 좌표(y 아래로 증가)를 "위가 양수"인 방향 벡터로 변환.
-    private static Vector2 ImageDirection(Vector2 from, Vector2 to)
+    private static Vector2 ImageDirection(Vector2 from, Vector2 to, bool mirrorHorizontally)
     {
         Vector2 d = new Vector2(to.x - from.x, from.y - to.y);
+        if (mirrorHorizontally) d.x = -d.x;
         return d.sqrMagnitude < 1e-6f ? Vector2.down : d.normalized;
     }
 
