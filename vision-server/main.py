@@ -361,6 +361,14 @@ def main():
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--show", action="store_true", default=True, help="디버그용 카메라 창 표시")
     parser.add_argument(
+        "--no-preview", action="store_true",
+        help="Unity 로딩 화면용 저해상도 카메라 미리보기 전송을 끕니다.",
+    )
+    parser.add_argument("--preview-port", type=int, default=9101)
+    parser.add_argument("--preview-fps", type=float, default=5.0)
+    parser.add_argument("--preview-width", type=int, default=320)
+    parser.add_argument("--preview-quality", type=int, default=50)
+    parser.add_argument(
         "--player-id", choices=["p1", "p2"], default=None,
         help="지정하면 이 카메라는 '1명만 인식' 모드로 동작 - 감지된 첫 사람을 항상 이 id로"
              " 보낸다. 카메라 2대(플레이어 1명당 1대)로 나눠서 인식할 때 씀: 노트북 A는"
@@ -379,6 +387,8 @@ def main():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest = (args.pc_ip, args.port)
+    preview_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    preview_dest = (args.pc_ip, args.preview_port)
 
     voice_meter = None
     if args.voice:
@@ -403,6 +413,7 @@ def main():
         cv2.resizeWindow("vision-server", 1280, 720)
 
     start_time = time.time()
+    last_preview_sent = 0.0
     prev_hip_x = {"p1": None, "p2": None}  # 라벨 안정화용 이력 - _assign_player_ids 참고.
     # 과일따기 tierHeightThresholds 실측용 - 플레이어별 점프 높이 캘리브레이션/세션 최고치.
     jump_trackers = {"p1": JumpHeightTracker(), "p2": JumpHeightTracker()}
@@ -420,6 +431,28 @@ def main():
                 break
 
             frame = cv2.flip(frame, 1)  # 거울 모드 (직관적인 좌우)
+            now = time.time()
+            preview_interval = 1.0 / max(1.0, args.preview_fps)
+            if not args.no_preview and now - last_preview_sent >= preview_interval:
+                source_h, source_w = frame.shape[:2]
+                preview_w = max(160, min(640, args.preview_width))
+                preview_h = max(90, int(preview_w * source_h / max(1, source_w)))
+                preview_frame = cv2.resize(
+                    frame, (preview_w, preview_h), interpolation=cv2.INTER_AREA
+                )
+                quality = max(20, min(85, args.preview_quality))
+                encoded, jpeg = cv2.imencode(
+                    ".jpg",
+                    preview_frame,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), quality],
+                )
+                if encoded:
+                    preview_player = args.player_id or "all"
+                    header = f"UGAPREV1|{preview_player}|".encode("ascii")
+                    packet = header + jpeg.tobytes()
+                    if len(packet) <= 60_000:
+                        preview_sock.sendto(packet, preview_dest)
+                        last_preview_sent = now
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
             now_ms = int((time.time() - start_time) * 1000)
@@ -478,6 +511,7 @@ def main():
         cap.release()
         cv2.destroyAllWindows()
         sock.close()
+        preview_sock.close()
         pose_landmarker.close()
         if face_landmarker:
             face_landmarker.close()

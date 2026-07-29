@@ -12,6 +12,12 @@ public static class GameBootstrap
             var go = new GameObject("PoseInput");
             go.AddComponent<PoseInputHub>();
             go.AddComponent<PoseStreamReceiver>();
+            go.AddComponent<CameraPreviewReceiver>();
+        }
+        else if (CameraPreviewReceiver.Instance == null)
+        {
+            var go = new GameObject("CameraPreviewReceiver");
+            go.AddComponent<CameraPreviewReceiver>();
         }
     }
 
@@ -21,6 +27,15 @@ public static class GameBootstrap
         {
             var go = new GameObject("MatchController");
             go.AddComponent<MatchController>();
+        }
+    }
+
+    public static void EnsureNetwork()
+    {
+        if (NetworkSession.Instance == null)
+        {
+            var go = new GameObject("NetworkSession");
+            go.AddComponent<NetworkSession>();
         }
     }
 }

@@ -4,7 +4,10 @@
       "command": "node",
       "args": [
         "pc-game/Library/PackageCache/com.gamelovers.mcp-unity@bbfb1c068151/Server~/build/index.js"
-      ]
+      ],
+      "env": {
+        "UNITY_HOST": "127.0.0.1"
+      }
     }
   }
 }

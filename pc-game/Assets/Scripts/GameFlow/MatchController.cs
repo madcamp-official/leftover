@@ -49,7 +49,32 @@ public sealed class MatchController : MonoBehaviour
         DontDestroyOnLoad(gameObject);
     }
 
+    // 호스트-클라이언트 모드(docs/멀티플레이_분산_아키텍처_설계.md)에서는 판정/진행 결정이
+    // 전부 호스트 전담이다. 클라이언트 쪽 MatchController는 스스로 결정하지 않고, 호스트가
+    // 보낸 이벤트를 받아 같은 상태를 반영만 한다(HubController 등 UI는 양쪽 다 동일 코드로
+    // 이 상태를 읽으면 되게 하기 위함). 오프라인(NetworkSession.Instance == null 또는
+    // Role == Offline)일 때는 기존과 동일하게 로컬에서 전부 결정한다.
+    private void Start()
+    {
+        GameBootstrap.EnsureNetwork();
+        NetworkSession net = NetworkSession.Instance;
+        if (net == null) return;
+        net.Subscribe("match_start", OnNetMatchStart);
+        net.Subscribe("load_round", OnNetLoadRound);
+        net.Subscribe("round_result", OnNetRoundResult);
+    }
+
     public void StartMatch()
+    {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient) return; // 클라이언트는 호스트의 match_start 이벤트로만 시작한다
+
+        ResetLocalMatchState();
+        if (net != null && net.IsHost) net.Send("match_start", new MatchStartPayload());
+        LoadNextRound();
+    }
+
+    private void ResetLocalMatchState()
     {
         CurrentRoundIndex = -1;
         P1Wins = 0;
@@ -60,34 +85,73 @@ public sealed class MatchController : MonoBehaviour
             _roundReported[i] = false;
         }
         ResultsVersion++;
-        LoadNextRound();
     }
+
+    private void OnNetMatchStart(NetworkEvent evt) => ResetLocalMatchState();
 
     public void LoadNextRound()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient) return; // 클라이언트는 호스트의 load_round 이벤트로만 전환한다
+
         int nextRoundIndex = CurrentRoundIndex + 1;
         string nextScene = nextRoundIndex >= RoundScenes.Count
             ? HubSceneName
             : RoundScenes[nextRoundIndex];
+
+        if (net != null && net.IsHost)
+            net.Send("load_round", new LoadRoundPayload { roundIndex = nextRoundIndex, sceneName = nextScene });
 
         // 더블클릭이나 중복 코루틴으로 전환 요청이 겹치면 인덱스도 두 번 증가하지 않게 한다.
         if (SceneFadeTransition.TryLoadScene(nextScene))
             CurrentRoundIndex = nextRoundIndex;
     }
 
+    private void OnNetLoadRound(NetworkEvent evt)
+    {
+        LoadRoundPayload payload = NetworkSession.Read<LoadRoundPayload>(evt);
+        if (SceneFadeTransition.TryLoadScene(payload.sceneName))
+            CurrentRoundIndex = payload.roundIndex;
+    }
+
     // null = 무승부(승자 없음). 각 미니게임은 규칙에 따라 승자가 정해지는 순간 이걸 한 번만
     // 호출하고, 이후 알아서 다음 라운드로 넘어가거나(자동 진행) Hub 씬의 버튼을 기다리면 된다.
+    // 호스트-클라이언트 모드에서는 판정이 호스트 전담이므로(설계 문서 1장), 클라이언트 쪽
+    // 미니게임이 이걸 호출해도 무시된다 - 클라이언트는 round_result 이벤트로만 결과를 안다.
     public void ReportRoundResult(PlayerId? winner)
     {
-        if (CurrentRoundIndex < 0 || CurrentRoundIndex >= RoundScenes.Count) return;
-        if (_roundReported[CurrentRoundIndex]) return;
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient) return;
 
-        _roundReported[CurrentRoundIndex] = true;
-        _roundWinners[CurrentRoundIndex] = winner;
+        ApplyRoundResult(CurrentRoundIndex, winner);
+        if (net != null && net.IsHost)
+            net.Send("round_result", new RoundResultPayload
+            {
+                roundIndex = CurrentRoundIndex,
+                winner = EncodeWinner(winner),
+            });
+    }
+
+    private void OnNetRoundResult(NetworkEvent evt)
+    {
+        RoundResultPayload payload = NetworkSession.Read<RoundResultPayload>(evt);
+        ApplyRoundResult(payload.roundIndex, DecodeWinner(payload.winner));
+    }
+
+    private void ApplyRoundResult(int roundIndex, PlayerId? winner)
+    {
+        if (roundIndex < 0 || roundIndex >= RoundScenes.Count) return;
+        if (_roundReported[roundIndex]) return;
+
+        _roundReported[roundIndex] = true;
+        _roundWinners[roundIndex] = winner;
         if (winner == PlayerId.P1) P1Wins++;
         else if (winner == PlayerId.P2) P2Wins++;
         ResultsVersion++;
     }
+
+    private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
+    private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
 
     public bool HasRoundResult(int roundIndex)
         => roundIndex >= 0 && roundIndex < _roundReported.Length && _roundReported[roundIndex];
@@ -101,5 +165,21 @@ public sealed class MatchController : MonoBehaviour
     {
         if (P1Wins == P2Wins) return null;
         return P1Wins > P2Wins ? PlayerId.P1 : PlayerId.P2;
+    }
+
+    [System.Serializable] private class MatchStartPayload { }
+
+    [System.Serializable]
+    private class LoadRoundPayload
+    {
+        public int roundIndex;
+        public string sceneName;
+    }
+
+    [System.Serializable]
+    private class RoundResultPayload
+    {
+        public int roundIndex;
+        public int winner; // -1 = 무승부, 0 = P1, 1 = P2
     }
 }

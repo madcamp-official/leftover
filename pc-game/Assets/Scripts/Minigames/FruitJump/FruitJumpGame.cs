@@ -101,14 +101,35 @@ public class FruitJumpGame : MonoBehaviour
     private int _p1Score;
     private int _p2Score;
     private bool _ended;
+
+    // --- 아래부터 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장) ---
+    // 판정/타이밍/수치는 전부 위 필드・메서드 그대로다. 호스트(또는 오프라인)는 원래 로직을
+    // 한 글자도 안 바꾸고 그대로 실행하면서, 상태가 바뀌는 지점(RespawnFruits/ScoreTier/
+    // EndMatch)에서만 이벤트를 추가로 내보낸다. 클라이언트는 그 판정 로직(TickTree,
+    // HandleDebugTierKeys, 캘리브레이션 대기)을 아예 실행하지 않고, 받은 이벤트로 같은
+    // RespawnFruits/ScoreTier 함수를 그대로 호출해 동일한 연출을 재생한다.
+    private bool _startedBroadcast;
+    private bool _clientStarted;
+    private float _clientElapsed;
+
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
 
         _p1Tree = BuildTree(PlayerId.P1, p1Anchor, p1Jump, p1Fruits);
         _p2Tree = BuildTree(PlayerId.P2, p2Anchor, p2Jump, p2Fruits);
         hud?.SetTimeRemaining(matchSeconds);
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("fj_started", OnNetStarted);
+            net.Subscribe("fj_fruits_respawned", OnNetFruitsRespawned);
+            net.Subscribe("fj_score", OnNetScore);
+            net.Subscribe("fj_ended", OnNetEnded);
+        }
     }
 
     private TreeState BuildTree(PlayerId player, Transform anchor, JumpHeightCalibrator jump, SpriteRenderer[] fruits)
@@ -140,6 +161,13 @@ public class FruitJumpGame : MonoBehaviour
 
     private void Update()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            UpdateAsClient();
+            return;
+        }
+
         HandleDebugTierKeys();
 
         bool calibrationReady = debugP1OnlyTest
@@ -149,6 +177,12 @@ public class FruitJumpGame : MonoBehaviour
             return; // 캘리브레이션 끝날 때까지 대기 (테스트 모드가 아니면 둘 다 가만히 서 있어야 함)
 
         if (_ended) return;
+
+        if (!_startedBroadcast && net != null && net.IsHost)
+        {
+            _startedBroadcast = true;
+            net.Send("fj_started", new StartedPayload());
+        }
 
         _elapsed += Time.deltaTime;
 
@@ -161,6 +195,43 @@ public class FruitJumpGame : MonoBehaviour
             PlayerId? winner = _p1Score == _p2Score ? null : (_p1Score > _p2Score ? PlayerId.P1 : PlayerId.P2);
             EndMatch(winner);
         }
+    }
+
+    // 클라이언트는 판정을 전혀 하지 않는다 - 호스트가 fj_started 이벤트를 보내면 타이머
+    // 표시만 로컬에서 흘려보내고, 실제 점수/연출은 전부 fj_fruits_respawned/fj_score 이벤트
+    // 핸들러(OnNetFruitsRespawned/OnNetScore)가 담당한다.
+    private void UpdateAsClient()
+    {
+        if (_ended || !_clientStarted) return;
+        _clientElapsed += Time.deltaTime;
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _clientElapsed));
+    }
+
+    private void OnNetStarted(NetworkEvent evt)
+    {
+        _clientStarted = true;
+        _clientElapsed = 0f;
+    }
+
+    private void OnNetFruitsRespawned(NetworkEvent evt)
+    {
+        JumpStartPayload payload = NetworkSession.Read<JumpStartPayload>(evt);
+        RespawnFruits(payload.player == 0 ? _p1Tree : _p2Tree);
+    }
+
+    private void OnNetScore(NetworkEvent evt)
+    {
+        ScorePayload payload = NetworkSession.Read<ScorePayload>(evt);
+        if (payload.player == 0) ScoreTier(_p1Tree, ref _p1Score, payload.tier, payload.bounceSeconds);
+        else ScoreTier(_p2Tree, ref _p2Score, payload.tier, payload.bounceSeconds);
+    }
+
+    private void OnNetEnded(NetworkEvent evt)
+    {
+        EndedPayload payload = NetworkSession.Read<EndedPayload>(evt);
+        _ended = true;
+        PlayerId? winner = DecodeWinner(payload.winner);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
     }
 
     // P1 = A/B/C(1/2/3티어), P2 = 숫자키 1/2/3(1/2/3티어).
@@ -200,6 +271,18 @@ public class FruitJumpGame : MonoBehaviour
         hud?.ShowEvent($"{tree.Player} +{tierScores[tier]}!");
         StartCoroutine(EatFruit(tree.Fruits[tier], tree.FruitBaseScales[tier]));
         StartCoroutine(PlayScoreBounce(tree, tier, bounceSeconds));
+
+        // 호스트에서 실제 판정(착지)으로 호출됐을 때만 클라이언트로 알린다. 클라이언트가
+        // fj_score 이벤트를 받아 이 함수를 다시 호출할 때는 IsHost가 false라 재전송되지
+        // 않는다 - 판정을 두 번 하는 게 아니라 같은 연출 함수를 재사용하는 것뿐이다.
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("fj_score", new ScorePayload
+            {
+                player = tree.Player == PlayerId.P1 ? 0 : 1,
+                tier = tier,
+                bounceSeconds = bounceSeconds,
+            });
     }
 
     private void TickTree(TreeState tree, ref int score)
@@ -356,6 +439,10 @@ public class FruitJumpGame : MonoBehaviour
             fruit.transform.localScale = tree.FruitBaseScales[i];
             fruit.enabled = true;
         }
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("fj_fruits_respawned", new JumpStartPayload { player = tree.Player == PlayerId.P1 ? 0 : 1 });
     }
 
     private void EndMatch(PlayerId? winner)
@@ -364,6 +451,10 @@ public class FruitJumpGame : MonoBehaviour
         hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("fj_ended", new EndedPayload { winner = EncodeWinner(winner) });
     }
 
     private IEnumerator ProceedAfterDelay()
@@ -372,12 +463,31 @@ public class FruitJumpGame : MonoBehaviour
         MatchController.Instance?.LoadNextRound();
     }
 
+    private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
+    private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
+
     private void OnGUI()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient) return; // 클라이언트는 캘리브레이션을 하지 않는다
+
         bool calibrationReady = debugP1OnlyTest
             ? _p1Tree.Jump.IsCalibrated
             : _p1Tree.Jump.IsCalibrated && _p2Tree.Jump.IsCalibrated;
         if (!calibrationReady)
             GUI.Label(new Rect(20, 20, 400, 30), "캘리브레이션 중 - 가만히 서 있으세요...");
     }
+
+    [System.Serializable] private class StartedPayload { }
+    [System.Serializable] private class JumpStartPayload { public int player; }
+
+    [System.Serializable]
+    private class ScorePayload
+    {
+        public int player;
+        public int tier;
+        public float bounceSeconds;
+    }
+
+    [System.Serializable] private class EndedPayload { public int winner; }
 }

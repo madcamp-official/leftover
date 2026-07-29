@@ -44,19 +44,49 @@ public class StoneOrBananaGame : MonoBehaviour
     private TurnPhase _phase;
     private float _turnElapsed;
 
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장) - 판정 임계값/
+    // 타이밍/점수는 전부 그대로다. 이 게임은 "결정 구간(3초) 동안 상대가 지금 뭘 들고
+    // 있는지/입을 벌렸는지가 실시간으로 보여야 심리전이 성립"하므로, 그 구간만 원시 pose
+    // 스트림과 같은 성격(최신 값이 진실)으로 매 프레임 릴레이한다(sb_decision). 턴이 잠기는
+    // 순간(sb_locked)부터는 이후 전개(PlayLockedTurn - 포만감/이빨/승패 전부 포함)가 완전히
+    // 결정론적이라 호스트와 클라이언트가 같은 함수를 그대로 재생하면 자동으로 똑같은 결과가
+    // 나온다 - 그래서 승패/턴 순서를 위한 별도 이벤트가 필요 없다.
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
         if (stoneTemplate != null) stoneTemplate.gameObject.SetActive(false);
         if (bananaTemplate != null) bananaTemplate.gameObject.SetActive(false);
         _p1Teeth = _p2Teeth = Mathf.RoundToInt(maxTeeth);
         RefreshStatusHud();
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("sb_decision", OnNetDecision);
+            net.Subscribe("sb_locked", OnNetLocked);
+        }
+
         BeginTurn();
     }
 
     private void Update()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            // 클라이언트는 판정을 하지 않는다 - 손/입 표시는 sb_decision 이벤트가, 턴 잠금
+            // 이후 전개는 sb_locked 이벤트(OnNetLocked)가 담당한다. 여기서는 결정 구간
+            // 타이머 표시만 로컬에서 흘려보낸다.
+            if (_phase == TurnPhase.Decision)
+            {
+                _turnElapsed += Time.deltaTime;
+                hud?.SetTurnTimeRemaining(Mathf.Max(0f, turnDecisionSeconds - _turnElapsed));
+            }
+            return;
+        }
+
         if (_phase != TurnPhase.Decision) return;
 
         PlayerId receiver = Other(_currentThrower);
@@ -66,6 +96,13 @@ public class StoneOrBananaGame : MonoBehaviour
         BackView(_currentThrower)?.ShowHeldHand(heldHand);
         FrontView(receiver)?.ShowReceiver(mouthOpen);
         BackView(receiver)?.ShowReceiver(mouthOpen);
+
+        if (net != null && net.IsHost)
+            net.Send("sb_decision", new DecisionPayload
+            {
+                hand = heldHand == StoneThrowHand.Right ? 1 : 0,
+                mouthOpen = mouthOpen,
+            });
 
         _turnElapsed += Time.deltaTime;
         hud?.SetTurnTimeRemaining(Mathf.Max(0f, turnDecisionSeconds - _turnElapsed));
@@ -77,8 +114,44 @@ public class StoneOrBananaGame : MonoBehaviour
         _phase = TurnPhase.Resolving;
         hud?.ShowDecisionPrompts(false);
         hud?.SetTurnTimeRemaining(0f);
+
+        if (net != null && net.IsHost)
+            net.Send("sb_locked", new LockedPayload
+            {
+                thrower = EncodePlayer(_currentThrower),
+                hand = lockedHand == StoneThrowHand.Right ? 1 : 0,
+                mouthOpen = lockedMouthOpen,
+            });
+
         StartCoroutine(PlayLockedTurn(_currentThrower, receiver, lockedHand, lockedMouthOpen));
     }
+
+    private void OnNetDecision(NetworkEvent evt)
+    {
+        DecisionPayload payload = NetworkSession.Read<DecisionPayload>(evt);
+        PlayerId thrower = _currentThrower;
+        PlayerId receiver = Other(thrower);
+        StoneThrowHand hand = payload.hand == 1 ? StoneThrowHand.Right : StoneThrowHand.Left;
+        FrontView(thrower)?.ShowHeldHand(hand);
+        BackView(thrower)?.ShowHeldHand(hand);
+        FrontView(receiver)?.ShowReceiver(payload.mouthOpen);
+        BackView(receiver)?.ShowReceiver(payload.mouthOpen);
+    }
+
+    private void OnNetLocked(NetworkEvent evt)
+    {
+        LockedPayload payload = NetworkSession.Read<LockedPayload>(evt);
+        PlayerId thrower = DecodePlayer(payload.thrower);
+        PlayerId receiver = Other(thrower);
+        StoneThrowHand hand = payload.hand == 1 ? StoneThrowHand.Right : StoneThrowHand.Left;
+        _phase = TurnPhase.Resolving;
+        hud?.ShowDecisionPrompts(false);
+        hud?.SetTurnTimeRemaining(0f);
+        StartCoroutine(PlayLockedTurn(thrower, receiver, hand, payload.mouthOpen));
+    }
+
+    private static int EncodePlayer(PlayerId player) => player == PlayerId.P1 ? 0 : 1;
+    private static PlayerId DecodePlayer(int value) => value == 0 ? PlayerId.P1 : PlayerId.P2;
 
     private void BeginTurn()
     {
@@ -279,4 +352,7 @@ public class StoneOrBananaGame : MonoBehaviour
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
     }
+
+    [System.Serializable] private class DecisionPayload { public int hand; public bool mouthOpen; }
+    [System.Serializable] private class LockedPayload { public int thrower; public int hand; public bool mouthOpen; }
 }

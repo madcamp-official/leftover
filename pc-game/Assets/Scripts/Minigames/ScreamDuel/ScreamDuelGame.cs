@@ -54,10 +54,19 @@ public class ScreamDuelGame : MonoBehaviour
     private float _turnElapsed;
     private bool _ended;
 
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장) - 판정 임계값/
+    // 타이밍은 전부 그대로다. 턴 진행(_requiredLevel 갱신, 다음 턴/승패)은 매 턴 종료 시점의
+    // _peakLevel/_requiredLevel만으로 결정되는 순수 함수라, 그 값을 똑같이 들고 있는 한
+    // 호스트/클라이언트가 ResolveTurn·BeginTurn을 그대로 재생하면 자동으로 같은 결과가
+    // 나온다 - 그래서 턴 소유자/승패용 별도 이벤트가 필요 없고, 매 프레임 음량(표정 연출용,
+    // 원시 pose 스트림과 같은 성격)과 "이번 턴 끝났다" 신호만 보내면 된다.
+    private float _clientLevel;
+
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
 
         _p1Idle = ArtAssets.LoadCharacter(PlayerId.P1, "scream_idle");
         _p1Shout = ArtAssets.LoadCharacter(PlayerId.P1, "scream_shout");
@@ -78,6 +87,14 @@ public class ScreamDuelGame : MonoBehaviour
         _requiredLevel = baselineRequiredLevel;
         ApplyFace(p1Face, _p1Idle, p1FaceWidth, 0f, p1FaceX);
         ApplyFace(p2Face, _p2Idle, p2FaceWidth, 0f, p2FaceX);
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("sd_level", OnNetLevel);
+            net.Subscribe("sd_turn_end", OnNetTurnEnd);
+        }
+
         BeginTurn(PlayerId.P1);
     }
 
@@ -127,6 +144,7 @@ public class ScreamDuelGame : MonoBehaviour
     {
         _turnOwner = owner;
         _peakLevel = 0f;
+        _clientLevel = 0f;
         _turnElapsed = 0f;
         hud?.SetTurn(owner);
         hud?.ShowEvent($"{owner} 턴 - 상대보다 크게 질러라!");
@@ -134,6 +152,13 @@ public class ScreamDuelGame : MonoBehaviour
 
     private void Update()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            UpdateAsClient();
+            return;
+        }
+
         if (_ended)
         {
             UpdateFaceExpressions(0f, false, false);
@@ -155,9 +180,40 @@ public class ScreamDuelGame : MonoBehaviour
         hud?.SetLevels(_requiredLevel, level, _peakLevel);
         hud?.SetTurnTimeRemaining(turnSeconds - _turnElapsed);
 
+        if (net != null && net.IsHost)
+            net.Send("sd_level", new LevelPayload { level = level });
+
         if (_turnElapsed >= turnSeconds)
             ResolveTurn();
     }
+
+    // 클라이언트는 판정을 하지 않는다 - 실시간 음량은 sd_level 이벤트로 받은 값을 그대로
+    // 표정/게이지에 반영하고(peakLevel도 같은 값으로 mirror), 턴 종료는 sd_turn_end 이벤트를
+    // 받아야만(OnNetTurnEnd) ResolveTurn을 호출한다.
+    private void UpdateAsClient()
+    {
+        if (_ended)
+        {
+            UpdateFaceExpressions(0f, false, false);
+            return;
+        }
+
+        bool isP1Turn = _turnOwner == PlayerId.P1;
+        UpdateFaceExpressions(_clientLevel, isP1Turn, !isP1Turn);
+        hud?.SetLevels(_requiredLevel, _clientLevel, _peakLevel);
+
+        _turnElapsed += Time.deltaTime;
+        hud?.SetTurnTimeRemaining(turnSeconds - _turnElapsed);
+    }
+
+    private void OnNetLevel(NetworkEvent evt)
+    {
+        LevelPayload payload = NetworkSession.Read<LevelPayload>(evt);
+        _clientLevel = payload.level;
+        if (payload.level > _peakLevel) _peakLevel = payload.level;
+    }
+
+    private void OnNetTurnEnd(NetworkEvent evt) => ResolveTurn();
 
     private void UpdateFaceExpressions(float level, bool p1Speaking, bool p2Speaking)
     {
@@ -210,6 +266,12 @@ public class ScreamDuelGame : MonoBehaviour
 
     private void ResolveTurn()
     {
+        // 호스트에서 실제로 턴 시간이 다 됐을 때만 알린다. 클라이언트가 sd_turn_end를 받아
+        // 이 함수를 다시 호출할 때는 IsHost가 false라 재전송되지 않는다.
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("sd_turn_end", new TurnEndPayload());
+
         // 엄격히 더 커야만 성공 - 같거나 작으면 그 자리에서 즉시 패배(재시도 없음).
         if (_peakLevel <= _requiredLevel)
         {
@@ -236,4 +298,7 @@ public class ScreamDuelGame : MonoBehaviour
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
     }
+
+    [System.Serializable] private class LevelPayload { public float level; }
+    [System.Serializable] private class TurnEndPayload { }
 }

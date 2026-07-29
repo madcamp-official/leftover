@@ -44,6 +44,7 @@ public class CoconutCrackGame : MonoBehaviour
 
     private sealed class CoconutEffect
     {
+        public PlayerId Player;
         public bool IsBusy;
         public bool AwaitingRelease;
         public SpriteRenderer Left;
@@ -69,10 +70,19 @@ public class CoconutCrackGame : MonoBehaviour
     private float _p2AnimationProgress;
     private bool _ended;
 
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장, FruitJumpGame과
+    // 동일 패턴) - 판정 임계값/타이밍/연출 수치는 전부 그대로다. 이 게임은 손-머리 거리로
+    // 캐릭터 프레임이 실시간 연속으로 움직이므로(DriveGestureAnimation), 그 진행률 값도
+    // 원시 pose 스트림과 같은 성격(최신 값이 진실, 유실 허용)으로 매 프레임 릴레이한다 -
+    // 판정 자체(CountHits)는 여전히 이산 이벤트(cc_hit/cc_release)로만 보낸다.
+    private bool _clientStarted;
+    private float _clientElapsed;
+
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
 
         if (p1View == null || p2View == null || p1Coconut == null || p2Coconut == null)
         {
@@ -83,14 +93,35 @@ public class CoconutCrackGame : MonoBehaviour
 
         _coconutBreakLeftSprite = ArtAssets.LoadProp("coconut_break_left");
         _coconutBreakRightSprite = ArtAssets.LoadProp("coconut_break_right");
-        _p1Effect = CreateEffect("P1");
-        _p2Effect = CreateEffect("P2");
+        _p1Effect = CreateEffect(PlayerId.P1);
+        _p2Effect = CreateEffect(PlayerId.P2);
 
         hud?.SetTimeRemaining(matchSeconds);
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("cc_started", OnNetStarted);
+            net.Subscribe("cc_gesture", OnNetGesture);
+            net.Subscribe("cc_hit", OnNetHit);
+            net.Subscribe("cc_release", OnNetRelease);
+            net.Subscribe("cc_ended", OnNetEnded);
+        }
+        else if (net != null && net.IsHost)
+        {
+            net.Send("cc_started", new StartedPayload());
+        }
     }
 
     private void Update()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            UpdateAsClient();
+            return;
+        }
+
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
@@ -99,6 +130,12 @@ public class CoconutCrackGame : MonoBehaviour
         // 정방향, 내리면 역방향으로 재생되므로 사람의 실제 한 사이클과 애니메이션이 일치한다.
         DriveGestureAnimation(p1, p1View, ref _p1AnimationProgress);
         DriveGestureAnimation(p2, p2View, ref _p2AnimationProgress);
+
+        if (net != null && net.IsHost)
+        {
+            net.Send("cc_gesture", new GesturePayload { player = 0, progress = _p1AnimationProgress });
+            net.Send("cc_gesture", new GesturePayload { player = 1, progress = _p2AnimationProgress });
+        }
 
         // 코코넛이 고정 위치가 아니라 지금 재생 중인 컷(coconut_N)에 맞춰 씬에 배치해 둔
         // coconutAnchors 자리를 따라다니게 한다(CoconutCharacterFrames.CoconutAnchorWorld).
@@ -119,6 +156,57 @@ public class CoconutCrackGame : MonoBehaviour
             PlayerId? winner = _p1Hits == _p2Hits ? null : (_p1Hits > _p2Hits ? PlayerId.P1 : PlayerId.P2);
             EndMatch(winner);
         }
+    }
+
+    // 클라이언트는 판정을 하지 않는다 - 코코넛 위치는 순수 렌더링 상태(view.CurrentIndex)만
+    // 있으면 계산되므로 호스트와 동일 코드로 매 프레임 갱신하고, 나머지(점수/타격/타이머
+    // 시작)는 전부 이벤트 핸들러가 담당한다.
+    private void UpdateAsClient()
+    {
+        if (p1Coconut != null && p1View != null)
+            p1Coconut.transform.position = p1View.CoconutAnchorWorld(p1View.CurrentIndex) + (Vector3)p1CoconutWorldOffset;
+        if (p2Coconut != null && p2View != null)
+            p2Coconut.transform.position = p2View.CoconutAnchorWorld(p2View.CurrentIndex) + (Vector3)p2CoconutWorldOffset;
+
+        if (_ended || !_clientStarted) return;
+        _clientElapsed += Time.deltaTime;
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _clientElapsed));
+    }
+
+    private void OnNetStarted(NetworkEvent evt)
+    {
+        _clientStarted = true;
+        _clientElapsed = 0f;
+    }
+
+    private void OnNetGesture(NetworkEvent evt)
+    {
+        GesturePayload payload = NetworkSession.Read<GesturePayload>(evt);
+        CoconutCharacterFrames view = payload.player == 0 ? p1View : p2View;
+        if (view == null || view.FrameCount <= 0) return;
+        int index = Mathf.RoundToInt(Mathf.Clamp01(payload.progress) * (view.FrameCount - 1));
+        view.ShowFrame(index);
+    }
+
+    private void OnNetHit(NetworkEvent evt)
+    {
+        PlayerEventPayload payload = NetworkSession.Read<PlayerEventPayload>(evt);
+        if (payload.player == 0) ApplyHit(PlayerId.P1, ref _p1Hits, p1Coconut, p1View, _p1Effect);
+        else ApplyHit(PlayerId.P2, ref _p2Hits, p2Coconut, p2View, _p2Effect);
+    }
+
+    private void OnNetRelease(NetworkEvent evt)
+    {
+        PlayerEventPayload payload = NetworkSession.Read<PlayerEventPayload>(evt);
+        RespawnCoconut(payload.player == 0 ? p1Coconut : p2Coconut, payload.player == 0 ? _p1Effect : _p2Effect);
+    }
+
+    private void OnNetEnded(NetworkEvent evt)
+    {
+        EndedPayload payload = NetworkSession.Read<EndedPayload>(evt);
+        _ended = true;
+        PlayerId? winner = DecodeWinner(payload.winner);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
     }
 
     private void DriveGestureAnimation(PlayerPoseState state, CoconutCharacterFrames view, ref float smoothedProgress)
@@ -154,11 +242,9 @@ public class CoconutCrackGame : MonoBehaviour
 
         if (readyToHit && distance <= hitDistance)
         {
-            hitCount++;
             readyToHit = false;
             releaseHeld = 0f;
-            hud?.SetHits(id, hitCount);
-            TryBreakCoconut(coconut, view, effect);
+            ApplyHit(id, ref hitCount, coconut, view, effect);
         }
         else if (!readyToHit)
         {
@@ -172,6 +258,16 @@ public class CoconutCrackGame : MonoBehaviour
                 RespawnCoconut(coconut, effect);
             }
         }
+    }
+
+    // 타격이 확정되는 지점(실제 판정 - CountHits, 또는 클라이언트가 cc_hit 이벤트를 받아
+    // 재생할 때 - OnNetHit) 양쪽이 공유하는 유일한 진입점. 여기서 갈리지 않게 해서 두 경로가
+    // 항상 똑같은 점수/HUD/연출을 만들도록 한다.
+    private void ApplyHit(PlayerId id, ref int hitCount, SpriteRenderer coconut, CoconutCharacterFrames view, CoconutEffect effect)
+    {
+        hitCount++;
+        hud?.SetHits(id, hitCount);
+        TryBreakCoconut(coconut, view, effect);
     }
 
     private bool AreHandsLowered(PlayerPoseState state)
@@ -196,6 +292,11 @@ public class CoconutCrackGame : MonoBehaviour
             : coconut.transform.position;
         coconut.enabled = false;
         effect.AwaitingRelease = true;
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("cc_hit", new PlayerEventPayload { player = effect.Player == PlayerId.P1 ? 0 : 1 });
+
         if (effect.IsBusy) return;
 
         effect.IsBusy = true;
@@ -207,6 +308,10 @@ public class CoconutCrackGame : MonoBehaviour
         if (coconut == null || effect == null || !effect.AwaitingRelease) return;
         effect.AwaitingRelease = false;
         coconut.enabled = true;
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("cc_release", new PlayerEventPayload { player = effect.Player == PlayerId.P1 ? 0 : 1 });
     }
 
     // 정점에서 시작된 깨진 조각 연출만 짧은 고정 시간을 쓴다. 캐릭터의 올림/내림 속도와
@@ -250,10 +355,12 @@ public class CoconutCrackGame : MonoBehaviour
         effect.IsBusy = false;
     }
 
-    private CoconutEffect CreateEffect(string playerName)
+    private CoconutEffect CreateEffect(PlayerId player)
     {
+        string playerName = player == PlayerId.P1 ? "P1" : "P2";
         return new CoconutEffect
         {
+            Player = player,
             Left = CreateHalfRenderer($"{playerName}_CoconutHalf_Left", _coconutBreakLeftSprite),
             Right = CreateHalfRenderer($"{playerName}_CoconutHalf_Right", _coconutBreakRightSprite),
         };
@@ -319,6 +426,10 @@ public class CoconutCrackGame : MonoBehaviour
         hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("cc_ended", new EndedPayload { winner = EncodeWinner(winner) });
     }
 
     private IEnumerator ProceedAfterDelay()
@@ -326,6 +437,14 @@ public class CoconutCrackGame : MonoBehaviour
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
     }
+
+    private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
+    private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
+
+    [System.Serializable] private class StartedPayload { }
+    [System.Serializable] private class PlayerEventPayload { public int player; }
+    [System.Serializable] private class GesturePayload { public int player; public float progress; }
+    [System.Serializable] private class EndedPayload { public int winner; }
 
     private void OnValidate()
     {

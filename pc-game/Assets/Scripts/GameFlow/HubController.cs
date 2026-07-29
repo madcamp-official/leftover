@@ -23,11 +23,14 @@ public class HubController : MonoBehaviour
 
     private string _toastText = "";
     private float _toastTimer;
+    private string _joinAddressInput = "127.0.0.1";
 
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
+        ArtAssets.PreloadLoading();
         ArtAssets.PreloadScreamDuel();
 
         gameStartButton?.onClick.AddListener(OnGameStartClicked);
@@ -57,6 +60,12 @@ public class HubController : MonoBehaviour
             _toastTimer -= Time.deltaTime;
             if (_toastTimer <= 0f) _toastText = "";
         }
+
+        // 클라이언트는 자기 판단으로 매치를 시작하지 못한다 - 호스트의 match_start
+        // 이벤트로만 시작한다(MatchController.StartMatch 참고).
+        NetworkSession net = NetworkSession.Instance;
+        if (gameStartButton != null && net != null)
+            gameStartButton.interactable = net.Role != NetworkRole.Client;
     }
 
     private void OnGameStartClicked() => MatchController.Instance?.StartMatch();
@@ -97,5 +106,72 @@ public class HubController : MonoBehaviour
             GUI.Label(new Rect(0, Screen.height - 100, Screen.width, 50), _toastText, toastStyle);
         }
 
+        bool onStartScreen = match != null && !match.IsMatchComplete && match.CurrentRoundIndex < 0;
+        if (onStartScreen) DrawNetworkPanel();
+    }
+
+    // 호스트-클라이언트 역할 선택 패널 (docs/멀티플레이_분산_아키텍처_설계.md 5장).
+    // 전용 UI 프리팹이 아직 없어 임시로 OnGUI로 그린다 - 위 _toastText와 같은 방식.
+    private void DrawNetworkPanel()
+    {
+        NetworkSession net = NetworkSession.Instance;
+        if (net == null) return;
+
+        var boxStyle = new GUIStyle(GUI.skin.box);
+        var titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
+        var labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true };
+
+        GUILayout.BeginArea(new Rect(16, 16, 320, 200), boxStyle);
+        GUILayout.Label("네트워크 모드", titleStyle);
+        GUILayout.Label($"{DescribeRole(net.Role)} / {DescribeState(net.ConnectionState)}", labelStyle);
+
+        switch (net.Role)
+        {
+            case NetworkRole.Offline:
+                if (GUILayout.Button("호스트로 시작")) net.StartHost();
+                GUILayout.Label("접속할 호스트 IP:", labelStyle);
+                _joinAddressInput = GUILayout.TextField(_joinAddressInput);
+                if (GUILayout.Button("접속")) net.StartClient(_joinAddressInput);
+                break;
+            case NetworkRole.Host:
+                GUILayout.Label($"내 IP: {net.LocalAddressHint} (포트 {GameEventChannel.DefaultPort})", labelStyle);
+                GUILayout.Label(net.ConnectionState == NetworkConnectionState.Connected
+                    ? "클라이언트 연결됨"
+                    : "클라이언트 접속 대기 중...", labelStyle);
+                if (GUILayout.Button("연결 끊기")) net.Shutdown();
+                break;
+            case NetworkRole.Client:
+                GUILayout.Label(net.ConnectionState == NetworkConnectionState.Connected
+                    ? "호스트에 연결됨 - 호스트가 시작하기를 기다립니다"
+                    : "호스트 접속 시도 중...", labelStyle);
+                if (GUILayout.Button("연결 끊기")) net.Shutdown();
+                break;
+        }
+
+        if (!string.IsNullOrEmpty(net.LastError))
+            GUILayout.Label(net.LastError, labelStyle);
+
+        GUILayout.EndArea();
+    }
+
+    private static string DescribeRole(NetworkRole role)
+    {
+        switch (role)
+        {
+            case NetworkRole.Host: return "호스트";
+            case NetworkRole.Client: return "클라이언트";
+            default: return "오프라인(로컬 단독)";
+        }
+    }
+
+    private static string DescribeState(NetworkConnectionState state)
+    {
+        switch (state)
+        {
+            case NetworkConnectionState.Listening: return "대기 중";
+            case NetworkConnectionState.Connecting: return "접속 중";
+            case NetworkConnectionState.Connected: return "연결됨";
+            default: return "연결 안 됨";
+        }
     }
 }

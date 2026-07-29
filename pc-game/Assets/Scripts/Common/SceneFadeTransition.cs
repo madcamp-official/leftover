@@ -26,6 +26,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
     [SerializeField, Min(0f)] private float blackHoldSeconds = 0.08f;
 
     private CanvasGroup _group;
+    private LoadingScreenController _loadingScreen;
     private bool _isTransitioning;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -44,6 +45,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
         Instance = this;
         DontDestroyOnLoad(gameObject);
         BuildOverlay();
+        EnsureLoadingScreen();
     }
 
     private IEnumerator Start()
@@ -66,12 +68,50 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
     private IEnumerator LoadRoutine(string sceneName)
     {
+        EnsureRuntimeObjects();
         _isTransitioning = true;
         _group.blocksRaycasts = true;
         yield return FadeTo(1f, fadeOutSeconds);
 
-        AsyncOperation load = SceneManager.LoadSceneAsync(sceneName);
-        while (!load.isDone) yield return null;
+        bool showLoadingScreen = sceneName != MatchController.HubSceneName;
+        AsyncOperation load;
+
+        if (showLoadingScreen)
+        {
+            _loadingScreen.Show(sceneName);
+            yield return FadeTo(0f, fadeInSeconds);
+
+            load = SceneManager.LoadSceneAsync(sceneName);
+            if (load == null)
+            {
+                Debug.LogError($"[SceneTransition] 씬을 읽을 수 없습니다: {sceneName}");
+                _loadingScreen.Hide();
+                _group.blocksRaycasts = false;
+                _isTransitioning = false;
+                yield break;
+            }
+
+            load.allowSceneActivation = false;
+            while (load.progress < 0.9f || !_loadingScreen.IsReady)
+                yield return null;
+
+            yield return FadeTo(1f, fadeOutSeconds);
+            _loadingScreen.Hide();
+            load.allowSceneActivation = true;
+            while (!load.isDone) yield return null;
+        }
+        else
+        {
+            load = SceneManager.LoadSceneAsync(sceneName);
+            if (load == null)
+            {
+                Debug.LogError($"[SceneTransition] 씬을 읽을 수 없습니다: {sceneName}");
+                _group.blocksRaycasts = false;
+                _isTransitioning = false;
+                yield break;
+            }
+            while (!load.isDone) yield return null;
+        }
 
         // 새 씬이 로드된 뒤에도 검정을 다시 확정하고 실제 한 프레임을 렌더한다. 이렇게 해야
         // 새 화면이 잠깐 노출된 다음 어두워지는 현상 없이 반드시 "검정 → 새 화면 fade in"이 된다.
@@ -114,10 +154,10 @@ public sealed class SceneFadeTransition : MonoBehaviour
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 32760;
         gameObject.AddComponent<GraphicRaycaster>();
-        _group = gameObject.AddComponent<CanvasGroup>();
 
         var imageGo = new GameObject("BlackOverlay");
         imageGo.transform.SetParent(transform, false);
+        _group = imageGo.AddComponent<CanvasGroup>();
         var rt = imageGo.AddComponent<RectTransform>();
         rt.anchorMin = Vector2.zero;
         rt.anchorMax = Vector2.one;
@@ -126,5 +166,41 @@ public sealed class SceneFadeTransition : MonoBehaviour
         var image = imageGo.AddComponent<Image>();
         image.color = Color.black;
         image.raycastTarget = true;
+    }
+
+    // Play 중 스크립트 리로드 뒤에는 Awake가 다시 호출되지 않을 수 있다. 그 상태에서도
+    // 기존 BlackOverlay를 다시 찾고 로딩 UI가 없으면 즉시 재생성한다.
+    private void EnsureRuntimeObjects()
+    {
+        if (_group == null)
+        {
+            Transform black = transform.Find("BlackOverlay");
+            if (black == null)
+            {
+                BuildOverlay();
+            }
+            else
+            {
+                _group = black.GetComponent<CanvasGroup>();
+                if (_group == null) _group = black.gameObject.AddComponent<CanvasGroup>();
+            }
+        }
+        EnsureLoadingScreen();
+    }
+
+    private void EnsureLoadingScreen()
+    {
+        if (_loadingScreen != null && _loadingScreen.gameObject != gameObject) return;
+
+        LoadingScreenController existing = FindAnyObjectByType<LoadingScreenController>();
+        if (existing != null && existing.gameObject != gameObject)
+        {
+            _loadingScreen = existing;
+            return;
+        }
+
+        var loadingGo = new GameObject("LoadingScreenController");
+        DontDestroyOnLoad(loadingGo);
+        _loadingScreen = loadingGo.AddComponent<LoadingScreenController>();
     }
 }

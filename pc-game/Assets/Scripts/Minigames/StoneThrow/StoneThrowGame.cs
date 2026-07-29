@@ -47,20 +47,48 @@ public class StoneThrowGame : MonoBehaviour
     private float _p1CandidateSeconds;
     private float _p2CandidateSeconds;
 
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장, 다른 미니게임과
+    // 동일 패턴) - 판정 임계값/타이밍/이징은 전부 그대로다. 상대 상태 비교가 들어가는
+    // 명중 판정(ResolveThrowOutcome)도 호스트 전담이고, 클라이언트는 그 결과만 받아 재생한다.
+    private bool _clientStarted;
+    private float _clientElapsed;
+
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
         if (stoneTemplate != null) stoneTemplate.gameObject.SetActive(false);
         ApplySide(PlayerId.P1, _p1Side);
         ApplySide(PlayerId.P2, _p2Side);
         hud?.SetHits(PlayerId.P1, 0);
         hud?.SetHits(PlayerId.P2, 0);
         hud?.SetTimeRemaining(matchSeconds);
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("st_started", OnNetStarted);
+            net.Subscribe("st_side", OnNetSide);
+            net.Subscribe("st_throw", OnNetThrow);
+            net.Subscribe("st_result", OnNetResult);
+            net.Subscribe("st_ended", OnNetEnded);
+        }
+        else if (net != null && net.IsHost)
+        {
+            net.Send("st_started", new StartedPayload());
+        }
     }
 
     private void Update()
     {
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            UpdateAsClient();
+            return;
+        }
+
         if (_ended) return;
 
         // 카메라 준비 여부는 로딩 단계에서만 확인한다. 경기가 시작된 뒤에는 추적이
@@ -94,6 +122,55 @@ public class StoneThrowGame : MonoBehaviour
             TriggerFireEvent(PlayerId.P2, p2);
         }
     }
+
+    // 클라이언트는 판정을 하지 않는다 - 손 방향/발사/명중 결과는 전부 이벤트 핸들러가
+    // 담당하고, 여기서는 타이머 표시만 로컬에서 흘려보낸다.
+    private void UpdateAsClient()
+    {
+        if (_ended || !_clientStarted) return;
+        _clientElapsed += Time.deltaTime;
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _clientElapsed));
+    }
+
+    private void OnNetStarted(NetworkEvent evt)
+    {
+        _clientStarted = true;
+        _clientElapsed = 0f;
+    }
+
+    private void OnNetSide(NetworkEvent evt)
+    {
+        SidePayload payload = NetworkSession.Read<SidePayload>(evt);
+        PlayerId player = DecodePlayer(payload.player);
+        StoneThrowSide side = payload.side == 1 ? StoneThrowSide.Right : StoneThrowSide.Left;
+        if (player == PlayerId.P1) _p1Side = side; else _p2Side = side;
+        ApplySide(player, side);
+    }
+
+    private void OnNetThrow(NetworkEvent evt)
+    {
+        ThrowPayload payload = NetworkSession.Read<ThrowPayload>(evt);
+        ExecuteThrow(DecodePlayer(payload.thrower), payload.hand == 1 ? StoneThrowHand.Right : StoneThrowHand.Left);
+    }
+
+    private void OnNetResult(NetworkEvent evt)
+    {
+        ResultPayload payload = NetworkSession.Read<ResultPayload>(evt);
+        ApplyThrowOutcome(DecodePlayer(payload.thrower), DecodePlayer(payload.target), payload.hit);
+    }
+
+    private void OnNetEnded(NetworkEvent evt)
+    {
+        EndedPayload payload = NetworkSession.Read<EndedPayload>(evt);
+        _ended = true;
+        PlayerId? winner = DecodeWinner(payload.winner);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
+    }
+
+    private static int EncodePlayer(PlayerId player) => player == PlayerId.P1 ? 0 : 1;
+    private static PlayerId DecodePlayer(int value) => value == 0 ? PlayerId.P1 : PlayerId.P2;
+    private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
+    private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
 
     private void UpdateSide(PlayerId player, PlayerPoseState state, ref StoneThrowSide current,
         ref StoneThrowSide? candidate, ref float candidateSeconds)
@@ -131,6 +208,10 @@ public class StoneThrowGame : MonoBehaviour
     {
         FrontView(player)?.SetSide(side);
         BackView(player)?.SetSide(side);
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("st_side", new SidePayload { player = EncodePlayer(player), side = side == StoneThrowSide.Right ? 1 : 0 });
     }
 
     private void TriggerFireEvent(PlayerId thrower, PlayerPoseState state)
@@ -138,7 +219,16 @@ public class StoneThrowGame : MonoBehaviour
         // 발사 이벤트 순간 현재 카메라에서 한 손만 인식됐을 때만 던진다.
         // 미추적/양손/무손 상태는 단순히 이번 이벤트를 건너뛰며 경기는 멈추지 않는다.
         if (!TryGetRecognizedThrowHand(state, out StoneThrowHand hand)) return;
+        ExecuteThrow(thrower, hand);
+    }
 
+    // 실제 판정(TriggerFireEvent, 호스트 전용)과 클라이언트가 st_throw 이벤트를 받아 재생할
+    // 때(OnNetThrow) 양쪽이 공유하는 진입점 - 던질 손이 이미 정해진 뒤의 연출/좌표 계산은
+    // 씬 앵커 기준 순수 기하 계산이라(포즈 입력과 무관) 호스트/클라이언트가 각자 로컬에서
+    // 똑같이 계산해도 결과가 같다. 그래서 좌표를 네트워크로 보내지 않고 (thrower, hand)만
+    // 보낸다.
+    private void ExecuteThrow(PlayerId thrower, StoneThrowHand hand)
+    {
         // 던지는 사람 화면의 오른쪽은 마주 보는 상대의 왼쪽이다.
         // 반대로 던지는 사람 화면의 왼쪽은 상대의 오른쪽이다.
         StoneThrowSide aimedTargetSide = hand == StoneThrowHand.Right
@@ -160,6 +250,10 @@ public class StoneThrowGame : MonoBehaviour
             ? BackView(target).TargetPosition(aimedTargetSide) : Vector3.zero;
         StartCoroutine(PlayThrow(thrower, hand, aimedTargetSide,
             lockedFrontRelease, lockedBackRelease, lockedFrontTarget, lockedBackTarget));
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("st_throw", new ThrowPayload { thrower = EncodePlayer(thrower), hand = hand == StoneThrowHand.Right ? 1 : 0 });
     }
 
     private static bool TryGetRecognizedThrowHand(PlayerPoseState state, out StoneThrowHand hand)
@@ -239,8 +333,28 @@ public class StoneThrowGame : MonoBehaviour
 
     private void ResolveThrowOutcome(PlayerId thrower, PlayerId target, StoneThrowSide lockedTargetSide)
     {
+        // 판정은 호스트 전담이다 - 클라이언트도 이 함수를 호출하긴 하지만(자기 화면의 돌이
+        // 도착하는 시점), CurrentSide(target)는 st_side 이벤트로 받은 값이라 호스트가 판정한
+        // 그 순간과 미세하게 다를 수 있다. 그래서 클라이언트는 여기서 다시 판정하지 않고
+        // st_result 이벤트로 받은 결과(OnNetResult → ApplyThrowOutcome)만 그대로 재생한다.
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient) return;
+
         // 도착 순간에도 처음 조준한 위치에 남아 있어야 명중한다.
         bool hit = CurrentSide(target) == lockedTargetSide;
+        ApplyThrowOutcome(thrower, target, hit);
+
+        if (net != null && net.IsHost)
+            net.Send("st_result", new ResultPayload
+            {
+                thrower = EncodePlayer(thrower),
+                target = EncodePlayer(target),
+                hit = hit,
+            });
+    }
+
+    private void ApplyThrowOutcome(PlayerId thrower, PlayerId target, bool hit)
+    {
         if (!hit)
         {
             hud?.ShowEvent($"{Label(target)} 회피!");
@@ -304,6 +418,10 @@ public class StoneThrowGame : MonoBehaviour
         hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("st_ended", new EndedPayload { winner = EncodeWinner(winner) });
     }
 
     private IEnumerator ProceedAfterDelay()
@@ -311,4 +429,10 @@ public class StoneThrowGame : MonoBehaviour
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
     }
+
+    [System.Serializable] private class StartedPayload { }
+    [System.Serializable] private class SidePayload { public int player; public int side; }
+    [System.Serializable] private class ThrowPayload { public int thrower; public int hand; }
+    [System.Serializable] private class ResultPayload { public int thrower; public int target; public bool hit; }
+    [System.Serializable] private class EndedPayload { public int winner; }
 }

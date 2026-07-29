@@ -44,10 +44,17 @@ public class StaringContestGame : MonoBehaviour
     private float _elapsed;
     private bool _ended;
 
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장) - 판정 임계값/
+    // 타이밍은 전부 그대로다. 위험도(p1Ratio/p2Ratio)는 표정이 실시간으로 바뀌어야 하므로
+    // 원시 pose 스트림과 같은 성격(최신 값이 진실)으로 매 프레임 릴레이한다. "먼저 감은 쪽이
+    // 패배" 판정은 반드시 호스트가 자기 타이머로만 내려야 하므로(설계 문서 6장 - 도착 순서가
+    // 아니라 시각 비교가 필요한 경우) 클라이언트는 EndRound 판정 자체를 실행하지 않고
+    // sc_ended 이벤트로 받은 결과만 표시한다.
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
 
         if (p1Anchor == null || p2Anchor == null)
         {
@@ -67,6 +74,13 @@ public class StaringContestGame : MonoBehaviour
         if (p2Timer != null) p2Timer.earThreshold = earThreshold;
         hud?.SetTimeRemaining(maxMatchSeconds);
         StartCoroutine(HideRuleBannerAfterDelay());
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("sc_ratio", OnNetRatio);
+            net.Subscribe("sc_ended", OnNetEnded);
+        }
     }
 
     private IEnumerator HideRuleBannerAfterDelay()
@@ -84,6 +98,16 @@ public class StaringContestGame : MonoBehaviour
         if (_p1Anim != null) { _p1Anim.Width = p1Width; _p1Anim.YOffset = p1YOffset; }
         if (_p2Anim != null) { _p2Anim.Width = p2Width; _p2Anim.YOffset = p2YOffset; }
 
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            // 클라이언트는 판정을 하지 않는다 - 위험도/결과는 전부 이벤트 핸들러가 담당하고
+            // 여기서는 타이머 표시만 로컬에서 흘려보낸다.
+            _elapsed += Time.deltaTime;
+            hud?.SetTimeRemaining(maxMatchSeconds - _elapsed);
+            return;
+        }
+
         _elapsed += Time.deltaTime;
 
         float p1ContinuousRatio = (p1Timer?.ClosedDuration ?? 0f) / loseAfterClosedSeconds;
@@ -97,6 +121,9 @@ public class StaringContestGame : MonoBehaviour
         hud?.SetTimeRemaining(maxMatchSeconds - _elapsed);
         _p1Anim?.SetProgress(p1Ratio);
         _p2Anim?.SetProgress(p2Ratio);
+
+        if (net != null && net.IsHost)
+            net.Send("sc_ratio", new RatioPayload { p1 = p1Ratio, p2 = p2Ratio });
 
         bool p1Closed = p1Timer != null &&
             (p1Timer.IsClosedContinuously(loseAfterClosedSeconds) || p1Timer.TotalClosedDuration >= loseAfterTotalClosedSeconds);
@@ -115,12 +142,36 @@ public class StaringContestGame : MonoBehaviour
         }
     }
 
+    private void OnNetRatio(NetworkEvent evt)
+    {
+        RatioPayload payload = NetworkSession.Read<RatioPayload>(evt);
+        hud?.SetDanger(PlayerId.P1, payload.p1);
+        hud?.SetDanger(PlayerId.P2, payload.p2);
+        _p1Anim?.SetProgress(payload.p1);
+        _p2Anim?.SetProgress(payload.p2);
+    }
+
+    private void OnNetEnded(NetworkEvent evt)
+    {
+        EndedPayload payload = NetworkSession.Read<EndedPayload>(evt);
+        _ended = true;
+        PlayerId? winner = DecodeWinner(payload.winner);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!");
+    }
+
+    private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
+    private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
+
     private void EndRound(PlayerId? winner)
     {
         _ended = true;
         hud?.ShowEvent(winner == null ? "무승부!" : $"{winner} 승리!");
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("sc_ended", new EndedPayload { winner = EncodeWinner(winner) });
     }
 
     private IEnumerator ProceedAfterDelay()
@@ -128,4 +179,7 @@ public class StaringContestGame : MonoBehaviour
         yield return new WaitForSeconds(resultDisplaySeconds);
         MatchController.Instance?.LoadNextRound();
     }
+
+    [System.Serializable] private class RatioPayload { public float p1; public float p2; }
+    [System.Serializable] private class EndedPayload { public int winner; }
 }

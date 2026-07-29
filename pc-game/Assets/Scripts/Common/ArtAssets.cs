@@ -20,6 +20,14 @@ public static class ArtAssets
         if (SpriteCache.TryGetValue(resourcePath, out Sprite cached) && cached != null)
             return cached;
 
+        // Single Sprite 임포트는 가장 직접적인 경로로 먼저 읽는다.
+        Sprite single = Resources.Load<Sprite>(resourcePath);
+        if (single != null)
+        {
+            SpriteCache[resourcePath] = single;
+            return single;
+        }
+
         Sprite[] sprites = Resources.LoadAll<Sprite>(resourcePath);
         Sprite best = null;
         float bestArea = -1f;
@@ -40,6 +48,7 @@ public static class ArtAssets
     public static Sprite LoadStoneOrBanana(string name) => LoadSprite($"StoneOrBanana/{name}");
     public static Sprite LoadStaringContest(string name) => LoadSprite($"StaringContest/{name}");
     public static Sprite LoadScreamDuel(string name) => LoadSprite($"ScreamDuel/{name}");
+    public static Sprite LoadLoading(string name) => LoadSprite($"Loading/{name}");
     public static Sprite LoadFeatherFlight(string name) => LoadSprite($"FeatherFlight/{name}");
 
     // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래의
@@ -67,6 +76,31 @@ public static class ArtAssets
         LoadCharacter(PlayerId.P2, "scream_idle");
         LoadCharacter(PlayerId.P2, "scream_shout");
         LoadCharacter(PlayerId.P2, "scream_shout_swollen");
+    }
+
+    // 로딩 배경은 게임 도중 처음 읽지 않고 Hub 진입 때 전부 메모리에 올린다.
+    // 화면을 표시할 때는 이 캐시에서 6장 중 하나만 무작위로 선택한다.
+    public static void PreloadLoading()
+    {
+        string[] backgrounds =
+        {
+            "loading_01_volcanic_springs",
+            "loading_02_crystal_cave",
+            "loading_03_fossil_canyon",
+            "loading_04_waterfall_overlook",
+            "loading_05_moonlit_beach",
+            "loading_06_snow_valley",
+        };
+        foreach (string background in backgrounds)
+            LoadLoading(background);
+
+        LoadLoading("loading_ring");
+        LoadLoading("logo_base");
+        LoadLoading("message_panel");
+        LoadLoading("status_badge_base");
+        LoadLoading("status_icon_loading");
+        LoadLoading("status_icon_ready");
+        Resources.Load<TextAsset>("Loading/tips");
     }
 
     // 돌던지기의 오버더숄더 구도처럼 같은 플레이어를 앞/뒤에서 동시에 보여줄 때 사용한다.

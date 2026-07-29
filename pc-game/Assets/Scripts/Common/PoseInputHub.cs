@@ -48,6 +48,12 @@ public sealed class PlayerPoseState
     public bool IsVoiceTracked { get; internal set; }
     internal float LastVoiceSeenAt;
 
+    // 게임 사이 로딩 화면에서 수집하는 공통 차렷 자세 기준값.
+    public bool IsCalibrated { get; internal set; }
+    public float CalibrationProgress { get; internal set; }
+    public float BaselineHipY { get; internal set; }
+    internal float CalibrationTimer;
+
     // --- 공용 제스처 판정 (전부 상태 없는 순간값 - 임계값은 게임마다 다를 수 있어 인자로 받음) ---
 
     public bool IsHandRaised(bool rightHand, float raiseRatio = 0.15f)
@@ -109,9 +115,11 @@ public sealed class PoseInputHub : MonoBehaviour
 
     // 이 시간 이상 새 프레임이 안 오면 "화면에서 사라짐"으로 취급 (PROTOCOL.md 권장값).
     public float staleTimeout = 0.5f;
+    public float calibrationSeconds = 1.5f;
 
     public PlayerPoseState P1 { get; } = new PlayerPoseState();
     public PlayerPoseState P2 { get; } = new PlayerPoseState();
+    private bool _calibrationActive;
 
     public PlayerPoseState Get(PlayerId id) => id == PlayerId.P1 ? P1 : P2;
 
@@ -129,6 +137,53 @@ public sealed class PoseInputHub : MonoBehaviour
         if (P2.IsTracked && now - P2.LastSeenAt > staleTimeout) P2.IsTracked = false;
         if (P1.IsVoiceTracked && now - P1.LastVoiceSeenAt > staleTimeout) { P1.IsVoiceTracked = false; P1.VoiceLevel = 0f; }
         if (P2.IsVoiceTracked && now - P2.LastVoiceSeenAt > staleTimeout) { P2.IsVoiceTracked = false; P2.VoiceLevel = 0f; }
+        if (_calibrationActive)
+        {
+            UpdateCalibration(P1);
+            UpdateCalibration(P2);
+            if (P1.IsCalibrated && P2.IsCalibrated) _calibrationActive = false;
+        }
+    }
+
+    public void BeginCalibration()
+    {
+        ResetCalibration(P1);
+        ResetCalibration(P2);
+        _calibrationActive = true;
+    }
+
+    public bool AreBothCalibrated => P1.IsCalibrated && P2.IsCalibrated;
+
+    private static void ResetCalibration(PlayerPoseState state)
+    {
+        state.IsCalibrated = false;
+        state.CalibrationProgress = 0f;
+        state.CalibrationTimer = 0f;
+        state.BaselineHipY = 0f;
+    }
+
+    private void UpdateCalibration(PlayerPoseState state)
+    {
+        if (state.IsCalibrated) return;
+        float torso = state.Joints.TorsoLength;
+        if (!state.IsTracked || torso <= 0.04f)
+        {
+            state.CalibrationTimer = Mathf.Max(0f, state.CalibrationTimer - Time.unscaledDeltaTime * 2f);
+            state.CalibrationProgress = calibrationSeconds <= 0f
+                ? 0f
+                : Mathf.Clamp01(state.CalibrationTimer / calibrationSeconds);
+            return;
+        }
+
+        float hipY = state.Joints.HipMid.y;
+        state.BaselineHipY = state.CalibrationTimer <= 0f
+            ? hipY
+            : Mathf.Lerp(state.BaselineHipY, hipY, 0.12f);
+        state.CalibrationTimer += Time.unscaledDeltaTime;
+        state.CalibrationProgress = calibrationSeconds <= 0f
+            ? 1f
+            : Mathf.Clamp01(state.CalibrationTimer / calibrationSeconds);
+        if (state.CalibrationProgress >= 1f) state.IsCalibrated = true;
     }
 
     // PoseStreamReceiver가 메인 스레드에서 프레임마다 호출한다. 테스트 코드에서 vision-server
