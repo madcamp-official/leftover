@@ -43,7 +43,8 @@ image/
 - 새 게임을 추가할 때는 `games/<game_name>/background`, `hud`, `previews` 구조를 따르고,
   독립 장애물이나 소품이 필요하면 `obstacles` 또는 `props`를 추가한다.
 - Unity 안에서의 실제 위치/크기 변경은 각 씬의 `EditableLayout` 또는
-  `pc-game/Assets/Prefabs`에서 한다. 자세한 방법은 `docs/UNITY_EDITOR_편집_가이드.md` 참고.
+  `pc-game/Assets/Prefabs`에서 한다. 자세한 방법은 `pc-game/README.md` "에디터에서 화면 편집"
+  참고.
 
 ## 정리 원칙
 
