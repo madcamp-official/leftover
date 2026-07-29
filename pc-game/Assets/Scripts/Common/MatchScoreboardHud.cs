@@ -24,15 +24,20 @@ public sealed class MatchScoreboardHud : MonoBehaviour
     [SerializeField] private Sprite _drawSprite;
     private int _displayedVersion = -1;
 
+    // 원래 하단 중앙(920x424)에 크게 떠 있어 플레이 화면을 가린다는 피드백을 받아, 절반
+    // 크기로 줄이고 하단 우측 구석으로 옮겼다 - 다른 미니게임 HUD는 상단 좌/우(네임플레이트)와
+    // 상단 중앙(타이머)만 쓰므로 하단 구석은 비어 있다.
+    private const float Scale = 0.5f;
+
     public static MatchScoreboardHud Build(Transform parent)
     {
         var go = new GameObject("MatchScoreboard");
         go.transform.SetParent(parent, false);
         var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-        rt.pivot = new Vector2(0.5f, 0f);
-        rt.anchoredPosition = new Vector2(0f, 18f);
-        rt.sizeDelta = new Vector2(920f, 424f);
+        rt.anchorMin = rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.anchoredPosition = new Vector2(-30f, 24f);
+        rt.sizeDelta = new Vector2(920f, 424f) * Scale;
 
         MatchScoreboardHud hud = go.AddComponent<MatchScoreboardHud>();
         hud.BuildWidgets(rt);
@@ -46,24 +51,24 @@ public sealed class MatchScoreboardHud : MonoBehaviour
         _drawSprite = ArtAssets.LoadMatchResult("result_draw");
 
         Image board = CreateBox(root, "Board", ArtAssets.LoadMatchResult("match_result_board"),
-            new Vector2(0.5f, 0.5f), new Vector2(920f, 424f));
+            new Vector2(0.5f, 0.5f), new Vector2(920f, 424f) * Scale);
         board.raycastTarget = false;
 
         for (int i = 0; i < IconNames.Length; i++)
         {
             Vector2 anchor = new Vector2(ColumnAnchors[i].x, 0.704f);
-            CreateBox(root, $"GameIcon_{i + 1}_{IconNames[i]}", ArtAssets.LoadGameIcon(IconNames[i]), anchor, new Vector2(82f, 82f));
+            CreateBox(root, $"GameIcon_{i + 1}_{IconNames[i]}", ArtAssets.LoadGameIcon(IconNames[i]), anchor, new Vector2(82f, 82f) * Scale);
         }
 
-        CreateBox(root, "Player1Face", ArtAssets.LoadCharacter(PlayerId.P1, "head"), new Vector2(0.151f, 0.493f), new Vector2(116f, 108f));
-        CreateBox(root, "Player2Face", ArtAssets.LoadCharacter(PlayerId.P2, "head"), new Vector2(0.151f, 0.269f), new Vector2(116f, 108f));
+        CreateBox(root, "Player1Face", ArtAssets.LoadCharacter(PlayerId.P1, "head"), new Vector2(0.151f, 0.493f), new Vector2(116f, 108f) * Scale);
+        CreateBox(root, "Player2Face", ArtAssets.LoadCharacter(PlayerId.P2, "head"), new Vector2(0.151f, 0.269f), new Vector2(116f, 108f) * Scale);
 
         for (int i = 0; i < 6; i++)
         {
             _p1Results[i] = CreateBox(root, $"P1Result_{i + 1}", null,
-                new Vector2(ColumnAnchors[i].x, 0.493f), new Vector2(76f, 76f));
+                new Vector2(ColumnAnchors[i].x, 0.493f), new Vector2(76f, 76f) * Scale);
             _p2Results[i] = CreateBox(root, $"P2Result_{i + 1}", null,
-                new Vector2(ColumnAnchors[i].x, 0.269f), new Vector2(76f, 76f));
+                new Vector2(ColumnAnchors[i].x, 0.269f), new Vector2(76f, 76f) * Scale);
             _p1Results[i].gameObject.SetActive(false);
             _p2Results[i].gameObject.SetActive(false);
         }

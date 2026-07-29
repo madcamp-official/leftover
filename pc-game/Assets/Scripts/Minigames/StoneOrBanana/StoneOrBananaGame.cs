@@ -159,6 +159,7 @@ public class StoneOrBananaGame : MonoBehaviour
         if (player == PlayerId.P1) _p1Fullness = Mathf.Min(maxFullness, _p1Fullness + amount);
         else _p2Fullness = Mathf.Min(maxFullness, _p2Fullness + amount);
         RefreshStatusHud();
+        StartCoroutine(ReactToEat(player, "face_banana_chewing_puffed_cheeks"));
     }
 
     private void AddTeeth(PlayerId player, float amount)
@@ -166,6 +167,24 @@ public class StoneOrBananaGame : MonoBehaviour
         if (player == PlayerId.P1) _p1Teeth = Mathf.Max(0f, _p1Teeth + amount);
         else _p2Teeth = Mathf.Max(0f, _p2Teeth + amount);
         RefreshStatusHud();
+
+        // maxTeeth(3)와 깨진 이 표정 2단계(1개/2개)가 정확히 맞아떨어진다 - 지금까지 몇 개
+        // 잃었는지로 표정을 고른다(이빨을 늘리는 호출은 없어서 "잃은 개수" 계산만으로 충분).
+        float teeth = player == PlayerId.P1 ? _p1Teeth : _p2Teeth;
+        int lost = Mathf.RoundToInt(maxTeeth - teeth);
+        string face = lost >= 2 ? "face_stone_hit_two_teeth_broken" : "face_stone_hit_one_tooth_broken";
+        StartCoroutine(ReactToEat(player, face));
+    }
+
+    // 돌을 잘못 먹었을 때/바나나를 먹었을 때 잠깐 표정을 바꿨다가 되돌린다 - 관련 표정
+    // 이미지는 이미 임포트돼 있었지만(9/13번 문서 TODO) 여태 연결이 안 되어 있었다.
+    private IEnumerator ReactToEat(PlayerId player, string facePart)
+    {
+        CavemanSilhouette sil = Silhouette(player);
+        if (sil == null) yield break;
+        sil.SetFace(facePart);
+        yield return new WaitForSeconds(0.8f);
+        sil.ResetFace();
     }
 
     private void EndTurnAndAdvance()

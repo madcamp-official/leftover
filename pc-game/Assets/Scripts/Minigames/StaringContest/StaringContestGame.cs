@@ -27,7 +27,6 @@ public class StaringContestGame : MonoBehaviour
     public float maxMatchSeconds = 60f;
     public float resultDisplaySeconds = 2.5f;
     public float ruleBannerSeconds = 2.5f;
-    public float headWidth = 2.2f;
 
     [Header("씬에 배치된 오브젝트")]
     [SerializeField] private SpriteRenderer p1Head;

@@ -58,8 +58,8 @@ public class CoconutCrackGame : MonoBehaviour
 
         if (_ended) return;
 
-        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, p1Coconut);
-        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, p2Coconut);
+        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, p1Coconut, p1Silhouette);
+        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, p2Coconut, p2Silhouette);
 
         _elapsed += Time.deltaTime;
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
@@ -70,7 +70,7 @@ public class CoconutCrackGame : MonoBehaviour
         }
     }
 
-    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref int hitCount, SpriteRenderer coconut)
+    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref int hitCount, SpriteRenderer coconut, CavemanSilhouette silhouette)
     {
         if (state == null || !state.IsTracked) return;
         float distance = state.HandToHeadDistance();
@@ -81,11 +81,22 @@ public class CoconutCrackGame : MonoBehaviour
             readyToHit = false;
             hud?.SetHits(id, hitCount);
             StartCoroutine(PunchCoconut(coconut));
+            StartCoroutine(ReactToHit(silhouette));
         }
         else if (!readyToHit && distance >= releaseDistance)
         {
             readyToHit = true;
         }
+    }
+
+    // 타격 순간 잠깐 어지러운 표정으로 바꿨다가 되돌린다 - coconut_bump_dizzy 표정 이미지는
+    // 이미 임포트돼 있었지만(9/13번 문서 TODO) 여태 연결이 안 되어 있었다.
+    private IEnumerator ReactToHit(CavemanSilhouette silhouette)
+    {
+        if (silhouette == null) yield break;
+        silhouette.SetFace("face_coconut_bump_dizzy");
+        yield return new WaitForSeconds(0.28f);
+        silhouette.ResetFace();
     }
 
     // 타격 순간 멀쩡한 코코넛을 잠깐 숨기고, 반으로 쪼개진 코코넛 두 조각이 좌우로 튀어나가며
