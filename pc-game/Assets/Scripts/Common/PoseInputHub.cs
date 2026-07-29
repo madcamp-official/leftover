@@ -91,6 +91,18 @@ public sealed class PlayerPoseState
         Vector2 handMid = (Joints.leftWrist + Joints.rightWrist) * 0.5f;
         return Vector2.Distance(handMid, Joints.nose) / torso;
     }
+
+    // --- 로딩 화면 캘리브레이션용 - 다음 게임이 실제로 쓰는 부위가 카메라 프레임 안에
+    // 들어와 있는지 확인. 몸통(엉덩이/어깨)이 잡혀도 손이 프레임 가장자리에 걸려 있으면
+    // 손 들기 판정 자체가 불안정하므로, "트래킹됨"과는 별개로 이 값도 확인해야 한다. ---
+
+    public bool AreHandsVisible(float margin = 0.06f) =>
+        IsInFrame(Joints.leftWrist, margin) && IsInFrame(Joints.rightWrist, margin);
+
+    public bool IsFaceVisible(float margin = 0.1f) => IsInFrame(Joints.nose, margin);
+
+    private static bool IsInFrame(Vector2 point, float margin) =>
+        point.x >= margin && point.x <= 1f - margin && point.y >= margin && point.y <= 1f - margin;
 }
 
 public sealed class PoseInputHub : MonoBehaviour

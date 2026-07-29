@@ -20,8 +20,11 @@ public sealed class LoadingScreenController : MonoBehaviour
         "loading_06_snow_valley",
     };
 
-    public float minimumDisplaySeconds = 1.5f;
+    // 이전 라운드 위치에서 카메라 앞으로 걸어올 시간을 보장하기 위한 최소 대기 - 캘리브레이션이
+    // 그보다 먼저 끝나도 최소한 이 시간만큼은 로딩 화면을 붙잡아둔다.
+    public float minimumDisplaySeconds = 5f;
     public bool IsReady { get; private set; }
+    private string _pendingScene;
 
     private GameObject _canvasObject;
     private GameObject _root;
@@ -103,8 +106,8 @@ public sealed class LoadingScreenController : MonoBehaviour
             {
                 p1Tracked = p1 != null && p1.IsTracked,
                 p2Tracked = p2 != null && p2.IsTracked,
-                p1Calibrated = p1 != null && p1.IsCalibrated,
-                p2Calibrated = p2 != null && p2.IsCalibrated,
+                p1Calibrated = PlayerFullyReady(p1),
+                p2Calibrated = PlayerFullyReady(p2),
                 p1Progress = p1 != null ? p1.CalibrationProgress : 0f,
                 p2Progress = p2 != null ? p2.CalibrationProgress : 0f,
                 p1Preview = preview != null && preview.IsConnected(PlayerId.P1),
@@ -145,6 +148,7 @@ public sealed class LoadingScreenController : MonoBehaviour
     public void Show(string nextScene)
     {
         RebuildUi();
+        _pendingScene = nextScene;
         _localPlayer = ResolveLocalPlayer();
         _elapsed = 0f;
         IsReady = false;
@@ -208,8 +212,10 @@ public sealed class LoadingScreenController : MonoBehaviour
         else
         {
             PoseInputHub hub = PoseInputHub.Instance;
-            bool calibrated = hub != null && hub.AreBothCalibrated;
-            IsReady = calibrated && _elapsed >= minimumDisplaySeconds;
+            bool ready = hub != null
+                && PlayerFullyReady(hub.Get(PlayerId.P1))
+                && PlayerFullyReady(hub.Get(PlayerId.P2));
+            IsReady = ready && _elapsed >= minimumDisplaySeconds;
         }
 
 #if UNITY_EDITOR
@@ -246,16 +252,23 @@ public sealed class LoadingScreenController : MonoBehaviour
             poseConnected = state != null && state.IsTracked;
             previewConnected = CameraPreviewReceiver.Instance != null &&
                                CameraPreviewReceiver.Instance.IsConnected(player);
-            ready = state != null && state.IsCalibrated;
+            ready = PlayerFullyReady(state);
             progress = state != null ? Mathf.RoundToInt(state.CalibrationProgress * 100f) : 0;
         }
+
+        // 캘리브레이션(자세 안정)은 끝났는데 이번 게임에 필요한 부위(손/얼굴 등)가 아직 화면
+        // 밖이라 최종 준비완료는 못 뜬 상태를 구분해서 보여준다 - "그냥 기다리면 되는지" vs
+        // "자세를 고쳐야 하는지"를 사람이 알 수 있게.
+        bool calibratedButPartsMissing = !ready && progress >= 100 && poseConnected;
 
         _statusIcons[index].sprite = ready ? _readyIcon : _loadingIcon;
         _statusTexts[index].text = ready
             ? $"{player}  준비 완료"
             : !poseConnected
                 ? $"{player}  연결 대기"
-                : $"{player}  캘리브레이션 {progress}%";
+                : calibratedButPartsMissing
+                    ? $"{player}  자세를 카메라에 맞춰주세요"
+                    : $"{player}  캘리브레이션 {progress}%";
 
         if (player == _localPlayer)
             _previewLabel.text = previewConnected
@@ -459,6 +472,26 @@ public sealed class LoadingScreenController : MonoBehaviour
                 _backgroundBag.Enqueue(index);
         }
         return _backgroundBag.Dequeue();
+    }
+
+    // 캘리브레이션(자세 안정)이 끝났어도, 다음 게임이 실제로 쓰는 부위(손/얼굴)가 카메라
+    // 프레임 밖이면 아직 준비된 게 아니다 - 예를 들어 몸통은 잡혔는데 손이 화면 밖으로 나가
+    // 있으면 손 들기 판정 자체가 안 되므로 게임을 시작하면 안 된다.
+    private bool PlayerFullyReady(PlayerPoseState state)
+        => state != null && state.IsCalibrated && RequiredPartsReady(state, _pendingScene);
+
+    private static bool RequiredPartsReady(PlayerPoseState state, string scene)
+    {
+        switch (scene)
+        {
+            case "ScreamDuel":
+                // 마이크 음량만 쓰고 포즈는 전혀 안 본다 - 부위 확인 자체가 필요 없음.
+                return true;
+            case "StaringContest":
+                return state.IsFaceVisible();
+            default: // StoneThrow, FruitJump, CoconutCrack, StoneOrBanana, FeatherFlight
+                return state.AreHandsVisible();
+        }
     }
 
     private static PlayerId ResolveLocalPlayer()
