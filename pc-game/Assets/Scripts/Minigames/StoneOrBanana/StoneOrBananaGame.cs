@@ -102,6 +102,8 @@ public class StoneOrBananaGame : MonoBehaviour
         Vector3 frontStart = throwerFront != null ? throwerFront.ReleasePosition(hand) : Vector3.zero;
         Vector3 frontEnd = receiverFront != null ? receiverFront.ReceivePosition() : Vector3.zero;
         Vector3 backEnd = receiverBack != null ? receiverBack.ReceivePosition() : Vector3.zero;
+        Vector3 frontReturnEnd = throwerFront != null ? throwerFront.ReceivePosition() : Vector3.zero;
+        Vector3 backReturnEnd = throwerBack != null ? throwerBack.ReceivePosition() : Vector3.zero;
 
         bool projectileArrived = false;
         int frameCount = Mathf.Max(throwerFront?.FrameCount(hand) ?? 0, throwerBack?.FrameCount(hand) ?? 0);
@@ -128,9 +130,9 @@ public class StoneOrBananaGame : MonoBehaviour
             throwerFront?.ShowReceiver(true);
             throwerBack?.ShowReceiver(true);
             bool boomerangArrived = false;
-            StartCoroutine(FlyProjectile(kind, backEnd, frontStart,
+            StartCoroutine(FlyProjectile(kind, backEnd, frontReturnEnd,
                 NearWidth(kind), FarWidth(kind)));
-            StartCoroutine(FlyProjectile(kind, frontEnd, backStart,
+            StartCoroutine(FlyProjectile(kind, frontEnd, backReturnEnd,
                 FarWidth(kind), NearWidth(kind), () => boomerangArrived = true));
             while (!boomerangArrived) yield return null;
 
