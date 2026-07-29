@@ -480,6 +480,7 @@ public sealed class LoadingScreenController : MonoBehaviour
             case "StoneOrBanana": return "돌 or 바나나";
             case "StaringContest": return "눈빛 싸움";
             case "ScreamDuel": return "소리 지르기";
+            case "FeatherFlight": return "깃털 날기";
             default: return scene;
         }
     }
