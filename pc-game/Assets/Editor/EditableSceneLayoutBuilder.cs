@@ -151,31 +151,7 @@ public static class EditableSceneLayoutBuilder
     [MenuItem("Tools/Uga Uga/StoneThrow/Apply Split Over-the-Shoulder Characters")]
     public static void ApplyStoneThrowSplitCharacters()
     {
-        AssetDatabase.Refresh();
-        BuildCavemanPrefab(PlayerId.P1, backView: true);
-        BuildCavemanPrefab(PlayerId.P2, backView: true);
-
-        Scene scene = SceneManager.GetActiveScene();
-        if (scene.name != "StoneThrow")
-        {
-            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            scene = Open("StoneThrow");
-        }
-        Transform layout = scene.GetRootGameObjects().FirstOrDefault(x => x.name == "EditableLayout")?.transform;
-        if (layout == null) throw new InvalidOperationException("StoneThrow 씬에서 EditableLayout을 찾지 못했습니다.");
-
-        foreach (CavemanSilhouette old in layout.GetComponentsInChildren<CavemanSilhouette>(true))
-            UnityEngine.Object.DestroyImmediate(old.gameObject);
-
-        CreateStoneThrowCharacters(layout, out CavemanSilhouette p1Front, out CavemanSilhouette p1Back,
-            out CavemanSilhouette p2Front, out CavemanSilhouette p2Back);
-
-        StoneThrowGame game = Controller<StoneThrowGame>();
-        SetRefs(game, ("p1FrontSilhouette", p1Front), ("p1BackSilhouette", p1Back),
-            ("p2FrontSilhouette", p2Front), ("p2BackSilhouette", p2Back));
-        Save(scene);
-        AssetDatabase.SaveAssets();
-        Debug.Log("[Uga Uga] StoneThrow 분할 오버더숄더 캐릭터 배치 완료");
+        StoneThrowSceneSetup.Rebuild();
     }
 
     // -executeMethod EditableSceneLayoutBuilder.RebuildAll 로 CI/초기 마이그레이션에서도 호출 가능.
@@ -367,12 +343,10 @@ public static class EditableSceneLayoutBuilder
     {
         Scene s = Open("StoneThrow"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
         AddBackground(root, ArtAssets.LoadStoneThrow("background"), StandardCameraSize);
-        CreateStoneThrowCharacters(root, out CavemanSilhouette p1Front, out CavemanSilhouette p1Back,
-            out CavemanSilhouette p2Front, out CavemanSilhouette p2Back);
         StoneThrowHud hud = StoneThrowHud.Build(30); hud.transform.SetParent(root, false);
         MatchScoreboardHud.Build(hud.transform);
-        SetRefs(Controller<StoneThrowGame>(), ("p1FrontSilhouette", p1Front), ("p1BackSilhouette", p1Back),
-            ("p2FrontSilhouette", p2Front), ("p2BackSilhouette", p2Back), ("hud", hud)); Save(s);
+        StoneThrowSceneSetup.RebuildScene(s);
+        Save(s);
     }
 
     private static void BuildPoseCopy()

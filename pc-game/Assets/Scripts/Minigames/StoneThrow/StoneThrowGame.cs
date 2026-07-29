@@ -1,231 +1,249 @@
-// 돌던지기 - docs/minigames/01_돌던지기.md 스펙 (기관총식 연속 발사, 체력 10 즉사룰).
-//
-// 규칙: 어느 손이든 들려 있는 동안 fireIntervalSeconds(기본 1초)마다 자동으로 돌이 발사된다.
-// 발사 순간 오른손이 들려 있으면 상대의 오른쪽을, 왼손이 들려 있으면 상대의 왼쪽을 조준한다.
-// 양손이 동시에 들려 있으면 "더 먼저 들기 시작한 손" 쪽을 조준한다(오른손 우선이 아니라
-// 실제로 먼저 든 손) - _p1RightRaisedAt류 필드로 각 손이 마지막으로 "들리기 시작한" 시각을
-// 기록해두고 비교한다. 상대는 그 순간 머리를 좌/우로 기울여 회피 - 조준 방향과 상대의
-// 기울기 방향이 "같으면" 회피, "다르면"(또는 상대가 기울이지 않고 있으면) 명중.
-//
-// 체력: 각자 maxHealth(기본 10)에서 시작, 맞을 때마다 1씩 깎인다. 0이 되는 즉시 그 라운드는
-// 끝나고 상대가 승리(제한시간이 안 끝났어도). 제한시간이 다 되면 그 시점에 체력이 더 많이
-// 남은(=더 적게 맞은) 사람이 승리.
-//
-// 화면은 image/games/stone_throw/의 실제 아트로 구성한다 - 배경/플레이어별 "맞은 돌"
-// 네임플레이트와 image/common/ui/hud/의 남은 시간판을 사용한다(HUD 조립은 StoneThrowHud 참고).
-// 이전 v1 아트에 있던 각도/파워/바람 HUD는 건바운드류 포격 조작을 전제로 그려진 것이라 실제
-// 조작(손 들기 자동발사 + 머리 기울이기 회피)과 맞지 않아 쓰지 않았고, v2에서는 아예 빠졌다.
+// 돌던지기 - docs/minigames/01_돌던지기.md 기준 구현.
+// 고정 주기 발사 이벤트에서 한 손만 든 경우에만 6컷 애니메이션을 재생한다.
 using System.Collections;
 using UnityEngine;
 
 public class StoneThrowGame : MonoBehaviour
 {
-    public float fireIntervalSeconds = 1f;
-    public float matchSeconds = 30f;
-    public float dodgeTiltThreshold = 0.12f;
-    public float stoneTravelSeconds = 0.25f;
-    public float resultDisplaySeconds = 2f;
-    public float stoneWidth = 0.3f; // 인게임에서 보일 돌 가로 폭(월드 유닛)
-    public int maxHealth = 10;      // 이 횟수만큼 맞으면 즉시 패배
+    [Header("게임 규칙")]
+    [Min(0.1f)] public float fireIntervalSeconds = 1f;
+    [Min(1f)] public float matchSeconds = 30f;
+    [Min(0f)] public float headSideThreshold = 0.12f;
+    [Min(0f)] public float headSideHoldSeconds = 0.1f;
+    [Min(0.05f)] public float stoneTravelSeconds = 0.25f;
+    [Min(0.05f)] public float throwAnimationSeconds = 0.6f;
+    [Min(0f)] public float hitFaceDisplaySeconds = 0.7f;
+    [Min(0f)] public float resultDisplaySeconds = 2f;
 
-    private enum Side { Left, Right }
+    [Header("돌 원근 크기 (월드 가로 폭)")]
+    [Min(0.01f)] public float nearStoneWidth = 0.52f;
+    [Min(0.01f)] public float farStoneWidth = 0.16f;
 
-    private Sprite _stoneSprite;
-    [Header("씬에 배치된 오브젝트")]
-    [Tooltip("오른쪽 절반 중앙의 P1 앞모습(피격 표정/돌 목표점)")]
-    [SerializeField] private CavemanSilhouette p1FrontSilhouette;
-    [Tooltip("왼쪽 절반 하단 전경의 P1 뒷모습(돌 발사점)")]
-    [SerializeField] private CavemanSilhouette p1BackSilhouette;
-    [Tooltip("왼쪽 절반 중앙의 P2 앞모습(피격 표정/돌 목표점)")]
-    [SerializeField] private CavemanSilhouette p2FrontSilhouette;
-    [Tooltip("오른쪽 절반 하단 전경의 P2 뒷모습(돌 발사점)")]
-    [SerializeField] private CavemanSilhouette p2BackSilhouette;
+    [Header("씬에 배치된 캐릭터 뷰")]
+    [SerializeField] private StoneThrowCharacterView p1FrontView;
+    [SerializeField] private StoneThrowCharacterView p1BackView;
+    [SerializeField] private StoneThrowCharacterView p2FrontView;
+    [SerializeField] private StoneThrowCharacterView p2BackView;
+
+    [Header("씬에 배치된 투사체/HUD")]
+    [SerializeField] private SpriteRenderer stoneTemplate;
+    [SerializeField] private Transform projectileContainer;
     [SerializeField] private StoneThrowHud hud;
+
     private float _elapsed;
     private float _p1FireTimer;
     private float _p2FireTimer;
-
-    // 손을 "들기 시작한 시각"(Time.time). 안 들려 있으면 -1. 양손이 동시에 들려 있을 때
-    // 어느 손을 우선할지(더 먼저 든 쪽) 비교하는 데 쓴다.
-    private float _p1RightRaisedAt = -1f, _p1LeftRaisedAt = -1f;
-    private float _p2RightRaisedAt = -1f, _p2LeftRaisedAt = -1f;
-
     private int _p1Hits;
     private int _p2Hits;
     private bool _ended;
+
+    private StoneThrowSide _p1Side = StoneThrowSide.Left;
+    private StoneThrowSide _p2Side = StoneThrowSide.Right;
+    private StoneThrowSide? _p1Candidate;
+    private StoneThrowSide? _p2Candidate;
+    private float _p1CandidateSeconds;
+    private float _p2CandidateSeconds;
 
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
-
-        _stoneSprite = ArtAssets.LoadProp("stone");
-
+        if (stoneTemplate != null) stoneTemplate.gameObject.SetActive(false);
+        ApplySide(PlayerId.P1, _p1Side);
+        ApplySide(PlayerId.P2, _p2Side);
+        hud?.SetHits(PlayerId.P1, 0);
+        hud?.SetHits(PlayerId.P2, 0);
         hud?.SetTimeRemaining(matchSeconds);
-        hud?.SetHealth(PlayerId.P1, 1f);
-        hud?.SetHealth(PlayerId.P2, 1f);
     }
 
     private void Update()
     {
+        if (_ended) return;
+
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
-        ApplyPoseToBothViews(p1FrontSilhouette, p1BackSilhouette, p1);
-        ApplyPoseToBothViews(p2FrontSilhouette, p2BackSilhouette, p2);
-
-        if (_ended) return;
+        UpdateSide(PlayerId.P1, p1, ref _p1Side, ref _p1Candidate, ref _p1CandidateSeconds);
+        UpdateSide(PlayerId.P2, p2, ref _p2Side, ref _p2Candidate, ref _p2CandidateSeconds);
 
         _elapsed += Time.deltaTime;
-
-        TickFiring(PlayerId.P1, p1, p2, ref _p1FireTimer, ref _p1RightRaisedAt, ref _p1LeftRaisedAt);
-        if (!_ended)
-            TickFiring(PlayerId.P2, p2, p1, ref _p2FireTimer, ref _p2RightRaisedAt, ref _p2LeftRaisedAt);
-
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
-
         if (_elapsed >= matchSeconds)
         {
-            // 체력이 더 많이 남은(=더 적게 맞은) 쪽이 승리. 맞은 횟수가 같으면 무승부.
-            PlayerId? winner = _p1Hits == _p2Hits ? null : (_p1Hits < _p2Hits ? PlayerId.P1 : PlayerId.P2);
+            PlayerId? winner = _p1Hits == _p2Hits ? null : (_p1Hits > _p2Hits ? PlayerId.P1 : PlayerId.P2);
             EndMatch(winner);
+            return;
+        }
+
+        // 손 상태와 무관하게 양쪽 이벤트 시계는 항상 흐른다.
+        _p1FireTimer += Time.deltaTime;
+        _p2FireTimer += Time.deltaTime;
+        while (_p1FireTimer >= fireIntervalSeconds)
+        {
+            _p1FireTimer -= fireIntervalSeconds;
+            TriggerFireEvent(PlayerId.P1, p1, _p2Side);
+        }
+        while (_p2FireTimer >= fireIntervalSeconds)
+        {
+            _p2FireTimer -= fireIntervalSeconds;
+            TriggerFireEvent(PlayerId.P2, p2, _p1Side);
         }
     }
 
-    private void TickFiring(PlayerId thrower, PlayerPoseState throwerState, PlayerPoseState targetState,
-        ref float timer, ref float rightRaisedAt, ref float leftRaisedAt)
+    private void UpdateSide(PlayerId player, PlayerPoseState state, ref StoneThrowSide current,
+        ref StoneThrowSide? candidate, ref float candidateSeconds)
     {
-        if (throwerState == null || !throwerState.IsTracked)
+        if (state == null || !state.IsTracked) return;
+        float tilt = state.HeadTiltRatio();
+        StoneThrowSide? observed = tilt > headSideThreshold ? StoneThrowSide.Right
+            : tilt < -headSideThreshold ? StoneThrowSide.Left : null;
+        if (!observed.HasValue)
         {
-            timer = 0f;
-            rightRaisedAt = leftRaisedAt = -1f;
+            candidate = null;
+            candidateSeconds = 0f;
+            return; // 중립은 Center가 아니라 마지막 좌/우를 유지한다.
+        }
+        if (observed.Value == current)
+        {
+            candidate = null;
+            candidateSeconds = 0f;
+            return;
+        }
+        if (candidate != observed)
+        {
+            candidate = observed;
+            candidateSeconds = 0f;
+        }
+        candidateSeconds += Time.deltaTime;
+        if (candidateSeconds < headSideHoldSeconds) return;
+        current = observed.Value;
+        candidate = null;
+        candidateSeconds = 0f;
+        ApplySide(player, current);
+    }
+
+    private void ApplySide(PlayerId player, StoneThrowSide side)
+    {
+        FrontView(player)?.SetSide(side);
+        BackView(player)?.SetSide(side);
+    }
+
+    private void TriggerFireEvent(PlayerId thrower, PlayerPoseState state, StoneThrowSide targetSide)
+    {
+        if (state == null || !state.IsTracked)
+        {
+            hud?.ShowEvent($"{Label(thrower)} 추적 대기");
+            return;
+        }
+        bool right = state.IsHandRaised(rightHand: true);
+        bool left = state.IsHandRaised(rightHand: false);
+        if (right == left)
+        {
+            hud?.ShowEvent(right ? $"{Label(thrower)} 양손은 무효!" : $"{Label(thrower)} 한 손을 드세요!");
             return;
         }
 
-        bool rightRaised = throwerState.IsHandRaised(rightHand: true);
-        bool leftRaised = throwerState.IsHandRaised(rightHand: false);
+        StoneThrowHand hand = right ? StoneThrowHand.Right : StoneThrowHand.Left;
+        StoneThrowSide aimSide = right ? StoneThrowSide.Right : StoneThrowSide.Left;
+        bool hit = aimSide == targetSide;
+        StartCoroutine(PlayThrow(thrower, hand, aimSide, hit));
+    }
 
-        // 손이 "새로 들리기 시작한" 프레임에만 시각을 기록한다 - 이미 들려 있는 동안 매
-        // 프레임 갱신하면 "먼저 든 손" 비교가 항상 무승부가 되어버린다.
-        if (rightRaised && rightRaisedAt < 0f) rightRaisedAt = Time.time;
-        else if (!rightRaised) rightRaisedAt = -1f;
-        if (leftRaised && leftRaisedAt < 0f) leftRaisedAt = Time.time;
-        else if (!leftRaised) leftRaisedAt = -1f;
+    private IEnumerator PlayThrow(PlayerId thrower, StoneThrowHand hand, StoneThrowSide aimSide, bool hit)
+    {
+        StoneThrowCharacterView front = FrontView(thrower);
+        StoneThrowCharacterView back = BackView(thrower);
+        int frameCount = Mathf.Max(front?.FrameCount(hand) ?? 0, back?.FrameCount(hand) ?? 0);
+        if (frameCount == 0) yield break;
 
-        if (!rightRaised && !leftRaised)
+        float frameSeconds = throwAnimationSeconds / frameCount;
+        for (int frame = 0; frame < frameCount; frame++)
         {
-            timer = 0f; // 손을 내리면 발사 대기를 취소 (다시 들었을 때 처음부터 한 박자 기다림)
-            return;
+            front?.ShowThrowFrame(hand, frame);
+            back?.ShowThrowFrame(hand, frame);
+            if (frame == 3) ReleaseStones(thrower, hand, aimSide, hit);
+            yield return new WaitForSeconds(frameSeconds);
         }
+        front?.ShowIdle();
+        back?.ShowIdle();
+    }
 
-        timer += Time.deltaTime;
-        if (timer < fireIntervalSeconds) return;
-        timer = 0f;
-
-        // 양손이 동시에 들려 있으면 더 먼저 들기 시작한 손을 우선한다(둘 다 이번 프레임에
-        // 동시에 들리기 시작했다면 시각이 같으므로 오른손으로 정함 - 극히 드문 동시 입력).
-        Side aimSide;
-        if (rightRaised && leftRaised)
-            aimSide = leftRaisedAt < rightRaisedAt ? Side.Left : Side.Right;
-        else
-            aimSide = rightRaised ? Side.Right : Side.Left;
-
-        bool hit = true;
-        if (targetState != null && targetState.IsTracked)
-        {
-            float tilt = targetState.HeadTiltRatio();
-            Side? targetTiltSide = tilt > dodgeTiltThreshold ? Side.Right
-                : (tilt < -dodgeTiltThreshold ? Side.Left : (Side?)null);
-            hit = targetTiltSide != aimSide;
-        }
-
+    private void ReleaseStones(PlayerId thrower, StoneThrowHand hand, StoneThrowSide aimSide, bool hit)
+    {
         PlayerId target = thrower == PlayerId.P1 ? PlayerId.P2 : PlayerId.P1;
-        if (hit)
-        {
-            int targetHitCount;
-            if (thrower == PlayerId.P1) { _p1Hits++; targetHitCount = _p1Hits; }
-            else { _p2Hits++; targetHitCount = _p2Hits; }
+        StoneThrowCharacterView throwerBack = BackView(thrower);
+        StoneThrowCharacterView throwerFront = FrontView(thrower);
+        StoneThrowCharacterView targetFront = FrontView(target);
+        StoneThrowCharacterView targetBack = BackView(target);
 
-            // HUD의 "맞은 돌"은 각자 플레이트에 자신이 맞은 횟수를 보여준다(누가 맞혔는지가
-            // 아니라 누가 맞았는지) - target의 받은 횟수는 곧 thrower가 지금까지 맞힌 횟수와
-            // 같으므로 targetHitCount를 그대로 target 쪽 플레이트에 표시한다.
-            hud?.SetHits(target, targetHitCount);
-            hud?.SetHealth(target, 1f - (float)targetHitCount / maxHealth);
-            hud?.ShowEvent($"{Label(thrower)} 명중!");
-            StartCoroutine(ReactToHit(target, targetHitCount));
+        // 각 플레이어 화면에서 같은 사건을 동시에 본다.
+        if (throwerBack != null && targetFront != null)
+            StartCoroutine(FlyStone(throwerBack.ReleasePosition(hand), targetFront.TargetPosition(aimSide),
+                nearStoneWidth, farStoneWidth));
+        if (throwerFront != null && targetBack != null)
+            StartCoroutine(FlyStone(throwerFront.ReleasePosition(hand), targetBack.TargetPosition(aimSide),
+                farStoneWidth, nearStoneWidth));
 
-            // 체력이 0이 되면 제한시간과 무관하게 그 즉시 승부가 끝난다. 날아가는 돌 연출은
-            // 아래 공통 코드에서 그대로 처리되므로 여기서는 승패만 확정한다.
-            if (targetHitCount >= maxHealth)
-                EndMatch(thrower);
-        }
-        else
+        StartCoroutine(ResolveThrowOutcome(thrower, target, hit));
+    }
+
+    private IEnumerator ResolveThrowOutcome(PlayerId thrower, PlayerId target, bool hit)
+    {
+        yield return new WaitForSeconds(stoneTravelSeconds);
+        if (!hit)
         {
             hud?.ShowEvent($"{Label(target)} 회피!");
+            yield break;
         }
+        if (thrower == PlayerId.P1) _p1Hits++; else _p2Hits++;
+        int receivedHits = thrower == PlayerId.P1 ? _p1Hits : _p2Hits;
+        hud?.SetHits(target, receivedHits);
+        hud?.ShowEvent($"{Label(thrower)} 명중!");
+        FrontView(target)?.ShowHitFace(hitFaceDisplaySeconds);
+    }
 
-        CavemanSilhouette throwerBack = BackSilhouette(thrower);
-        CavemanSilhouette targetFront = FrontSilhouette(target);
-        if (throwerBack != null && targetFront != null)
+    private IEnumerator FlyStone(Vector3 from, Vector3 to, float startWidth, float endWidth)
+    {
+        if (stoneTemplate == null) yield break;
+        SpriteRenderer stone = Instantiate(stoneTemplate, projectileContainer);
+        stone.name = "FlyingStone";
+        stone.gameObject.SetActive(true);
+        stone.transform.position = from;
+        FitStoneWidth(stone, startWidth);
+        float elapsed = 0f;
+        while (elapsed < stoneTravelSeconds)
         {
-            Vector3 from = throwerBack.transform.position + Vector3.up * 1.65f;
-            Vector3 to = targetFront.transform.position + Vector3.up * 1.35f;
-            StartCoroutine(FlyStone(from, to, hit));
-        }
-    }
-
-    private static void ApplyPoseToBothViews(CavemanSilhouette front, CavemanSilhouette back, PlayerPoseState state)
-    {
-        front?.ApplyPose(state);
-        back?.ApplyPose(state);
-    }
-
-    private CavemanSilhouette FrontSilhouette(PlayerId id)
-        => id == PlayerId.P1 ? p1FrontSilhouette : p2FrontSilhouette;
-
-    private CavemanSilhouette BackSilhouette(PlayerId id)
-        => id == PlayerId.P1 ? p1BackSilhouette : p2BackSilhouette;
-
-    private static string Label(PlayerId id) => id == PlayerId.P1 ? "플레이어 1" : "플레이어 2";
-
-    // 맞은 쪽 표정을 잠깐 바꿔준다 - 많이 맞을수록 이빨이 더 나간 얼굴로.
-    private IEnumerator ReactToHit(PlayerId target, int timesHit)
-    {
-        CavemanSilhouette sil = FrontSilhouette(target);
-        if (sil == null) yield break;
-        string face = timesHit >= 6 ? "face_stone_hit_two_teeth_broken"
-            : timesHit >= 3 ? "face_stone_hit_one_tooth_broken"
-            : "face_grimacing";
-        sil.SetFace(face);
-        yield return new WaitForSeconds(0.8f);
-        sil.ResetFace();
-    }
-
-    private IEnumerator FlyStone(Vector3 from, Vector3 to, bool hit)
-    {
-        var go = new GameObject("Stone");
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = _stoneSprite;
-        sr.sortingOrder = 5;
-        go.transform.position = from;
-        ArtAssets.FitWidth(sr, stoneWidth);
-
-        // 명중이면 상대 위치에서 멈추고, 회피면 그대로 조금 더 지나쳐서 빗나간 느낌을 준다.
-        Vector3 end = hit ? to : to + (to - from).normalized * 0.6f;
-        float t = 0f;
-        while (t < stoneTravelSeconds)
-        {
-            t += Time.deltaTime;
-            go.transform.position = Vector3.Lerp(from, end, t / stoneTravelSeconds);
-            go.transform.Rotate(0f, 0f, 540f * Time.deltaTime);
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / stoneTravelSeconds);
+            stone.transform.position = Vector3.Lerp(from, to, t);
+            FitStoneWidth(stone, Mathf.Lerp(startWidth, endWidth, t));
+            stone.transform.Rotate(0f, 0f, 540f * Time.deltaTime);
             yield return null;
         }
-        Destroy(go);
+        Destroy(stone.gameObject);
     }
+
+    private static void FitStoneWidth(SpriteRenderer stone, float width)
+    {
+        if (stone == null || stone.sprite == null) return;
+        float nativeWidth = stone.sprite.bounds.size.x;
+        if (nativeWidth > 0f) stone.transform.localScale = Vector3.one * (width / nativeWidth);
+    }
+
+    private StoneThrowCharacterView FrontView(PlayerId id) => id == PlayerId.P1 ? p1FrontView : p2FrontView;
+    private StoneThrowCharacterView BackView(PlayerId id) => id == PlayerId.P1 ? p1BackView : p2BackView;
+    private static string Label(PlayerId id) => id == PlayerId.P1 ? "플레이어 1" : "플레이어 2";
 
     private void EndMatch(PlayerId? winner)
     {
         _ended = true;
+        StopAllCoroutines();
+        if (projectileContainer != null)
+        {
+            foreach (Transform child in projectileContainer)
+                if (stoneTemplate == null || child.gameObject != stoneTemplate.gameObject)
+                    Destroy(child.gameObject);
+        }
         hud?.SetTimeRemaining(0f);
         hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
