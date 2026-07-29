@@ -141,28 +141,15 @@ Rect Transform으로 조절한다.
 
 Canvas 전체 Transform Scale로 UI를 줄이기보다 각 패널의 Rect Transform을 조절하는 편이 좋다.
 
-### 공용 타이머와 5경기 결과판
+### 공용 타이머
 
 미니게임 5개 씬의 `TimerPlate`는 모두 `Assets/Resources/UI/time_remaining.png`를 사용한다.
-각 HUD Canvas 아래의 `MatchScoreboard`는 현재 매치 진행 상황을 공통 표시한다.
 
-```text
-MatchScoreboard
-├── Board
-├── GameIcon_1_stone_throw ... GameIcon_5_staring_contest
-├── Player1Face, Player2Face
-├── P1Result_1 ... P1Result_5
-└── P2Result_1 ... P2Result_5
-```
-
-게임 아이콘 순서는 `StoneThrow → FruitJump → CoconutCrack → StoneOrBanana →
-StaringContest`다(원래 있던 자세따라하기/PoseCopy 칸은 폐기로 제거됨 — 기존 5개 씬에 이미
-저장돼 있던 결과판은 해당 칸만 삭제했고, 나머지 아이콘 간격은 아직 옛 6칸 기준 그대로라
-[게임별_에셋_세부_계획.md 항목 7](게임별_에셋_세부_계획.md#다음-품질-개선-우선순위) 후속
-정리가 필요하다). 라운드가 끝나면 승자는 `result_win`, 패자는 `result_loss`, 무승부는 양쪽 모두
-`result_draw`가 표시된다. 아직 진행하지 않은 슬롯은 비어 있다. `MatchScoreboard` 루트의 Rect Transform을
-이동하거나 크기를 바꾸면 결과판 전체 구도를 조절할 수 있고, 개별 아이콘·얼굴·결과 슬롯도 자식
-Rect Transform으로 따로 조절할 수 있다. 오브젝트 이름은 코드 참조와 수동 편의를 위해 유지한다.
+라운드별 승패를 아이콘으로 보여주는 매치 결과판(`MatchScoreboard`, `MatchScoreboardHud.cs`)은
+화면에 띄우지 않기로 결정해 5개 씬 전부에서 제거했다 — 이제 각 HUD Canvas 아래에 해당
+오브젝트가 없다. 관련 컴포넌트와 씬 생성 코드(`EditableSceneLayoutBuilder`,
+`StoneOrBananaSceneSetup`)의 호출부도 같이 삭제했으므로, 새로 씬을 만들 때 이 결과판을 다시
+추가할 필요는 없다.
 
 ## 6. 이미지 교체
 
