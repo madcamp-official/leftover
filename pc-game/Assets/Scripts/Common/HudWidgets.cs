@@ -33,8 +33,14 @@ public static class HudWidgets
         fitter.Fit();
     }
 
+    // flipX: true면 그림만 좌우로 뒤집는다(예: P1/P2 판 아트가 서로 미러링되어 그려지지
+    // 않고 항상 같은 방향이라, 화면 양쪽에 대칭으로 배치하면 안의 슬롯(숫자 자리 등)이
+    // 한쪽은 안쪽에 한쪽은 바깥쪽에 쏠려 보이는 문제가 있을 때 쓴다). 반환하는 RectTransform
+    // 자체는 뒤집지 않고, 그림만 별도 자식 오브젝트("Art")에 넣어 뒤집는다 - 이렇게 해야
+    // 이 위에 자식으로 얹는 Text(숫자 등)가 같이 뒤집혀 글자가 좌우反전되는 걸 막을 수 있다.
+    // 뒤집은 뒤 자식 Text의 anchor.x는 1 - 원래값으로 미러링해서 넣어야 슬롯 위치가 맞는다.
     public static RectTransform CreateImage(Transform parent, string name, Sprite sprite,
-        Vector2 anchor, Vector2 offset, float width)
+        Vector2 anchor, Vector2 offset, float width, bool flipX = false)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
@@ -44,7 +50,16 @@ public static class HudWidgets
         rt.anchoredPosition = offset;
         rt.sizeDelta = new Vector2(width, HeightFor(sprite, width));
 
-        var image = go.AddComponent<Image>();
+        var artGo = new GameObject("Art");
+        artGo.transform.SetParent(rt, false);
+        var artRt = artGo.AddComponent<RectTransform>();
+        artRt.anchorMin = Vector2.zero;
+        artRt.anchorMax = Vector2.one;
+        artRt.offsetMin = Vector2.zero;
+        artRt.offsetMax = Vector2.zero;
+        artRt.localScale = flipX ? new Vector3(-1f, 1f, 1f) : Vector3.one;
+
+        var image = artGo.AddComponent<Image>();
         image.sprite = sprite;
         image.preserveAspect = true;
         return rt;
