@@ -279,7 +279,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.86, y: 0.704}
   m_AnchorMax: {x: 0.86, y: 0.704}
-  m_AnchoredPosition: {x: 2.9634, y: 21.1}
+  m_AnchoredPosition: {x: 2.9634094, y: 21.100006}
   m_SizeDelta: {x: 81.92684, y: 82}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &18900892
@@ -2834,13 +2834,13 @@ MonoBehaviour:
   matchSeconds: 30
   headSideThreshold: 0.12
   headSideHoldSeconds: 0.1
-  stoneTravelSeconds: 1
-  throwAnimationSeconds: 0.6
-  hitReactionDisplaySeconds: 0.7
-  resultDisplaySeconds: 2
-  nearStoneWidth: 2.6
-  farStoneWidth: 0.25
-  stoneSpinDegreesPerSecond: 1440
+  stoneTravelSeconds: 2
+  throwAnimationSeconds: 0.3
+  hitReactionDisplaySeconds: 0.3
+  resultDisplaySeconds: 1
+  nearStoneWidth: 1.5
+  farStoneWidth: 0.2
+  stoneSpinDegreesPerSecond: 720
   p1FrontView: {fileID: 1581785245}
   p1BackView: {fileID: 1497439905}
   p2FrontView: {fileID: 335676936}
