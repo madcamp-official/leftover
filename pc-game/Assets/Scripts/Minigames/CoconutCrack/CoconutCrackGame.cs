@@ -70,12 +70,19 @@ public class CoconutCrackGame : MonoBehaviour
     private float _p2AnimationProgress;
     private bool _ended;
 
-    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장, FruitJumpGame과
-    // 동일 패턴) - 판정 임계값/타이밍/연출 수치는 전부 그대로다. 이 게임은 손-머리 거리로
-    // 캐릭터 프레임이 실시간 연속으로 움직이므로(DriveGestureAnimation), 그 진행률 값도
-    // 원시 pose 스트림과 같은 성격(최신 값이 진실, 유실 허용)으로 매 프레임 릴레이한다 -
-    // 판정 자체(CountHits)는 여전히 이산 이벤트(cc_hit/cc_release)로만 보낸다.
-    private bool _clientStarted;
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장) ---
+    // 판정 임계값/타이밍/연출 수치는 전부 그대로다. 손-머리 거리로 캐릭터 프레임이 실시간
+    // 연속으로 움직이므로(DriveGestureAnimation) 그 진행률은 원시 pose 스트림과 같은 성격
+    // (최신 값이 진실, 유실 허용)으로 릴레이하고, 판정 자체는 이산 이벤트(cc_hit/cc_release)로
+    // 보낸다.
+    //
+    // 경과 시간도 이 주기 메시지에 실어 보낸다 - 예전에는 "시작했다"는 일회성 이벤트로
+    // 클라이언트 타이머를 켰지만, 호스트가 먼저 씬을 로드하고 클라이언트에 load_round를
+    // 보내는 구조라 클라이언트 씬은 항상 나중에 로드된다. 그래서 일회성 시작 이벤트는
+    // 구독 전에 지나가버려 클라이언트 타이머가 영원히 멈춰 있었다(실측 확인된 버그).
+    private const float StateSendInterval = 0.05f; // 20Hz - 매 프레임(60Hz×2건) 보내면 메인 스레드 TCP 쓰기가 과도하다
+    private float _lastStateSentAt;
+    private bool _clientHasState;
     private float _clientElapsed;
 
     private void Start()
@@ -101,16 +108,23 @@ public class CoconutCrackGame : MonoBehaviour
         NetworkSession net = NetworkSession.Instance;
         if (net != null && net.IsClient)
         {
-            net.Subscribe("cc_started", OnNetStarted);
-            net.Subscribe("cc_gesture", OnNetGesture);
+            net.Subscribe("cc_state", OnNetState);
             net.Subscribe("cc_hit", OnNetHit);
             net.Subscribe("cc_release", OnNetRelease);
             net.Subscribe("cc_ended", OnNetEnded);
         }
-        else if (net != null && net.IsHost)
-        {
-            net.Send("cc_started", new StartedPayload());
-        }
+    }
+
+    // 씬이 바뀌어도 NetworkSession은 살아있으므로, 구독을 해제하지 않으면 파괴된 이 오브젝트를
+    // 가리키는 핸들러가 계속 쌓여 다음 라운드에 중복 호출/예외가 난다.
+    private void OnDestroy()
+    {
+        NetworkSession net = NetworkSession.Instance;
+        if (net == null) return;
+        net.Unsubscribe("cc_state", OnNetState);
+        net.Unsubscribe("cc_hit", OnNetHit);
+        net.Unsubscribe("cc_release", OnNetRelease);
+        net.Unsubscribe("cc_ended", OnNetEnded);
     }
 
     private void Update()
@@ -131,10 +145,15 @@ public class CoconutCrackGame : MonoBehaviour
         DriveGestureAnimation(p1, p1View, ref _p1AnimationProgress);
         DriveGestureAnimation(p2, p2View, ref _p2AnimationProgress);
 
-        if (net != null && net.IsHost)
+        if (net != null && net.IsHost && Time.unscaledTime - _lastStateSentAt >= StateSendInterval)
         {
-            net.Send("cc_gesture", new GesturePayload { player = 0, progress = _p1AnimationProgress });
-            net.Send("cc_gesture", new GesturePayload { player = 1, progress = _p2AnimationProgress });
+            _lastStateSentAt = Time.unscaledTime;
+            net.Send("cc_state", new StatePayload
+            {
+                p1Progress = _p1AnimationProgress,
+                p2Progress = _p2AnimationProgress,
+                elapsed = _elapsed,
+            });
         }
 
         // 코코넛이 고정 위치가 아니라 지금 재생 중인 컷(coconut_N)에 맞춰 씬에 배치해 둔
@@ -168,24 +187,26 @@ public class CoconutCrackGame : MonoBehaviour
         if (p2Coconut != null && p2View != null)
             p2Coconut.transform.position = p2View.CoconutAnchorWorld(p2View.CurrentIndex) + (Vector3)p2CoconutWorldOffset;
 
-        if (_ended || !_clientStarted) return;
+        if (_ended || !_clientHasState) return;
+        // 호스트가 보낸 경과 시간을 기준으로 하되, 메시지 사이(20Hz)는 로컬에서 이어 세서
+        // 타이머 표시가 끊겨 보이지 않게 한다.
         _clientElapsed += Time.deltaTime;
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _clientElapsed));
     }
 
-    private void OnNetStarted(NetworkEvent evt)
+    private void OnNetState(NetworkEvent evt)
     {
-        _clientStarted = true;
-        _clientElapsed = 0f;
+        StatePayload payload = NetworkSession.Read<StatePayload>(evt);
+        _clientHasState = true;
+        _clientElapsed = payload.elapsed; // 호스트 값이 권위 - 로컬 누적 오차를 매번 보정한다
+        ApplyGesture(p1View, payload.p1Progress);
+        ApplyGesture(p2View, payload.p2Progress);
     }
 
-    private void OnNetGesture(NetworkEvent evt)
+    private static void ApplyGesture(CoconutCharacterFrames view, float progress)
     {
-        GesturePayload payload = NetworkSession.Read<GesturePayload>(evt);
-        CoconutCharacterFrames view = payload.player == 0 ? p1View : p2View;
         if (view == null || view.FrameCount <= 0) return;
-        int index = Mathf.RoundToInt(Mathf.Clamp01(payload.progress) * (view.FrameCount - 1));
-        view.ShowFrame(index);
+        view.ShowFrame(Mathf.RoundToInt(Mathf.Clamp01(progress) * (view.FrameCount - 1)));
     }
 
     private void OnNetHit(NetworkEvent evt)
@@ -441,10 +462,15 @@ public class CoconutCrackGame : MonoBehaviour
     private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
     private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
 
-    [System.Serializable] private class StartedPayload { }
     [System.Serializable] private class PlayerEventPayload { public int player; }
-    [System.Serializable] private class GesturePayload { public int player; public float progress; }
     [System.Serializable] private class EndedPayload { public int winner; }
+
+    [System.Serializable]
+    private class StatePayload
+    {
+        public float p1Progress, p2Progress;
+        public float elapsed;
+    }
 
     private void OnValidate()
     {
