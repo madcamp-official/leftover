@@ -28,7 +28,6 @@ public static class ArtAssets
     public static Sprite LoadProp(string name) => LoadSprite($"Props/{name}");
     public static Sprite LoadUi(string name) => LoadSprite($"UI/{name}");
     public static Sprite LoadStoneThrow(string name) => LoadSprite($"StoneThrow/{name}");
-    public static Sprite LoadPoseMatch(string name) => LoadSprite($"PoseMatch/{name}");
     public static Sprite LoadFruitJump(string name) => LoadSprite($"FruitJump/{name}");
     public static Sprite LoadCoconutBreak(string name) => LoadSprite($"CoconutBreak/{name}");
     public static Sprite LoadStoneOrBanana(string name) => LoadSprite($"StoneOrBanana/{name}");

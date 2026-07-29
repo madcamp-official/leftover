@@ -17,7 +17,6 @@ image/
 ├── games/
 │   ├── fruit_jump/{background,hud,previews}/
 │   ├── coconut_break/{background,hud,previews,props}/
-│   ├── pose_match/{background,obstacles,hud,previews}/
 │   ├── staring_contest/{background,effects,hud,previews,ui}/
 │   ├── stone_or_banana/{background,covers,hud,icons,ui,previews}/
 │   └── stone_throw/{background,hud,previews}/
