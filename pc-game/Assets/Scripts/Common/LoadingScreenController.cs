@@ -39,10 +39,107 @@ public sealed class LoadingScreenController : MonoBehaviour
     private float _elapsed;
     private readonly Queue<int> _backgroundBag = new Queue<int>();
 
+    // --- 호스트-클라이언트 중계 (docs/멀티플레이_분산_아키텍처_설계.md) ---
+    // vision-server는 포즈/프리뷰를 호스트로만 보내므로, 클라이언트의 PoseInputHub는 항상
+    // 비어 있다. 그대로 두면 AreBothCalibrated가 영원히 false여서 IsReady가 서지 않고
+    // SceneFadeTransition이 로딩 화면에서 무한 대기한다(실제로 클라이언트가 미니게임에
+    // 진입하지 못했던 원인). 그래서 호스트가 캘리브레이션 상태와 카메라 프리뷰를 이벤트로
+    // 중계하고, 클라이언트는 자기 판단 대신 그 값을 그대로 표시/사용한다.
+    private const float StatusSendInterval = 0.1f; // 상태는 10Hz면 충분(프리뷰는 도착할 때만 중계)
+    private float _lastStatusSentAt;
+    private StatusPayload _relayedStatus;
+    private bool _subscribed;
+    // ready가 true로 바뀐 프레임에 스로틀 때문에 전송이 밀리면, 호스트는 곧 로딩 화면을 닫고
+    // 더 이상 상태를 보내지 않으므로 클라이언트가 ready=true를 영원히 못 받고 멈춘다.
+    // 그래서 ready 값이 바뀌는 순간에는 스로틀을 무시하고 즉시 보낸다.
+    private bool _lastSentReady;
+
     private void Awake()
     {
         CreateUi();
         _root.SetActive(false);
+    }
+
+    private void OnEnable() => EnsureSubscribed();
+
+    private void EnsureSubscribed()
+    {
+        if (_subscribed) return;
+        NetworkSession net = NetworkSession.Instance;
+        if (net == null) return;
+        net.Subscribe("loading_status", OnNetStatus);
+        net.Subscribe("loading_preview", OnNetPreview);
+        _subscribed = true;
+    }
+
+    private void OnNetStatus(NetworkEvent evt) => _relayedStatus = NetworkSession.Read<StatusPayload>(evt);
+
+    private void OnNetPreview(NetworkEvent evt)
+    {
+        PreviewPayload payload = NetworkSession.Read<PreviewPayload>(evt);
+        if (string.IsNullOrEmpty(payload.jpegBase64)) return;
+        try
+        {
+            CameraPreviewReceiver.Instance?.ApplyRelayedFrame(payload.player, Convert.FromBase64String(payload.jpegBase64));
+        }
+        catch (FormatException e)
+        {
+            Debug.LogWarning($"[LoadingScreen] 중계 프리뷰 디코딩 실패: {e.Message}");
+        }
+    }
+
+    // 호스트: 자기가 받은 상태/프리뷰를 클라이언트로 내보낸다.
+    private void BroadcastAsHost(NetworkSession net)
+    {
+        if (Time.unscaledTime - _lastStatusSentAt >= StatusSendInterval || IsReady != _lastSentReady)
+        {
+            _lastStatusSentAt = Time.unscaledTime;
+            _lastSentReady = IsReady;
+            PoseInputHub hub = PoseInputHub.Instance;
+            PlayerPoseState p1 = hub?.Get(PlayerId.P1);
+            PlayerPoseState p2 = hub?.Get(PlayerId.P2);
+            CameraPreviewReceiver preview = CameraPreviewReceiver.Instance;
+            net.Send("loading_status", new StatusPayload
+            {
+                p1Tracked = p1 != null && p1.IsTracked,
+                p2Tracked = p2 != null && p2.IsTracked,
+                p1Calibrated = p1 != null && p1.IsCalibrated,
+                p2Calibrated = p2 != null && p2.IsCalibrated,
+                p1Progress = p1 != null ? p1.CalibrationProgress : 0f,
+                p2Progress = p2 != null ? p2.CalibrationProgress : 0f,
+                p1Preview = preview != null && preview.IsConnected(PlayerId.P1),
+                p2Preview = preview != null && preview.IsConnected(PlayerId.P2),
+                ready = IsReady,
+            });
+        }
+
+        // 프리뷰는 vision-server가 보낸 새 프레임이 있을 때만(기본 5fps) 중계한다.
+        if (CameraPreviewReceiver.Instance != null &&
+            CameraPreviewReceiver.Instance.TryDequeueRelayFrame(out string player, out byte[] jpeg))
+        {
+            net.Send("loading_preview", new PreviewPayload
+            {
+                player = player,
+                jpegBase64 = Convert.ToBase64String(jpeg),
+            });
+        }
+    }
+
+    [Serializable]
+    private class StatusPayload
+    {
+        public bool p1Tracked, p2Tracked;
+        public bool p1Calibrated, p2Calibrated;
+        public float p1Progress, p2Progress;
+        public bool p1Preview, p2Preview;
+        public bool ready;
+    }
+
+    [Serializable]
+    private class PreviewPayload
+    {
+        public string player;
+        public string jpegBase64;
     }
 
     public void Show(string nextScene)
@@ -51,6 +148,10 @@ public sealed class LoadingScreenController : MonoBehaviour
         _localPlayer = ResolveLocalPlayer();
         _elapsed = 0f;
         IsReady = false;
+        // 지난 라운드의 ready=true가 남아 있으면 클라이언트가 이번 캘리브레이션을 기다리지 않고
+        // 곧바로 통과해버린다 - 라운드마다 중계 상태를 비운다.
+        _relayedStatus = null;
+        _lastSentReady = false;
 
         Sprite[] backgrounds = _backgroundNames.Select(ArtAssets.LoadLoading)
             .Where(x => x != null).ToArray();
@@ -96,9 +197,20 @@ public sealed class LoadingScreenController : MonoBehaviour
         RefreshStatus(PlayerId.P1, 0);
         RefreshStatus(PlayerId.P2, 1);
 
-        PoseInputHub hub = PoseInputHub.Instance;
-        bool calibrated = hub != null && hub.AreBothCalibrated;
-        IsReady = calibrated && _elapsed >= minimumDisplaySeconds;
+        EnsureSubscribed(); // Hub에서 역할을 고른 뒤에야 NetworkSession이 생기는 경우가 있다
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            // 클라이언트는 캘리브레이션을 판정하지 않는다 - 호스트가 보낸 ready를 그대로 쓴다.
+            // 아직 상태를 못 받았으면 대기(false)로 둔다.
+            IsReady = _relayedStatus != null && _relayedStatus.ready && _elapsed >= minimumDisplaySeconds;
+        }
+        else
+        {
+            PoseInputHub hub = PoseInputHub.Instance;
+            bool calibrated = hub != null && hub.AreBothCalibrated;
+            IsReady = calibrated && _elapsed >= minimumDisplaySeconds;
+        }
 
 #if UNITY_EDITOR
         // 한 명만 켜고 씬 흐름을 확인할 때 로딩 화면에 영구히 갇히지 않게 하는 에디터 전용 우회.
@@ -106,17 +218,37 @@ public sealed class LoadingScreenController : MonoBehaviour
 #endif
         if (IsReady)
             _message.text = "두 플레이어 준비 완료!";
+
+        // IsReady를 확정한 뒤에 보내야 클라이언트가 한 프레임 늦지 않는다.
+        if (net != null && net.IsHost) BroadcastAsHost(net);
     }
 
     private void RefreshStatus(PlayerId player, int index)
     {
-        PoseInputHub hub = PoseInputHub.Instance;
-        PlayerPoseState state = hub != null ? hub.Get(player) : null;
-        bool poseConnected = state != null && state.IsTracked;
-        bool previewConnected = CameraPreviewReceiver.Instance != null &&
-                                CameraPreviewReceiver.Instance.IsConnected(player);
-        bool ready = state != null && state.IsCalibrated;
-        int progress = state != null ? Mathf.RoundToInt(state.CalibrationProgress * 100f) : 0;
+        NetworkSession net = NetworkSession.Instance;
+        bool poseConnected, previewConnected, ready;
+        int progress;
+
+        if (net != null && net.IsClient)
+        {
+            // 클라이언트의 PoseInputHub/프리뷰 수신부는 비어 있으므로 중계받은 값만 쓴다.
+            StatusPayload s = _relayedStatus;
+            bool isP1 = player == PlayerId.P1;
+            poseConnected = s != null && (isP1 ? s.p1Tracked : s.p2Tracked);
+            previewConnected = s != null && (isP1 ? s.p1Preview : s.p2Preview);
+            ready = s != null && (isP1 ? s.p1Calibrated : s.p2Calibrated);
+            progress = Mathf.RoundToInt((s != null ? (isP1 ? s.p1Progress : s.p2Progress) : 0f) * 100f);
+        }
+        else
+        {
+            PoseInputHub hub = PoseInputHub.Instance;
+            PlayerPoseState state = hub != null ? hub.Get(player) : null;
+            poseConnected = state != null && state.IsTracked;
+            previewConnected = CameraPreviewReceiver.Instance != null &&
+                               CameraPreviewReceiver.Instance.IsConnected(player);
+            ready = state != null && state.IsCalibrated;
+            progress = state != null ? Mathf.RoundToInt(state.CalibrationProgress * 100f) : 0;
+        }
 
         _statusIcons[index].sprite = ready ? _readyIcon : _loadingIcon;
         _statusTexts[index].text = ready
