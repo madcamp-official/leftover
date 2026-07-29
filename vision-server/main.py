@@ -107,6 +107,61 @@ def _hip_center_x(pose_landmarks):
     return (pose_landmarks[PHYS_L_HIP].x + pose_landmarks[PHYS_R_HIP].x) / 2.0
 
 
+# 아래 점프 높이 계산은 pc-game/Assets/Scripts/Common/JumpHeightCalibrator.cs +
+# PoseInputHub.cs의 TorsoLength/HipMid 정의를 그대로 옮긴 것 - 과일따기(FruitJump)의
+# tierHeightThresholds 값을 실측으로 정하기 위해, 카메라 화면에 실시간 점프 높이 비율을
+# 바로 찍어서 Unity를 켜지 않고도 확인할 수 있게 하는 디버그 전용 기능이다. build_players_payload가
+# 이미 만들어 둔 player["pose"]({"leftHip": {"x","y"}, ...} 형태) 값을 그대로 받아서 쓴다.
+def _hip_mid_from_payload(pose):
+    return (
+        (pose["leftHip"]["x"] + pose["rightHip"]["x"]) / 2.0,
+        (pose["leftHip"]["y"] + pose["rightHip"]["y"]) / 2.0,
+    )
+
+
+def _torso_length_from_payload(pose):
+    hx, hy = _hip_mid_from_payload(pose)
+    sx = (pose["leftShoulder"]["x"] + pose["rightShoulder"]["x"]) / 2.0
+    sy = (pose["leftShoulder"]["y"] + pose["rightShoulder"]["y"]) / 2.0
+    return math.hypot(sx - hx, sy - hy)
+
+
+class JumpHeightTracker:
+    """플레이어 한 명의 점프 높이 상태(기준선 캘리브레이션 + 세션 최고 높이). Unity의
+    JumpHeightCalibrator와 동일하게, 처음 calibration_seconds 동안 엉덩이 중점 y좌표를
+    지수이동평균으로 모아 기준선을 잡고, 이후 (기준선 - 현재y)/몸통길이 비율을 점프 높이로
+    본다(이미지 y는 아래로 증가하므로 값이 작아질수록 위로 뜬 것)."""
+
+    def __init__(self, calibration_seconds: float = 1.5):
+        self.calibration_seconds = calibration_seconds
+        self._baseline_y = None
+        self._calib_start = None
+        self.is_calibrated = False
+        self.current_height = 0.0
+        self.max_height_seen = 0.0
+
+    def update(self, pose, now: float):
+        hip_x, hip_y = _hip_mid_from_payload(pose)
+        torso = _torso_length_from_payload(pose)
+
+        if not self.is_calibrated:
+            if self._calib_start is None:
+                self._calib_start = now
+                self._baseline_y = hip_y
+            else:
+                self._baseline_y = self._baseline_y * 0.85 + hip_y * 0.15
+            if now - self._calib_start >= self.calibration_seconds:
+                self.is_calibrated = True
+            self.current_height = 0.0
+            return
+
+        if torso <= 0:
+            self.current_height = 0.0
+            return
+        self.current_height = max(0.0, (self._baseline_y - hip_y) / torso)
+        self.max_height_seen = max(self.max_height_seen, self.current_height)
+
+
 def _face_center_x(face_landmarks):
     return face_landmarks[_FACE_TOP].x
 
@@ -283,11 +338,14 @@ def main():
 
     start_time = time.time()
     prev_hip_x = {"p1": None, "p2": None}  # 라벨 안정화용 이력 - _assign_player_ids 참고.
+    # 과일따기 tierHeightThresholds 실측용 - 플레이어별 점프 높이 캘리브레이션/세션 최고치.
+    jump_trackers = {"p1": JumpHeightTracker(), "p2": JumpHeightTracker()}
     print(f"[udp] {dest[0]}:{dest[1]} 로 연속 포즈 스트림 전송 (매 프레임)")
     if args.player_id:
         print(f"1인 모드: 이 카메라에 감지된 사람은 전부 {args.player_id}로 전송됩니다. 종료는 'q'.")
     else:
         print("화면 왼쪽에 선 사람 = p1, 오른쪽 = p2. 종료는 'q'.")
+    print("점프 높이 캘리브레이션: 가만히 서서 1.5초 기다리세요. 'r'=세션 최고 높이 초기화.")
 
     try:
         while True:
@@ -309,15 +367,24 @@ def main():
                 dest,
             )
 
+            now = time.time()
+            for player in players:
+                jump_trackers[player["id"]].update(player["pose"], now)
+
             if args.show:
                 h, w = frame.shape[:2]
                 for player in players:
                     color = (0, 120, 255) if player["id"] == "p1" else (255, 120, 0)
                     for point in player["pose"].values():
                         cv2.circle(frame, (int(point["x"] * w), int(point["y"] * h)), 4, color, -1)
+                    tracker = jump_trackers[player["id"]]
+                    if tracker.is_calibrated:
+                        jump_label = f"height={tracker.current_height:.2f} max={tracker.max_height_seen:.2f}"
+                    else:
+                        jump_label = "캘리브레이션 중..."
                     label = (
                         f"{player['id']}  mouth={player['face']['mouthOpenRatio']:.2f}"
-                        f"  EAR={player['face']['eyeAspectRatio']:.2f}"
+                        f"  EAR={player['face']['eyeAspectRatio']:.2f}  {jump_label}"
                     )
                     anchor_x = int(player["pose"]["nose"]["x"] * w)
                     anchor_y = max(20, int(player["pose"]["nose"]["y"] * h) - 20)
@@ -326,11 +393,15 @@ def main():
                 if not players:
                     cv2.putText(frame, "NO POSE", (20, 40),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-                cv2.putText(frame, "[q]=quit", (20, frame.shape[0] - 20),
+                cv2.putText(frame, "[q]=quit  [r]=최고높이 초기화", (20, frame.shape[0] - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
                 cv2.imshow("vision-server", frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     break
+                if key == ord("r"):
+                    for tracker in jump_trackers.values():
+                        tracker.max_height_seen = 0.0
     finally:
         cap.release()
         cv2.destroyAllWindows()

@@ -16,6 +16,7 @@
 //   LeftShift (LeftAlt): 눈 감음 (눈빛싸움)
 // 자세따라하기(포즈 스냅샷 비교)는 키보드로 흉내 내기 어려워서 지원하지 않는다.
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class DebugPoseController : MonoBehaviour
 {
@@ -29,12 +30,16 @@ public class DebugPoseController : MonoBehaviour
     private void Update()
     {
         PoseInputHub hub = PoseInputHub.Instance;
-        if (hub == null) return;
+        Keyboard keyboard = Keyboard.current;
+        // 프로젝트가 Player Settings에서 Active Input Handling을 "Input System Package"로
+        // 쓰고 있어서 레거시 UnityEngine.Input.GetKey*는 예외를 던진다 - 새 Input System의
+        // Keyboard.current를 써야 한다.
+        if (hub == null || keyboard == null) return;
 
-        _p1Jump = Approach(_p1Jump, Input.GetKey(KeyCode.UpArrow) ? 1f : 0f, jumpApproachSpeed);
-        _p2Jump = Approach(_p2Jump, Input.GetKey(KeyCode.W) ? 1f : 0f, jumpApproachSpeed);
-        _p1HandClose = Approach(_p1HandClose, Input.GetKey(KeyCode.DownArrow) ? 1f : 0f, handCloseApproachSpeed);
-        _p2HandClose = Approach(_p2HandClose, Input.GetKey(KeyCode.S) ? 1f : 0f, handCloseApproachSpeed);
+        _p1Jump = Approach(_p1Jump, keyboard.upArrowKey.isPressed ? 1f : 0f, jumpApproachSpeed);
+        _p2Jump = Approach(_p2Jump, keyboard.wKey.isPressed ? 1f : 0f, jumpApproachSpeed);
+        _p1HandClose = Approach(_p1HandClose, keyboard.downArrowKey.isPressed ? 1f : 0f, handCloseApproachSpeed);
+        _p2HandClose = Approach(_p2HandClose, keyboard.sKey.isPressed ? 1f : 0f, handCloseApproachSpeed);
 
         var frame = new FramePayload
         {
@@ -42,11 +47,11 @@ public class DebugPoseController : MonoBehaviour
             players = new[]
             {
                 BuildPlayer("p1", _p1Jump, _p1HandClose,
-                    leftHand: Input.GetKey(KeyCode.LeftArrow), rightHand: Input.GetKey(KeyCode.RightArrow),
-                    mouthOpen: Input.GetKey(KeyCode.Space), eyeClosed: Input.GetKey(KeyCode.LeftShift)),
+                    leftHand: keyboard.leftArrowKey.isPressed, rightHand: keyboard.rightArrowKey.isPressed,
+                    mouthOpen: keyboard.spaceKey.isPressed, eyeClosed: keyboard.leftShiftKey.isPressed),
                 BuildPlayer("p2", _p2Jump, _p2HandClose,
-                    leftHand: Input.GetKey(KeyCode.A), rightHand: Input.GetKey(KeyCode.D),
-                    mouthOpen: Input.GetKey(KeyCode.LeftControl), eyeClosed: Input.GetKey(KeyCode.LeftAlt)),
+                    leftHand: keyboard.aKey.isPressed, rightHand: keyboard.dKey.isPressed,
+                    mouthOpen: keyboard.leftCtrlKey.isPressed, eyeClosed: keyboard.leftAltKey.isPressed),
             },
         };
         hub.ApplyFrame(frame);
