@@ -7,8 +7,9 @@ using UnityEngine;
 //
 // 위치는 "기준 자리(_basePosition)"만 갖고, 실제 표시 위치는 항상 기준 + 컷별 X 오프셋이다.
 // 기준은 기본적으로 씬에 배치된 자리지만, FeatherFlightGame이 SetBase()로 매 프레임 바꿀 수
-// 있다(예: 절벽에서 화면 중앙 정착 자리까지 도약하는 인트로 동안). 인트로가 끝나 기준이
-// 고정되면, 그 뒤로는 컷 오프셋(X)만 씬에서 직접 조정하면 된다 - Y는 항상 기준과 같다.
+// 있다(예: 원래 Y로 되돌아오는 인트로 홉 동안 X만 RestPoint 쪽으로 옮기는 식). 인트로가
+// 끝나 기준이 고정되면, 그 뒤로는 컷 오프셋(X)만 씬에서 직접 조정하면 된다 - Y는 항상
+// 기준과 같다. (원래 스폰 Y는 FeatherFlightGame이 실제 게임플레이 시작 height로도 쓴다.)
 [ExecuteAlways]
 public sealed class FeatherFlightCharacterView : MonoBehaviour
 {
