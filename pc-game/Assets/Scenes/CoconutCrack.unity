@@ -3147,17 +3147,23 @@ MonoBehaviour:
   matchSeconds: 30
   hitDistance: 0.25
   releaseDistance: 0.45
+  releaseHoldSeconds: 0.15
+  releaseLoweredRatio: 0.15
+  animationSmoothing: 12
   resultDisplaySeconds: 2
   coconutWidth: 0.5
-  hitAnimSeconds: 0.6
-  breakAnimSeconds: 0.3
-  coconutRespawnSeconds: 0.08
+  breakAnimSeconds: 0.65
+  breakArcHeight: 2.2
+  breakSpinDegrees: 1080
+  breakSourceFrame: 5
   p1FrameWidth: 2.768
   p2FrameWidth: 2.944
   p1FrameYOffset: 0.519
   p2FrameYOffset: 0
+  p1CoconutWorldOffset: {x: 0, y: 0}
+  p2CoconutWorldOffset: {x: 0, y: 0}
   frameSortingOrder: -2
-  breakFlyDistance: {x: 3, y: 1.5}
+  breakFlyDistance: {x: 4.5, y: 2.2}
   p1HandAnchors:
   - {x: 0, y: 0.1}
   - {x: 0, y: 0.5}
@@ -3166,12 +3172,12 @@ MonoBehaviour:
   - {x: 0, y: 1.4}
   - {x: 0, y: 1.4}
   p2HandAnchors:
+  - {x: 0, y: -1.2}
   - {x: 0, y: 0.1}
-  - {x: 0, y: 0.25}
-  - {x: 0, y: 0.4}
-  - {x: 0, y: 0.55}
-  - {x: 0, y: 0.65}
-  - {x: 0, y: 0.7}
+  - {x: 0, y: 1.2}
+  - {x: 0, y: 2.2}
+  - {x: 0, y: 1.7}
+  - {x: 0, y: 1.7}
   p1Anchor: {fileID: 1798810907}
   p2Anchor: {fileID: 1446818757}
   p1Coconut: {fileID: 95784045}

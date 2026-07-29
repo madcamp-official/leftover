@@ -20,15 +20,21 @@ public class CoconutCrackGame : MonoBehaviour
     public float matchSeconds = 15f;
     public float hitDistance = 0.25f;     // 몸통 길이 대비, 이 이하면 "타격"
     public float releaseDistance = 0.45f; // 이 이상으로 벌어져야 다음 타격을 셀 준비 완료
+    public float releaseHoldSeconds = 0.15f; // 손을 충분히 내린 상태를 이 시간만큼 유지해야 재장전
+    public float releaseLoweredRatio = 0.15f; // 손이 어깨보다 몸통 길이의 이 비율만큼 아래여야 내려온 것으로 판정
+    public float animationSmoothing = 12f; // MediaPipe 좌표 떨림이 프레임 왕복으로 보이지 않게 하는 속도
     public float resultDisplaySeconds = 2f;
     public float coconutWidth = 0.5f; // 인게임에서 보일 코코넛 가로 폭(월드 유닛)
-    public float hitAnimSeconds = 0.4f; // 캐릭터가 코코넛을 머리로 가져가는 스윙(프레임 애니메이션) 재생 시간 - 이 동안은 코코넛이 손 위치를 따라간다
-    public float breakAnimSeconds = 0.25f; // 스윙이 끝난 뒤 코코넛이 쪼개져 날아가는 연출 시간
-    public float coconutRespawnSeconds = 0.08f; // 파괴 시작 후 다음 멀쩡한 코코넛이 나타날 때까지의 시간
+    public float breakAnimSeconds = 0.25f; // 정점에서 코코넛이 쪼개져 날아가는 연출 시간
+    public float breakArcHeight = 2.2f; // 깨진 조각이 포물선 정점에서 추가로 올라가는 높이(월드 유닛)
+    public float breakSpinDegrees = 1080f; // 날아가는 동안 각 조각이 회전하는 총 각도
+    public int breakSourceFrame = 5; // 깨진 조각이 출발할 coconut_N 프레임 번호(1부터 시작)
     public float p1FrameWidth = 1.2f; // P1 coconut_N 프레임 캐릭터의 표시 폭(월드 유닛) - 바닥에 발이 붙은 채로 커지고 작아짐
     public float p2FrameWidth = 1.6f; // P2도 필요하면 따로 조정(같은 방식으로 바닥 기준 유지)
     public float p1FrameYOffset = 0.5f; // P1 캐릭터를 바닥 기준 위치에서 위로 추가로 띄우는 양(월드 유닛)
     public float p2FrameYOffset = 0f;   // P2도 필요하면 같은 식으로 조정
+    public Vector2 p1CoconutWorldOffset = Vector2.zero; // 손 앵커 계산 후 적용하는 최종 월드 좌표 보정
+    public Vector2 p2CoconutWorldOffset = Vector2.zero;
     public int frameSortingOrder = -2;  // 책상/받침대 소품(정렬 순서 -1)보다 뒤에 그려지도록 더 낮은 값
     // 쪼개진 반쪽이 날아가는 거리(월드 유닛) - 왼쪽은 (-x,-y), 오른쪽은 (x,-y) 방향으로.
     // 예전엔 (0.3, 0.15)처럼 너무 작아서 "그 자리에서 쪼그라들며 사라지는" 것처럼 보였다.
@@ -59,6 +65,7 @@ public class CoconutCrackGame : MonoBehaviour
     private sealed class CoconutEffect
     {
         public bool IsBusy;
+        public bool AwaitingRelease;
         public SpriteRenderer Left;
         public SpriteRenderer Right;
     }
@@ -78,6 +85,10 @@ public class CoconutCrackGame : MonoBehaviour
     private int _p2Hits;
     private bool _p1ReadyToHit = true;
     private bool _p2ReadyToHit = true;
+    private float _p1ReleaseHeld;
+    private float _p2ReleaseHeld;
+    private float _p1AnimationProgress;
+    private float _p2AnimationProgress;
     private bool _ended;
 
     private void Start()
@@ -115,15 +126,22 @@ public class CoconutCrackGame : MonoBehaviour
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
 
+        // 고정 시간 재생 대신 실제 손-머리 거리로 프레임 진행률을 결정한다. 손을 올리면
+        // 정방향, 내리면 역방향으로 재생되므로 사람의 실제 한 사이클과 애니메이션이 일치한다.
+        DriveGestureAnimation(p1, _p1Anim, ref _p1AnimationProgress);
+        DriveGestureAnimation(p2, _p2Anim, ref _p2AnimationProgress);
+
         // 코코넛이 고정 위치가 아니라 지금 재생 중인 그림(coconut_N)에서 손이 있는 자리를
         // 따라다니게 한다(FrameAnimatedCharacter에 지정해 둔 handAnchor).
-        if (p1Coconut != null && _p1Anim != null) p1Coconut.transform.position = _p1Anim.HandAnchorWorld;
-        if (p2Coconut != null && _p2Anim != null) p2Coconut.transform.position = _p2Anim.HandAnchorWorld;
+        if (p1Coconut != null && _p1Anim != null)
+            p1Coconut.transform.position = _p1Anim.HandAnchorWorld + (Vector3)p1CoconutWorldOffset;
+        if (p2Coconut != null && _p2Anim != null)
+            p2Coconut.transform.position = _p2Anim.HandAnchorWorld + (Vector3)p2CoconutWorldOffset;
 
         if (_ended) return;
 
-        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, p1Coconut, _p1Anim, _p1Effect);
-        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, p2Coconut, _p2Anim, _p2Effect);
+        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1ReleaseHeld, ref _p1Hits, p1Coconut, _p1Anim, _p1Effect);
+        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2ReleaseHeld, ref _p2Hits, p2Coconut, _p2Anim, _p2Effect);
 
         _elapsed += Time.deltaTime;
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
@@ -134,85 +152,131 @@ public class CoconutCrackGame : MonoBehaviour
         }
     }
 
-    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref int hitCount,
-        SpriteRenderer coconut, FrameAnimatedCharacter anim, CoconutEffect effect)
+    private void DriveGestureAnimation(PlayerPoseState state, FrameAnimatedCharacter anim, ref float smoothedProgress)
     {
-        if (state == null || !state.IsTracked) return;
+        if (anim == null) return;
+        if (state == null || !state.IsTracked)
+        {
+            smoothedProgress = 0f;
+            anim.SetProgress(0f);
+            return;
+        }
+
+        float distance = state.HandToHeadDistance();
+        float targetProgress = Mathf.Clamp01(
+            (releaseDistance - distance) / (releaseDistance - hitDistance)
+        );
+        float blend = 1f - Mathf.Exp(-animationSmoothing * Time.deltaTime);
+        smoothedProgress = Mathf.Lerp(smoothedProgress, targetProgress, blend);
+        anim.SetProgress(smoothedProgress);
+    }
+
+    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref float releaseHeld,
+        ref int hitCount, SpriteRenderer coconut, FrameAnimatedCharacter anim, CoconutEffect effect)
+    {
+        if (state == null || !state.IsTracked)
+        {
+            releaseHeld = 0f;
+            return;
+        }
+
         float distance = state.HandToHeadDistance();
 
         if (readyToHit && distance <= hitDistance)
         {
             hitCount++;
             readyToHit = false;
+            releaseHeld = 0f;
             hud?.SetHits(id, hitCount);
-            TryPlayHitVisual(coconut, anim, effect);
+            TryBreakCoconut(coconut, anim, effect);
         }
-        else if (!readyToHit && distance >= releaseDistance)
+        else if (!readyToHit)
         {
-            readyToHit = true;
+            bool returnedToRest = distance >= releaseDistance && AreHandsLowered(state);
+            releaseHeld = returnedToRest ? releaseHeld + Time.deltaTime : 0f;
+
+            if (releaseHeld >= releaseHoldSeconds)
+            {
+                readyToHit = true;
+                releaseHeld = 0f;
+                RespawnCoconut(coconut, effect);
+            }
         }
     }
 
-    // 점수 판정은 입력 속도 그대로 유지하되, 같은 플레이어의 시각 연출은 하나만 재생한다.
-    // 이전 연출이 코코넛 표시 상태를 복구하기 전에 다음 코루틴이 겹쳐 실행되는 것을 막는다.
-    private void TryPlayHitVisual(SpriteRenderer coconut, FrameAnimatedCharacter anim, CoconutEffect effect)
+    private bool AreHandsLowered(PlayerPoseState state)
     {
-        if (effect == null || effect.IsBusy) return;
-        effect.IsBusy = true;
-        anim?.PlayOnce(hitAnimSeconds);
-        StartCoroutine(PunchCoconut(coconut, effect));
+        float torso = state.Joints.TorsoLength;
+        if (torso <= 0f) return false;
+
+        float handMidY = (state.Joints.leftWrist.y + state.Joints.rightWrist.y) * 0.5f;
+        float shoulderMidY = state.Joints.ShoulderMid.y;
+        return (handMidY - shoulderMidY) / torso >= releaseLoweredRatio;
     }
 
-    // 타격이 인정된 직후에는 코코넛을 숨기지 않는다 - hitAnimSeconds(스윙) 동안은 코코넛이
-    // 계속 보이면서 Update()에서 매 프레임 갱신되는 손 위치(HandAnchorWorld)를 따라 머리로
-    // 올라가는 것처럼 보인다. 스윙이 끝난 그 순간에야 멀쩡한 코코넛을 숨기고, 반으로 쪼개진
-    // 코코넛 두 조각이 breakFlyDistance만큼 좌우로 크게 튀어나가며 사라지는 연출을
-    // breakAnimSeconds 동안 보여준 뒤 다시 멀쩡한 코코넛으로 복구한다(반복 타격 경쟁이라
-    // 매번 "깨졌다가 새 코코넛이 나타나는" 것처럼 보이게).
-    private IEnumerator PunchCoconut(SpriteRenderer coconut, CoconutEffect effect)
+    // 손이 머리에 도달한 정점에서 즉시 코코넛을 깨고, 다음 코코넛은 손이 다시
+    // releaseDistance까지 내려왔을 때 준비한다. 따라서 생성 주기도 고정 시간이 아니라
+    // 플레이어가 실제로 손을 올렸다 내리는 속도를 따른다.
+    private void TryBreakCoconut(SpriteRenderer coconut, FrameAnimatedCharacter anim, CoconutEffect effect)
     {
-        yield return new WaitForSeconds(hitAnimSeconds);
+        if (coconut == null || effect == null) return;
+        float sourceWorldWidth = GetSpriteWorldWidth(coconut);
+        Vector3 breakStartPosition = anim != null
+            ? anim.GetHandAnchorWorld(breakSourceFrame - 1)
+            : coconut.transform.position;
+        coconut.enabled = false;
+        effect.AwaitingRelease = true;
+        if (effect.IsBusy) return;
 
+        effect.IsBusy = true;
+        StartCoroutine(PunchCoconut(coconut, effect, sourceWorldWidth, breakStartPosition));
+    }
+
+    private static void RespawnCoconut(SpriteRenderer coconut, CoconutEffect effect)
+    {
+        if (coconut == null || effect == null || !effect.AwaitingRelease) return;
+        effect.AwaitingRelease = false;
+        coconut.enabled = true;
+    }
+
+    // 정점에서 시작된 깨진 조각 연출만 짧은 고정 시간을 쓴다. 캐릭터의 올림/내림 속도와
+    // 다음 코코넛 준비 시점은 모두 위의 실제 손 거리로 결정된다.
+    private IEnumerator PunchCoconut(SpriteRenderer coconut, CoconutEffect effect, float sourceWorldWidth,
+        Vector3 startPos)
+    {
         if (coconut == null)
         {
             effect.IsBusy = false;
             yield break;
         }
 
-        Vector3 startPos = coconut.transform.position;
-        PrepareHalf(effect.Left, startPos);
-        PrepareHalf(effect.Right, startPos);
-        coconut.enabled = false;
+        PrepareHalf(effect.Left, startPos, sourceWorldWidth);
+        PrepareHalf(effect.Right, startPos, sourceWorldWidth);
 
         float duration = breakAnimSeconds;
-        float respawnAt = Mathf.Min(coconutRespawnSeconds, duration);
-        Vector3 leftOffset = new Vector3(-breakFlyDistance.x, -breakFlyDistance.y, 0f);
-        Vector3 rightOffset = new Vector3(breakFlyDistance.x, -breakFlyDistance.y, 0f);
         float elapsed = 0f;
-        bool respawned = false;
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             float p = Mathf.Clamp01(elapsed / duration);
-            effect.Left.transform.position = startPos + leftOffset * p;
-            effect.Left.transform.rotation = Quaternion.Euler(0, 0, Mathf.Lerp(0f, 1440f, p));
-            effect.Right.transform.position = startPos + rightOffset * p;
-            effect.Right.transform.rotation = Quaternion.Euler(0, 0, Mathf.Lerp(0f, -1440f, p));
-            SetAlpha(effect.Left, 1f - p);
-            SetAlpha(effect.Right, 1f - p);
+            float arcY = 4f * breakArcHeight * p * (1f - p);
+            float fallY = -breakFlyDistance.y * p;
 
-            // 깨진 조각 연출이 끝날 때까지 기다리지 않고 다음 코코넛을 먼저 준비한다.
-            if (!respawned && elapsed >= respawnAt)
-            {
-                coconut.enabled = true;
-                respawned = true;
-            }
+            effect.Left.transform.position = startPos +
+                new Vector3(-breakFlyDistance.x * p, fallY + arcY, 0f);
+            effect.Left.transform.rotation = Quaternion.Euler(0f, 0f, breakSpinDegrees * p);
+            effect.Right.transform.position = startPos +
+                new Vector3(breakFlyDistance.x * p, fallY + arcY, 0f);
+            effect.Right.transform.rotation = Quaternion.Euler(0f, 0f, -breakSpinDegrees * p);
 
+            // 궤적 대부분은 선명하게 보여주고 마지막 35%에서만 사라지게 한다.
+            float alpha = 1f - Mathf.InverseLerp(0.65f, 1f, p);
+            SetAlpha(effect.Left, alpha);
+            SetAlpha(effect.Right, alpha);
             yield return null;
         }
 
         SetEffectVisible(effect, false);
-        if (!respawned) coconut.enabled = true;
         effect.IsBusy = false;
     }
 
@@ -237,12 +301,33 @@ public class CoconutCrackGame : MonoBehaviour
         return sr;
     }
 
-    private static void PrepareHalf(SpriteRenderer half, Vector3 worldPosition)
+    private static void PrepareHalf(SpriteRenderer half, Vector3 worldPosition, float targetWorldWidth)
     {
         half.transform.position = worldPosition;
         half.transform.rotation = Quaternion.identity;
+        FitWorldWidth(half, targetWorldWidth);
         SetAlpha(half, 1f);
         half.enabled = half.sprite != null;
+    }
+
+    private static float GetSpriteWorldWidth(SpriteRenderer renderer)
+    {
+        if (renderer == null || renderer.sprite == null) return 0f;
+        return renderer.sprite.bounds.size.x * Mathf.Abs(renderer.transform.lossyScale.x);
+    }
+
+    private static void FitWorldWidth(SpriteRenderer renderer, float targetWorldWidth)
+    {
+        if (renderer == null || renderer.sprite == null || targetWorldWidth <= 0f) return;
+
+        float nativeWidth = renderer.sprite.bounds.size.x;
+        float parentScaleX = renderer.transform.parent != null
+            ? Mathf.Abs(renderer.transform.parent.lossyScale.x)
+            : 1f;
+        if (nativeWidth <= 0f || parentScaleX <= 0.0001f) return;
+
+        float scale = targetWorldWidth / (nativeWidth * parentScaleX);
+        renderer.transform.localScale = Vector3.one * scale;
     }
 
     private static void SetEffectVisible(CoconutEffect effect, bool visible)
@@ -276,14 +361,18 @@ public class CoconutCrackGame : MonoBehaviour
     {
         matchSeconds = Mathf.Max(0.1f, matchSeconds);
         resultDisplaySeconds = Mathf.Max(0f, resultDisplaySeconds);
-        hitAnimSeconds = Mathf.Max(0.01f, hitAnimSeconds);
         breakAnimSeconds = Mathf.Max(0.01f, breakAnimSeconds);
-        coconutRespawnSeconds = Mathf.Clamp(coconutRespawnSeconds, 0f, breakAnimSeconds);
         coconutWidth = Mathf.Max(0.01f, coconutWidth);
         p1FrameWidth = Mathf.Max(0.01f, p1FrameWidth);
         p2FrameWidth = Mathf.Max(0.01f, p2FrameWidth);
         hitDistance = Mathf.Max(0f, hitDistance);
         releaseDistance = Mathf.Max(hitDistance + 0.01f, releaseDistance);
+        releaseHoldSeconds = Mathf.Max(0f, releaseHoldSeconds);
+        releaseLoweredRatio = Mathf.Max(0f, releaseLoweredRatio);
+        animationSmoothing = Mathf.Max(0.01f, animationSmoothing);
+        breakArcHeight = Mathf.Max(0f, breakArcHeight);
+        breakSpinDegrees = Mathf.Max(0f, breakSpinDegrees);
+        breakSourceFrame = Mathf.Max(1, breakSourceFrame);
         breakFlyDistance.x = Mathf.Max(0f, breakFlyDistance.x);
         breakFlyDistance.y = Mathf.Max(0f, breakFlyDistance.y);
     }

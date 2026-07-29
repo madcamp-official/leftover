@@ -37,6 +37,39 @@ public class FrameAnimatedCharacter : MonoBehaviour
     // 맞아떨어지게 하려는 것.
     public Vector3 HandAnchorWorld => _renderer != null ? _renderer.transform.TransformPoint(_currentHandAnchor) : transform.position;
 
+    // 현재 표시 중인 프레임과 관계없이 지정한 프레임이 표시됐을 때의 손 앵커 월드 좌표를 계산한다.
+    // 조각 효과처럼 특정 프레임의 기준 위치에서 항상 시작해야 하는 연출에 사용한다.
+    public Vector3 GetHandAnchorWorld(int frameIndex)
+    {
+        if (!HasFrames || _renderer == null) return transform.position;
+
+        int index = Mathf.Clamp(frameIndex, 0, _frames.Length - 1);
+        Sprite sprite = _frames[index];
+        Transform parent = _renderer.transform.parent;
+        if (sprite == null || parent == null) return transform.position;
+
+        float localScale;
+        Vector3 localPosition;
+        if (_useWorldSpaceLayout)
+        {
+            float parentScaleX = Mathf.Max(0.0001f, Mathf.Abs(parent.lossyScale.x));
+            float parentScaleY = Mathf.Max(0.0001f, Mathf.Abs(parent.lossyScale.y));
+            localScale = _width / (sprite.bounds.size.x * parentScaleX);
+            float bottomToPivot = -sprite.bounds.min.y * localScale;
+            localPosition = new Vector3(0f, bottomToPivot + _yOffset / parentScaleY, 0f);
+        }
+        else
+        {
+            localScale = _width / sprite.bounds.size.x;
+            float height = sprite.bounds.size.y * localScale;
+            localPosition = new Vector3(0f, height * 0.5f + _yOffset, 0f);
+        }
+
+        Vector2 anchor = AnchorFor(index);
+        Vector3 anchorInParent = localPosition + new Vector3(anchor.x * localScale, anchor.y * localScale, 0f);
+        return parent.TransformPoint(anchorInParent);
+    }
+
     // frames가 비어 있으면(아직 이 캐릭터/게임용 프레임이 준비 안 됨) 아무것도 하지 않고
     // null을 반환한다 - 기존 리깅이 그대로 보이는 폴백이 유지된다.
     // yOffset: 바닥 기준 위치에서 추가로 위(+)/아래(-)로 미세 조정할 값(월드 유닛).
