@@ -91,7 +91,7 @@ public static class EditableSceneLayoutBuilder
         Debug.Log("[Uga Uga] Hub + 미니게임 5개 씬 Camera Size를 5로 통일 완료");
     }
 
-    [MenuItem("Tools/Uga Uga/Apply Common Timer and Match Scoreboard")]
+    [MenuItem("Tools/Uga Uga/Apply Common Timer")]
     public static void ApplyCommonMatchHud()
     {
         string[] names = { "StoneThrow", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
@@ -107,15 +107,12 @@ public static class EditableSceneLayoutBuilder
             timerPlate.preserveAspect = true;
             EditorUtility.SetDirty(timerPlate);
 
-            MatchScoreboardHud old = canvas.GetComponentInChildren<MatchScoreboardHud>(true);
-            if (old != null) UnityEngine.Object.DestroyImmediate(old.gameObject);
-            MatchScoreboardHud.Build(canvas.transform);
             Save(scene);
         }
 
         Open("Hub");
         AssetDatabase.SaveAssets();
-        Debug.Log("[Uga Uga] 미니게임 6개 씬 공용 타이머 + 매치 결과판 적용 완료");
+        Debug.Log("[Uga Uga] 미니게임 5개 씬 공용 타이머 적용 완료");
     }
 
     [MenuItem("Tools/Uga Uga/Hub/Apply Camera Cover Background")]
@@ -349,7 +346,6 @@ public static class EditableSceneLayoutBuilder
         Scene s = Open("StoneThrow"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
         AddBackground(root, ArtAssets.LoadStoneThrow("background"), StandardCameraSize);
         StoneThrowHud hud = StoneThrowHud.Build(30); hud.transform.SetParent(root, false);
-        MatchScoreboardHud.Build(hud.transform);
         StoneThrowSceneSetup.RebuildScene(s);
         Save(s);
     }
@@ -365,7 +361,6 @@ public static class EditableSceneLayoutBuilder
         SpriteRenderer[] f1 = AddFruits(root, "P1 Fruits", -2.5f);
         SpriteRenderer[] f2 = AddFruits(root, "P2 Fruits", 2.5f);
         FruitJumpHud hud = FruitJumpHud.Build(30); hud.transform.SetParent(root, false);
-        MatchScoreboardHud.Build(hud.transform);
         SetRefs(Controller<FruitJumpGame>(), ("p1Silhouette", p1), ("p2Silhouette", p2), ("p1Jump", j1), ("p2Jump", j2),
             ("p1Fruits", f1), ("p2Fruits", f2), ("hud", hud)); Save(s);
     }
@@ -389,7 +384,6 @@ public static class EditableSceneLayoutBuilder
         var c1 = AddSprite(p1.transform, "Coconut", ArtAssets.LoadProp("coconut"), p1.transform.position + Vector3.up * 1.6f, .5f, 3);
         var c2 = AddSprite(p2.transform, "Coconut", ArtAssets.LoadProp("coconut"), p2.transform.position + Vector3.up * 1.6f, .5f, 3);
         CoconutBreakHud hud = CoconutBreakHud.Build(15); hud.transform.SetParent(root, false);
-        MatchScoreboardHud.Build(hud.transform);
         SetRefs(Controller<CoconutCrackGame>(), ("p1Silhouette", p1), ("p2Silhouette", p2), ("p1Coconut", c1), ("p2Coconut", c2), ("hud", hud)); Save(s);
     }
 
@@ -398,7 +392,6 @@ public static class EditableSceneLayoutBuilder
         Scene s = Open("StoneOrBanana"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
         AddBackground(root, ArtAssets.LoadStoneOrBanana("background"), StandardCameraSize);
         StoneOrBananaHud hud = StoneOrBananaHud.Build(); hud.transform.SetParent(root, false);
-        MatchScoreboardHud.Build(hud.transform);
         StoneOrBananaSceneSetup.RebuildScene(s, rebuildHud: false);
         Save(s);
     }
@@ -413,7 +406,6 @@ public static class EditableSceneLayoutBuilder
         var t1 = new GameObject("P1 EyeTimer").AddComponent<EyeCloseTimer>(); t1.transform.SetParent(root); t1.player = PlayerId.P1;
         var t2 = new GameObject("P2 EyeTimer").AddComponent<EyeCloseTimer>(); t2.transform.SetParent(root); t2.player = PlayerId.P2;
         StaringContestHud hud = StaringContestHud.Build(60); hud.transform.SetParent(root, false);
-        MatchScoreboardHud.Build(hud.transform);
         SetRefs(Controller<StaringContestGame>(), ("p1Anchor", p1Anchor), ("p2Anchor", p2Anchor), ("p1Timer", t1), ("p2Timer", t2), ("hud", hud)); Save(s);
     }
 

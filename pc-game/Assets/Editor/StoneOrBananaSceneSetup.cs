@@ -68,7 +68,6 @@ public static class StoneOrBananaSceneSetup
             if (hud != null) UnityEngine.Object.DestroyImmediate(hud.gameObject);
             hud = StoneOrBananaHud.Build();
             hud.transform.SetParent(layout, false);
-            MatchScoreboardHud.Build(hud.transform);
         }
 
         StoneOrBananaGame game = UnityEngine.Object.FindAnyObjectByType<StoneOrBananaGame>();
