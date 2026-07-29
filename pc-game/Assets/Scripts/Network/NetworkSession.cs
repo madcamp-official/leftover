@@ -61,6 +61,7 @@ public sealed class NetworkSession : MonoBehaviour
         _channel = new GameEventChannel();
         _channel.OnConnected += HandleChannelConnected;
         _channel.OnDisconnected += HandleChannelDisconnected;
+        _channel.OnError += HandleChannelError;
         _channel.StartHost(port);
     }
 
@@ -72,6 +73,7 @@ public sealed class NetworkSession : MonoBehaviour
         _channel = new GameEventChannel();
         _channel.OnConnected += HandleChannelConnected;
         _channel.OnDisconnected += HandleChannelDisconnected;
+        _channel.OnError += HandleChannelError;
         _channel.StartClient(hostAddress, port);
     }
 
@@ -83,6 +85,7 @@ public sealed class NetworkSession : MonoBehaviour
         {
             _channel.OnConnected -= HandleChannelConnected;
             _channel.OnDisconnected -= HandleChannelDisconnected;
+            _channel.OnError -= HandleChannelError;
             _channel.Stop();
         }
         _channel = null;
@@ -106,6 +109,14 @@ public sealed class NetworkSession : MonoBehaviour
     {
         ConnectionState = NetworkConnectionState.Disconnected;
         OnDisconnected?.Invoke();
+    }
+
+    // 접속 실패는 조용히 넘기면 안 된다 - 사유를 LastError에 남기고 역할을 Offline으로
+    // 되돌려서, Hub 화면이 다시 IP 입력 상태로 돌아가되 실패 이유는 화면에 계속 보이게 한다.
+    private void HandleChannelError(string message)
+    {
+        Shutdown();
+        LastError = message;
     }
 
     // type 이벤트가 올 때마다 handler를 부른다. 씬 전환에도 살아남는 싱글턴이므로, 구독자가

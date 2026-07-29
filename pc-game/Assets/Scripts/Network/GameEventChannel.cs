@@ -29,13 +29,31 @@ public sealed class GameEventChannel
 
     public event Action OnConnected;
     public event Action OnDisconnected;
+    // 접속 실패 사유를 UI로 올린다. 이게 없으면 클라이언트는 "접속 시도 중..."에서 영원히
+    // 멈춘 것처럼 보여서 방화벽 문제인지 IP 오타인지 구분할 수 없다.
+    public event Action<string> OnError;
+
+    // TcpClient.Connect는 방화벽이 패킷을 조용히 버리면 OS 기본 타임아웃까지(20초 이상)
+    // 블록된다. 그만큼 "접속 중" 상태로 방치되면 사용자가 뭐가 잘못됐는지 알 수 없으므로
+    // 명시적으로 짧게 끊고 사유를 표시한다.
+    private const int ConnectTimeoutMs = 5000;
 
     public void StartHost(int port = DefaultPort)
     {
         Stop();
         _stopping = false;
-        _listener = new TcpListener(IPAddress.Any, port);
-        _listener.Start();
+        try
+        {
+            _listener = new TcpListener(IPAddress.Any, port);
+            _listener.Start();
+        }
+        catch (Exception e)
+        {
+            // 포트를 이미 다른 프로세스가 쓰고 있는 경우 등 - 조용히 실패하면 호스트가
+            // 대기 중인 줄 알고 계속 기다리게 된다.
+            _incoming.Enqueue(new NetworkEvent { type = "__error", json = $"호스트 시작 실패: {e.Message}" });
+            return;
+        }
         _bgThread = new Thread(AcceptLoop) { IsBackground = true };
         _bgThread.Start();
     }
@@ -50,14 +68,20 @@ public sealed class GameEventChannel
 
     private void AcceptLoop()
     {
-        try
+        // 한 번만 accept하면 클라이언트가 한 번 끊긴 뒤로는 재접속을 영원히 못 받는다
+        // (AttachClient가 ReadLoop에서 끊길 때까지 블록하므로, 그 뒤 다시 accept로 돌아와야 한다).
+        while (!_stopping)
         {
-            TcpClient client = _listener.AcceptTcpClient();
-            AttachClient(client);
-        }
-        catch (Exception)
-        {
-            // Stop()이 리스너를 닫으면 AcceptTcpClient가 예외로 빠져나온다 - 정상 종료 경로.
+            try
+            {
+                TcpClient client = _listener.AcceptTcpClient();
+                AttachClient(client); // 끊길 때까지 여기서 블록된다
+            }
+            catch (Exception)
+            {
+                // Stop()이 리스너를 닫으면 AcceptTcpClient가 예외로 빠져나온다 - 정상 종료 경로.
+                break;
+            }
         }
     }
 
@@ -66,12 +90,22 @@ public sealed class GameEventChannel
         try
         {
             var client = new TcpClient();
-            client.Connect(hostAddress, port);
+            if (!client.ConnectAsync(hostAddress, port).Wait(ConnectTimeoutMs))
+            {
+                client.Close();
+                _incoming.Enqueue(new NetworkEvent
+                {
+                    type = "__error",
+                    json = $"{hostAddress}:{port} 접속 시간 초과 - 호스트가 '호스트로 시작'을 눌렀는지, " +
+                           "호스트 PC 방화벽이 TCP 포트를 막고 있지 않은지 확인하세요.",
+                });
+                return;
+            }
             AttachClient(client);
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[GameEventChannel] 접속 실패: {e.Message}");
+            _incoming.Enqueue(new NetworkEvent { type = "__error", json = $"접속 실패: {e.Message}" });
         }
     }
 
@@ -140,6 +174,7 @@ public sealed class GameEventChannel
         {
             if (evt.type == "__connected") { OnConnected?.Invoke(); continue; }
             if (evt.type == "__disconnected") { OnDisconnected?.Invoke(); continue; }
+            if (evt.type == "__error") { OnError?.Invoke(evt.json); continue; }
             onEvent?.Invoke(evt);
         }
     }
