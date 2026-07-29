@@ -13,7 +13,7 @@
 5. Play로 확인하고, 다시 Play를 끈 뒤 다음 변경을 한다.
 
 `Tools > Uga Uga > Rebuild All Editable Scene Layouts...`는 초기 레이아웃 전체 복구 도구다.
-누르면 6개 씬의 `EditableLayout` 수동 수정이 기본값으로 덮어써진다. 평소 편집에는 사용하지 않는다.
+누르면 5개 씬의 `EditableLayout` 수동 수정이 기본값으로 덮어써진다. 평소 편집에는 사용하지 않는다.
 
 ## 2. Hub 버튼과 로고 수정
 
@@ -47,7 +47,7 @@ Hierarchy 체크박스로 잠시 켜서 `ResultPanel`, `ResultText`, `RestartBut
 ## 3. 캐릭터 관절과 파츠 수정
 
 공통 캐릭터 원본은 `Assets/Prefabs/Caveman_P1.prefab`과 `Caveman_P2.prefab`이다. 원본을
-고치면 StoneThrow, PoseCopy, FruitJump, CoconutCrack, StoneOrBanana 씬에 한꺼번에 반영된다.
+고치면 FruitJump, CoconutCrack 씬에 한꺼번에 반영된다.
 
 Hierarchy 구조의 핵심은 다음과 같다.
 
@@ -87,7 +87,6 @@ Caveman_P1/P2
 | 씬 | 주요 편집 대상 |
 |---|---|
 | StoneThrow | `Background`, P1/P2 캐릭터, `StoneThrowHud` |
-| PoseCopy | 배경, 캐릭터 시작점, `PoseMatchHud` |
 | FruitJump | 캐릭터, `P1/P2 Fruits`의 3단 과일, `FruitJumpHud` |
 | CoconutCrack | 캐릭터, StoneTable, 캐릭터 자식 Coconut, HUD |
 | StoneOrBanana | 캐릭터, 캐릭터 자식 CoverBush, HUD/턴 안내판 |
@@ -108,7 +107,7 @@ Caveman_P1/P2
 
 | Orthographic Size | 씬 | 의미 |
 |---:|---|---|
-| 5 | Hub와 미니게임 6개 전체 | 세로 10 월드 유닛을 보는 공통 구도 |
+| 5 | Hub와 미니게임 5개 전체 | 세로 10 월드 유닛을 보는 공통 구도 |
 
 Scene 창에서 보이는 **배경 이미지의 사각형**은 SpriteRenderer에 배치된 PNG 자체의 실제 영역이다.
 그 바깥 또는 안쪽에 보이는 **흰색 선 사각형**은 Main Camera가 실제 게임에 출력하는 영역이다.
@@ -142,22 +141,25 @@ Rect Transform으로 조절한다.
 
 Canvas 전체 Transform Scale로 UI를 줄이기보다 각 패널의 Rect Transform을 조절하는 편이 좋다.
 
-### 공용 타이머와 6경기 결과판
+### 공용 타이머와 5경기 결과판
 
-미니게임 6개 씬의 `TimerPlate`는 모두 `Assets/Resources/UI/time_remaining.png`를 사용한다.
+미니게임 5개 씬의 `TimerPlate`는 모두 `Assets/Resources/UI/time_remaining.png`를 사용한다.
 각 HUD Canvas 아래의 `MatchScoreboard`는 현재 매치 진행 상황을 공통 표시한다.
 
 ```text
 MatchScoreboard
 ├── Board
-├── GameIcon_1_stone_throw ... GameIcon_6_staring_contest
+├── GameIcon_1_stone_throw ... GameIcon_5_staring_contest
 ├── Player1Face, Player2Face
-├── P1Result_1 ... P1Result_6
-└── P2Result_1 ... P2Result_6
+├── P1Result_1 ... P1Result_5
+└── P2Result_1 ... P2Result_5
 ```
 
-게임 아이콘 순서는 `StoneThrow → PoseCopy → FruitJump → CoconutCrack → StoneOrBanana →
-StaringContest`다. 라운드가 끝나면 승자는 `result_win`, 패자는 `result_loss`, 무승부는 양쪽 모두
+게임 아이콘 순서는 `StoneThrow → FruitJump → CoconutCrack → StoneOrBanana →
+StaringContest`다(원래 있던 자세따라하기/PoseCopy 칸은 폐기로 제거됨 — 기존 5개 씬에 이미
+저장돼 있던 결과판은 해당 칸만 삭제했고, 나머지 아이콘 간격은 아직 옛 6칸 기준 그대로라
+[게임별_에셋_세부_계획.md 항목 7](게임별_에셋_세부_계획.md#다음-품질-개선-우선순위) 후속
+정리가 필요하다). 라운드가 끝나면 승자는 `result_win`, 패자는 `result_loss`, 무승부는 양쪽 모두
 `result_draw`가 표시된다. 아직 진행하지 않은 슬롯은 비어 있다. `MatchScoreboard` 루트의 Rect Transform을
 이동하거나 크기를 바꾸면 결과판 전체 구도를 조절할 수 있고, 개별 아이콘·얼굴·결과 슬롯도 자식
 Rect Transform으로 따로 조절할 수 있다. 오브젝트 이름은 코드 참조와 수동 편의를 위해 유지한다.
@@ -178,8 +180,8 @@ Unity가 실제 사용하는 PNG는 `Assets/Resources` 아래에 있다. 원본 
 ## 7. 게임 규칙 숫자 조정
 
 각 씬의 `GameController`를 선택하면 제한시간, 임계값, 이동 속도 같은 public 값이 Inspector에 보인다.
-예를 들어 StoneThrow의 `Fire Interval Seconds`, PoseCopy의 `Pose Match Tolerance`, FruitJump의
-Tier 배열, CoconutCrack의 Hit/Release Distance, StaringContest의 EAR 값을 조절할 수 있다.
+예를 들어 StoneThrow의 `Fire Interval Seconds`, FruitJump의 Tier 배열, CoconutCrack의
+Hit/Release Distance, StaringContest의 EAR 값을 조절할 수 있다.
 
 한 번에 큰 폭으로 바꾸지 말고 10~20%씩 변경해 실제 카메라 환경에서 비교한다. Play 중 찾은 좋은
 값은 메모한 뒤 Play를 끄고 Edit Mode에서 다시 입력해 저장한다.

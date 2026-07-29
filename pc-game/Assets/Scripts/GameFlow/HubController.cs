@@ -2,7 +2,7 @@
 // Assets/Prefabs/StartScreenCanvas.prefab을 Hub 씬에 직접 배치해두고 여기서는 그 참조만
 // 받아서 클릭 이벤트만 연결한다 - 위치/크기/스프라이트는 에디터에서 그 프리팹을 열어 직접
 // 조정하면 된다(디자인 담당이 손으로 만지는 부분, 코드는 손대지 않아도 됨).
-// MatchController가 "시작 전" 상태(CurrentRoundIndex == -1)면 이 시작 화면을, 6판이 다 끝난
+// MatchController가 "시작 전" 상태(CurrentRoundIndex == -1)면 이 시작 화면을, 5판이 다 끝난
 // 상태(IsMatchComplete)면 결과를 보여준다(결과 화면은 전용 아트가 없어 텍스트로만).
 using UnityEngine;
 using UnityEngine.UI;

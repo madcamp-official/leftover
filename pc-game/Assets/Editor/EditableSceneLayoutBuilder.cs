@@ -21,7 +21,7 @@ public static class EditableSceneLayoutBuilder
     private static void RebuildFromMenu()
     {
         if (!EditorUtility.DisplayDialog("레이아웃 전체 재생성",
-            "6개 씬의 EditableLayout과 Hub UI를 기본값으로 다시 만듭니다. 수동 배치 수정은 덮어써집니다.",
+            "5개 씬의 EditableLayout과 Hub UI를 기본값으로 다시 만듭니다. 수동 배치 수정은 덮어써집니다.",
             "재생성", "취소")) return;
         RebuildAll();
     }
@@ -29,7 +29,7 @@ public static class EditableSceneLayoutBuilder
     [MenuItem("Tools/Uga Uga/Fix All Canvas Scene View")]
     public static void FixMiniGameCanvasSceneView()
     {
-        string[] names = { "Hub", "StoneThrow", "PoseCopy", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
+        string[] names = { "Hub", "StoneThrow", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
         foreach (string name in names)
         {
             Scene scene = Open(name);
@@ -55,7 +55,7 @@ public static class EditableSceneLayoutBuilder
     [MenuItem("Tools/Uga Uga/Normalize All Cameras to Size 5")]
     public static void NormalizeAllCameras()
     {
-        string[] names = { "Hub", "StoneThrow", "PoseCopy", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
+        string[] names = { "Hub", "StoneThrow", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
         foreach (string name in names)
         {
             Scene scene = Open(name);
@@ -88,13 +88,13 @@ public static class EditableSceneLayoutBuilder
 
         Open("Hub");
         AssetDatabase.SaveAssets();
-        Debug.Log("[Uga Uga] Hub + 미니게임 6개 씬 Camera Size를 5로 통일 완료");
+        Debug.Log("[Uga Uga] Hub + 미니게임 5개 씬 Camera Size를 5로 통일 완료");
     }
 
     [MenuItem("Tools/Uga Uga/Apply Common Timer and Match Scoreboard")]
     public static void ApplyCommonMatchHud()
     {
-        string[] names = { "StoneThrow", "PoseCopy", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
+        string[] names = { "StoneThrow", "FruitJump", "CoconutCrack", "StoneOrBanana", "StaringContest" };
         foreach (string name in names)
         {
             Scene scene = Open(name);
@@ -170,13 +170,12 @@ public static class EditableSceneLayoutBuilder
         BuildCavemanPrefab(PlayerId.P2, backView: true);
         BuildHub();
         BuildStoneThrow();
-        BuildPoseCopy();
         BuildFruitJump();
         BuildCoconutCrack();
         BuildStoneOrBanana();
         BuildStaringContest();
         AssetDatabase.SaveAssets();
-        Debug.Log("[Uga Uga] 편집 가능한 Hub + 미니게임 6개 씬 레이아웃 생성 완료");
+        Debug.Log("[Uga Uga] 편집 가능한 Hub + 미니게임 5개 씬 레이아웃 생성 완료");
     }
 
     private static void BuildCavemanPrefab(PlayerId player)
@@ -353,17 +352,6 @@ public static class EditableSceneLayoutBuilder
         MatchScoreboardHud.Build(hud.transform);
         StoneThrowSceneSetup.RebuildScene(s);
         Save(s);
-    }
-
-    private static void BuildPoseCopy()
-    {
-        Scene s = Open("PoseCopy"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
-        AddBackground(root, ArtAssets.LoadPoseMatch("background"), StandardCameraSize);
-        var p1 = AddCaveman(root, PlayerId.P1, new Vector3(-3, 0, 0));
-        var p2 = AddCaveman(root, PlayerId.P2, new Vector3(3, 0, 0));
-        PoseMatchHud hud = PoseMatchHud.Build(40.8f); hud.transform.SetParent(root, false);
-        MatchScoreboardHud.Build(hud.transform);
-        SetRefs(Controller<PoseCopyGame>(), ("p1Silhouette", p1), ("p2Silhouette", p2), ("hud", hud)); Save(s);
     }
 
     private static void BuildFruitJump()
