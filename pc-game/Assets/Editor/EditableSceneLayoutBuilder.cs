@@ -154,6 +154,12 @@ public static class EditableSceneLayoutBuilder
         StoneThrowSceneSetup.Rebuild();
     }
 
+    [MenuItem("Tools/Uga Uga/StoneOrBanana/Apply Split Turn Characters")]
+    public static void ApplyStoneOrBananaSplitCharacters()
+    {
+        StoneOrBananaSceneSetup.Rebuild();
+    }
+
     // -executeMethod EditableSceneLayoutBuilder.RebuildAll 로 CI/초기 마이그레이션에서도 호출 가능.
     public static void RebuildAll()
     {
@@ -403,13 +409,10 @@ public static class EditableSceneLayoutBuilder
     {
         Scene s = Open("StoneOrBanana"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
         AddBackground(root, ArtAssets.LoadStoneOrBanana("background"), StandardCameraSize);
-        var p1 = AddCaveman(root, PlayerId.P1, new Vector3(-2, 0, 0));
-        var p2 = AddCaveman(root, PlayerId.P2, new Vector3(2, 0, 0));
-        AddSprite(p1.transform, "CoverBush", ArtAssets.LoadStoneOrBanana("prop_cover_bush_p1"), p1.transform.position + Vector3.up * .35f, 1.3f, 3);
-        AddSprite(p2.transform, "CoverBush", ArtAssets.LoadStoneOrBanana("prop_cover_bush_p2"), p2.transform.position + Vector3.up * .35f, 1.3f, 3);
         StoneOrBananaHud hud = StoneOrBananaHud.Build(); hud.transform.SetParent(root, false);
         MatchScoreboardHud.Build(hud.transform);
-        SetRefs(Controller<StoneOrBananaGame>(), ("p1Silhouette", p1), ("p2Silhouette", p2), ("hud", hud)); Save(s);
+        StoneOrBananaSceneSetup.RebuildScene(s, rebuildHud: false);
+        Save(s);
     }
 
     private static void BuildStaringContest()
