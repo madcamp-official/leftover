@@ -48,5 +48,3 @@ fade out한 뒤 새 씬을 로드하고 0.45초 fade in하며, 전환 중 중복
   배경/캐릭터/UI가 같은 크기 기준으로 보인다.
 - `Tools > Uga Uga > Rebuild All Editable Scene Layouts...`는 기본 레이아웃 전체 복구용이다.
   실행하면 `EditableLayout`의 수동 수정이 덮어써지므로 평소에는 누르지 않는다.
-
-자세한 단계별 강좌는 [../docs/UNITY_EDITOR_편집_가이드.md](../docs/UNITY_EDITOR_편집_가이드.md)를 참고한다.
