@@ -1,24 +1,24 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-// 6개 미니게임에서 공통으로 보이는 매치 진행 결과판. 배경/아이콘/얼굴/결과 이미지는 모두
+// 5개 미니게임에서 공통으로 보이는 매치 진행 결과판. 배경/아이콘/얼굴/결과 이미지는 모두
 // 씬에 저장되며, 런타임에는 MatchController의 라운드별 승자 데이터만 반영한다.
 public sealed class MatchScoreboardHud : MonoBehaviour
 {
     private static readonly Vector2[] ColumnAnchors =
     {
         new(0.305f, 0f), new(0.416f, 0f), new(0.527f, 0f),
-        new(0.638f, 0f), new(0.749f, 0f), new(0.860f, 0f),
+        new(0.638f, 0f), new(0.749f, 0f),
     };
 
     private static readonly string[] IconNames =
     {
-        "stone_throw", "pose_match", "fruit_jump",
+        "stone_throw", "fruit_jump",
         "coconut_break", "stone_or_banana", "staring_contest",
     };
 
-    [SerializeField] private Image[] _p1Results = new Image[6];
-    [SerializeField] private Image[] _p2Results = new Image[6];
+    [SerializeField] private Image[] _p1Results = new Image[IconNames.Length];
+    [SerializeField] private Image[] _p2Results = new Image[IconNames.Length];
     [SerializeField] private Sprite _winSprite;
     [SerializeField] private Sprite _lossSprite;
     [SerializeField] private Sprite _drawSprite;
@@ -63,7 +63,7 @@ public sealed class MatchScoreboardHud : MonoBehaviour
         CreateBox(root, "Player1Face", ArtAssets.LoadCharacter(PlayerId.P1, "head"), new Vector2(0.151f, 0.493f), new Vector2(116f, 108f) * Scale);
         CreateBox(root, "Player2Face", ArtAssets.LoadCharacter(PlayerId.P2, "head"), new Vector2(0.151f, 0.269f), new Vector2(116f, 108f) * Scale);
 
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < IconNames.Length; i++)
         {
             _p1Results[i] = CreateBox(root, $"P1Result_{i + 1}", null,
                 new Vector2(ColumnAnchors[i].x, 0.493f), new Vector2(76f, 76f) * Scale);
@@ -108,7 +108,7 @@ public sealed class MatchScoreboardHud : MonoBehaviour
         }
 
         _displayedVersion = match.ResultsVersion;
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < IconNames.Length; i++)
         {
             if (!match.HasRoundResult(i))
             {
@@ -133,7 +133,7 @@ public sealed class MatchScoreboardHud : MonoBehaviour
 
     private void SetAllEmpty()
     {
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < IconNames.Length; i++)
         {
             SetResult(_p1Results[i], null);
             SetResult(_p2Results[i], null);

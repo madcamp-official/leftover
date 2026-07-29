@@ -1,15 +1,15 @@
 # pc-game
 
-Unity 프로젝트 (2D). 우가우가게임 미니게임 6종 + 진행 관리. 전체 개요는
+Unity 프로젝트 (2D). 우가우가게임 미니게임 5종 + 진행 관리. 전체 개요는
 [../docs/게임_구동방식_정리.md](../docs/게임_구동방식_정리.md), 기획은
 [../docs/우가우가게임_기획_프롬프트.md](../docs/우가우가게임_기획_프롬프트.md) 참고.
 
 ## 씬 구조
 
 - `Assets/Scenes/Hub.unity` — 시작 화면 + 최종 결과 화면. 게임의 진입점.
-- `Assets/Scenes/StoneThrow.unity`, `PoseCopy.unity`, `FruitJump.unity`, `CoconutCrack.unity`,
-  `StoneOrBanana.unity`, `StaringContest.unity` — 미니게임 6종. `MatchController`가 이 순서로
-  하나씩 로드한다.
+- `Assets/Scenes/StoneThrow.unity`, `FruitJump.unity`, `CoconutCrack.unity`,
+  `StoneOrBanana.unity`, `StaringContest.unity` — 미니게임 5종. `MatchController`가 이 순서로
+  하나씩 로드한다(원래 있던 `PoseCopy.unity`는 자세따라하기 게임 폐기로 삭제됨).
 
 ## 스크립트 구조 (분업 경계)
 

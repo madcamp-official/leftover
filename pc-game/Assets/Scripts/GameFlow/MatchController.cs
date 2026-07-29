@@ -1,4 +1,4 @@
-// 고정 6판 승부 진행 관리자. 씬을 넘나들어야 하므로 DontDestroyOnLoad 싱글턴으로 두고,
+// 고정 5판 승부 진행 관리자. 씬을 넘나들어야 하므로 DontDestroyOnLoad 싱글턴으로 두고,
 // 각 미니게임 씬은 끝날 때 ReportRoundResult()만 호출하면 된다 - 다음 라운드 로드/최종
 // 결과 집계는 전부 여기서 처리하므로 미니게임 쪽은 "누가 이겼는지"만 알면 된다.
 using System.Collections.Generic;
@@ -25,7 +25,6 @@ public sealed class MatchController : MonoBehaviour
     public static readonly IReadOnlyList<string> RoundScenes = new List<string>
     {
         "StoneThrow",
-        "PoseCopy",
         "FruitJump",
         "CoconutCrack",
         "StoneOrBanana",
