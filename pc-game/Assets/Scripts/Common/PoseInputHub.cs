@@ -82,7 +82,23 @@ public sealed class PlayerPoseState
 
 public sealed class PoseInputHub : MonoBehaviour
 {
-    public static PoseInputHub Instance { get; private set; }
+    private static PoseInputHub _instance;
+
+    // 플레이 중 스크립트를 고쳐 Unity가 도메인 리로드를 하면(기본 동작인 "Recompile And
+    // Continue Playing") 이미 존재하던 오브젝트의 Awake()는 다시 호출되지 않는데 static
+    // 필드는 초기화돼버려서 Instance가 null이 된다 - 실제 오브젝트는 씬에 멀쩡히 살아있는데
+    // 참조만 끊기는 것. PoseStreamReceiver/EyeCloseTimer가 매 프레임 `Instance == null`로
+    // 조용히 return해버려서 겉으로는 아무 에러 없이 포즈 입력만 죽은 것처럼 보였다(실측
+    // 확인됨). 그래서 null이면 씬에서 다시 찾아 복구한다.
+    public static PoseInputHub Instance
+    {
+        get
+        {
+            if (_instance == null) _instance = FindAnyObjectByType<PoseInputHub>();
+            return _instance;
+        }
+        private set => _instance = value;
+    }
 
     // 이 시간 이상 새 프레임이 안 오면 "화면에서 사라짐"으로 취급 (PROTOCOL.md 권장값).
     public float staleTimeout = 0.5f;

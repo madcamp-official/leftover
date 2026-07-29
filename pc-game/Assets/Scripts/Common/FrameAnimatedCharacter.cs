@@ -30,6 +30,27 @@ public class FrameAnimatedCharacter : MonoBehaviour
     public bool HasFrames => _frames != null && _frames.Length > 0;
     public bool IsPlaying => _playRoutine != null;
 
+    // Inspector에서 실행 중에 게임 스크립트의 p1Width/p2Width 등을 바꿨을 때 바로 반영되도록.
+    // 값을 바꾼 프레임에 즉시 다시 배치한다 - 다음 SetProgress/PlayOnce까지 기다릴 필요 없음.
+    public float Width
+    {
+        get => _width;
+        set { if (!Mathf.Approximately(_width, value)) { _width = value; ReapplyCurrentFrame(); } }
+    }
+
+    public float YOffset
+    {
+        get => _yOffset;
+        set { if (!Mathf.Approximately(_yOffset, value)) { _yOffset = value; ReapplyCurrentFrame(); } }
+    }
+
+    private void ReapplyCurrentFrame()
+    {
+        if (_renderer == null || _renderer.sprite == null) return;
+        int index = System.Array.IndexOf(_frames, _renderer.sprite);
+        ShowFrame(Mathf.Max(0, index));
+    }
+
     // "이 그림에서 손이 있는 지점"을 스프라이트 로컬 좌표(피벗=중앙 기준, 오른쪽/위가 +)로
     // 프레임 번호별로 지정한 것 - 실제 관절 트래킹과는 무관하다. 부드럽게 보간하지 않고,
     // 그 순간 화면에 보이는 프레임(ShowFrame)이 바뀌는 그 타이밍에 정확히 그 프레임의

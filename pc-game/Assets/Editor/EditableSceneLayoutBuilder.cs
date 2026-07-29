@@ -416,14 +416,14 @@ public static class EditableSceneLayoutBuilder
     {
         Scene s = Open("StaringContest"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
         AddBackground(root, ArtAssets.LoadStaringContest("background"), StandardCameraSize);
-        var h1 = AddSprite(root, "P1 Head", ArtAssets.LoadCharacter(PlayerId.P1, "head"), new Vector3(-1.6f, .2f, 0), 2.2f, 1);
-        var h2 = AddSprite(root, "P2 Head", ArtAssets.LoadCharacter(PlayerId.P2, "head"), new Vector3(1.6f, .2f, 0), 2.2f, 1);
+        Transform p1Anchor = CreatePivot(root, "P1 Anchor", new Vector3(-3.6f, -3f, 0));
+        Transform p2Anchor = CreatePivot(root, "P2 Anchor", new Vector3(3.6f, -3f, 0));
         AddSprite(root, "StareClash", ArtAssets.LoadStaringContest("effect_stare_clash"), new Vector3(0, .2f, 0), 2, 2);
         var t1 = new GameObject("P1 EyeTimer").AddComponent<EyeCloseTimer>(); t1.transform.SetParent(root); t1.player = PlayerId.P1;
         var t2 = new GameObject("P2 EyeTimer").AddComponent<EyeCloseTimer>(); t2.transform.SetParent(root); t2.player = PlayerId.P2;
         StaringContestHud hud = StaringContestHud.Build(60); hud.transform.SetParent(root, false);
         MatchScoreboardHud.Build(hud.transform);
-        SetRefs(Controller<StaringContestGame>(), ("p1Head", h1), ("p2Head", h2), ("p1Timer", t1), ("p2Timer", t2), ("hud", hud)); Save(s);
+        SetRefs(Controller<StaringContestGame>(), ("p1Anchor", p1Anchor), ("p2Anchor", p2Anchor), ("p1Timer", t1), ("p2Timer", t2), ("hud", hud)); Save(s);
     }
 
     private static void BuildHub()

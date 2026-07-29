@@ -7,7 +7,19 @@ using UnityEngine.UI;
 
 public sealed class SceneFadeTransition : MonoBehaviour
 {
-    public static SceneFadeTransition Instance { get; private set; }
+    private static SceneFadeTransition _instance;
+
+    // 플레이 중 스크립트 리로드로 Awake()가 다시 안 불려도 static 참조가 끊기지 않도록
+    // null이면 씬에서 다시 찾는다 (PoseInputHub와 동일한 이유 - 실측으로 확인된 문제).
+    public static SceneFadeTransition Instance
+    {
+        get
+        {
+            if (_instance == null) _instance = FindAnyObjectByType<SceneFadeTransition>();
+            return _instance;
+        }
+        private set => _instance = value;
+    }
 
     [SerializeField, Min(0f)] private float fadeOutSeconds = 0.45f;
     [SerializeField, Min(0f)] private float fadeInSeconds = 0.45f;

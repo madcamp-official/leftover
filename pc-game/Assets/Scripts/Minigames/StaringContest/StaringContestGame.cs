@@ -6,15 +6,13 @@
 // 누적으로 감고 있던 시간(TotalClosedDuration)이 loseAfterTotalClosedSeconds를 넘겨도 패배
 // 처리한다 - 깜빡임 반복으로는 결국 못 버틴다.
 //
-// 화면은 image/games/staring_contest/의 실제 아트로 구성한다 - 다른 5개 게임과 달리 이
-// 게임은 전신 캐릭터 대신 얼굴 클로즈업 두 개 + 그 사이의 시선 충돌 이펙트로 연출한다
-// (해당 게임 미리보기 아트가 이 구도로 그려져 있음). "눈 감음 위험" 게이지는 두 위험 비율
-// (연속/누적) 중 더 높은 쪽으로 실시간 채워진다.
-//
-// 표정: P1은 character1 전용 eye_fight_1~6 프레임(만화컷 통짜 이미지, 캐릭터 파츠 조립이
-// 아니라 단일 스프라이트 통째로 교체)으로 위험 비율에 맞춰 바뀐다. character2는 대응하는
-// eye_fight 프레임 원본이 아직 없어서(요청 시점 기준) P2는 기존 방식대로 파츠 기반
-// face_eyes_closed_1~4of4 표정 교체를 그대로 쓴다.
+// 캐릭터 표현: 기존 리깅/p1Head·p2Head SpriteRenderer 참조는 안 쓴다(코코넛깨기와 같은
+// 이유 - 오브젝트마다 부모 스케일이 제각각이라 화면 크기가 안 맞았다). p1Anchor/p2Anchor는
+// "얼굴이 놓일 자리"만 나타내는 빈 Transform이면 충분하고, FrameAnimatedCharacter가
+// useWorldSpaceLayout으로 부모 스케일과 무관하게 p1Width/p2Width(월드 유닛)로 정확한
+// 크기를 낸다. 표정은 eye_fight_1~N 통짜 프레임을 위험 비율에 맞춰 SetProgress로 바꾼다 -
+// P1은 6장, P2는 4장처럼 장수가 달라도 ArtAssets.LoadCharacterSequence가 있는 만큼만
+// 불러오므로 그대로 동작한다.
 using System.Collections;
 using UnityEngine;
 
@@ -28,23 +26,43 @@ public class StaringContestGame : MonoBehaviour
     public float resultDisplaySeconds = 2.5f;
     public float ruleBannerSeconds = 2.5f;
 
+    [Header("얼굴 표시 크기/위치 (월드 유닛)")]
+    public float p1Width = 3.25f;
+    public float p2Width = 4.29f;
+    public float p1YOffset = 0f;
+    public float p2YOffset = 0f;
+    public int faceSortingOrder = 1;
+
     [Header("씬에 배치된 오브젝트")]
-    [SerializeField] private SpriteRenderer p1Head;
-    [SerializeField] private SpriteRenderer p2Head;
+    [SerializeField] private Transform p1Anchor; // 얼굴이 놓일 자리 - 빈 오브젝트면 충분
+    [SerializeField] private Transform p2Anchor;
     [SerializeField] private EyeCloseTimer p1Timer;
     [SerializeField] private EyeCloseTimer p2Timer;
     [SerializeField] private StaringContestHud hud;
-    private Sprite _p1DefaultHead, _p2DefaultHead;
+    private FrameAnimatedCharacter _p1Anim;
+    private FrameAnimatedCharacter _p2Anim;
     private float _elapsed;
     private bool _ended;
+
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
 
-        _p1DefaultHead = ArtAssets.LoadCharacter(PlayerId.P1, "eye_fight_1");
-        _p2DefaultHead = p2Head != null ? p2Head.sprite : ArtAssets.LoadCharacter(PlayerId.P2, "head");
-        if (p1Head != null && _p1DefaultHead != null) p1Head.sprite = _p1DefaultHead;
+        if (p1Anchor == null || p2Anchor == null)
+        {
+            Debug.LogError($"{nameof(StaringContestGame)}: P1/P2 Anchor를 모두 연결해야 합니다.", this);
+            enabled = false;
+            return;
+        }
+
+        _p1Anim = FrameAnimatedCharacter.Attach(p1Anchor.gameObject,
+            ArtAssets.LoadCharacterSequence(PlayerId.P1, "eye_fight"), p1Width, p1YOffset,
+            sortingOrder: faceSortingOrder, useWorldSpaceLayout: true);
+        _p2Anim = FrameAnimatedCharacter.Attach(p2Anchor.gameObject,
+            ArtAssets.LoadCharacterSequence(PlayerId.P2, "eye_fight"), p2Width, p2YOffset,
+            sortingOrder: faceSortingOrder, useWorldSpaceLayout: true);
+
         if (p1Timer != null) p1Timer.earThreshold = earThreshold;
         if (p2Timer != null) p2Timer.earThreshold = earThreshold;
         hud?.SetTimeRemaining(maxMatchSeconds);
@@ -61,6 +79,11 @@ public class StaringContestGame : MonoBehaviour
     {
         if (_ended) return;
 
+        // Inspector에서 Play 중에 p1Width/p2Width/p1YOffset/p2YOffset을 조정하면 바로
+        // 눈으로 확인할 수 있도록 매 프레임 반영한다.
+        if (_p1Anim != null) { _p1Anim.Width = p1Width; _p1Anim.YOffset = p1YOffset; }
+        if (_p2Anim != null) { _p2Anim.Width = p2Width; _p2Anim.YOffset = p2YOffset; }
+
         _elapsed += Time.deltaTime;
 
         float p1ContinuousRatio = (p1Timer?.ClosedDuration ?? 0f) / loseAfterClosedSeconds;
@@ -72,8 +95,8 @@ public class StaringContestGame : MonoBehaviour
         hud?.SetDanger(PlayerId.P1, p1Ratio);
         hud?.SetDanger(PlayerId.P2, p2Ratio);
         hud?.SetTimeRemaining(maxMatchSeconds - _elapsed);
-        UpdateFace(p1Head, _p1DefaultHead, PlayerId.P1, p1Ratio);
-        UpdateFace(p2Head, _p2DefaultHead, PlayerId.P2, p2Ratio);
+        _p1Anim?.SetProgress(p1Ratio);
+        _p2Anim?.SetProgress(p2Ratio);
 
         bool p1Closed = p1Timer != null &&
             (p1Timer.IsClosedContinuously(loseAfterClosedSeconds) || p1Timer.TotalClosedDuration >= loseAfterTotalClosedSeconds);
@@ -90,29 +113,6 @@ public class StaringContestGame : MonoBehaviour
         {
             EndRound(null);
         }
-    }
-
-    // P1은 character1 전용 eye_fight_1~6 만화컷 프레임을 위험 비율에 그대로 매핑해서 쓴다
-    // (파츠 조립 없이 완전한 한 장짜리 스프라이트 교체). P2는 character2용 프레임 원본이
-    // 없어서 기존 파츠 기반 face_eyes_closed_1~4of4 표정 교체를 그대로 쓴다.
-    private static void UpdateFace(SpriteRenderer head, Sprite defaultHead, PlayerId player, float ratio)
-    {
-        if (player == PlayerId.P1)
-        {
-            int eyeFightFrame = Mathf.Clamp(Mathf.CeilToInt(ratio * 6f), 1, 6);
-            Sprite frameSprite = ArtAssets.LoadCharacter(player, $"eye_fight_{eyeFightFrame}");
-            if (frameSprite != null) head.sprite = frameSprite;
-            return;
-        }
-
-        if (ratio <= 0.01f)
-        {
-            head.sprite = defaultHead;
-            return;
-        }
-        int frame = Mathf.Clamp(Mathf.CeilToInt(ratio * 4f), 1, 4);
-        Sprite closing = ArtAssets.LoadCharacter(player, $"face_eyes_closed_{frame}of4");
-        if (closing != null) head.sprite = closing;
     }
 
     private void EndRound(PlayerId? winner)

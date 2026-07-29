@@ -6,7 +6,19 @@ using UnityEngine;
 
 public sealed class MatchController : MonoBehaviour
 {
-    public static MatchController Instance { get; private set; }
+    private static MatchController _instance;
+
+    // 플레이 중 스크립트 리로드로 Awake()가 다시 안 불려도 static 참조가 끊기지 않도록
+    // null이면 씬에서 다시 찾는다 (PoseInputHub와 동일한 이유 - 실측으로 확인된 문제).
+    public static MatchController Instance
+    {
+        get
+        {
+            if (_instance == null) _instance = FindAnyObjectByType<MatchController>();
+            return _instance;
+        }
+        private set => _instance = value;
+    }
 
     // 우가우가게임_기획_프롬프트.md 표 순서 그대로. 씬 이름은 Build Settings에 등록된
     // 미니게임 씬 이름과 정확히 같아야 한다.

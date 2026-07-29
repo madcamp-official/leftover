@@ -30,9 +30,9 @@ public class CoconutCrackGame : MonoBehaviour
     public float breakSpinDegrees = 1080f; // 날아가는 동안 각 조각이 회전하는 총 각도
     public int breakSourceFrame = 5; // 깨진 조각이 출발할 coconut_N 프레임 번호(1부터 시작)
     public float p1FrameWidth = 1.2f; // P1 coconut_N 프레임 캐릭터의 표시 폭(월드 유닛) - 바닥에 발이 붙은 채로 커지고 작아짐
-    public float p2FrameWidth = 1.6f; // P2도 필요하면 따로 조정(같은 방식으로 바닥 기준 유지)
+    public float p2FrameWidth = 1.2f; // P1과 동일하게 맞춤(예전 1.6은 너무 커서 머리가 카메라 위로 잘려 다리만 보였음)
     public float p1FrameYOffset = 0.5f; // P1 캐릭터를 바닥 기준 위치에서 위로 추가로 띄우는 양(월드 유닛)
-    public float p2FrameYOffset = 0f;   // P2도 필요하면 같은 식으로 조정
+    public float p2FrameYOffset = 0.5f; // P1과 동일하게 맞춤
     public Vector2 p1CoconutWorldOffset = Vector2.zero; // 손 앵커 계산 후 적용하는 최종 월드 좌표 보정
     public Vector2 p2CoconutWorldOffset = Vector2.zero;
     public int frameSortingOrder = -2;  // 책상/받침대 소품(정렬 순서 -1)보다 뒤에 그려지도록 더 낮은 값
