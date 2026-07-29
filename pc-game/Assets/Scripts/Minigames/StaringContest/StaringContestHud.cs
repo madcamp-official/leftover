@@ -11,14 +11,14 @@ public class StaringContestHud : MonoBehaviour
     // 네임플레이트 안에서 게이지가 차지하는 위치/크기 비율(실측 - hud_eye_danger_p1/p2 기준).
     // Play 중에 Inspector에서 드래그해서 조정 가능 - Update()에서 매 프레임 다시 적용한다.
     [Header("게이지 바(채워지는 부분) 위치/크기 (플레이트 이미지 안 0~1 비율)")]
-    [SerializeField] private Vector2 gaugeAnchorMin = new Vector2(0.655f, 0.075f);
-    [SerializeField] private Vector2 gaugeAnchorMax = new Vector2(1.160f, 0.520f);
-    [SerializeField] private Vector2 gaugeScale = new Vector2(1f, 0.5f);
+    [SerializeField] private Vector2 gaugeAnchorMin = new Vector2(0.455f, 0.175f);
+    [SerializeField] private Vector2 gaugeAnchorMax = new Vector2(0.960f, 0.620f);
+    [SerializeField] private Vector2 gaugeScale = new Vector2(0.77f, 0.7f);
 
     [Header("게이지 트랙(뒤 배경) 위치/크기 (플레이트 이미지 안 0~1 비율)")]
-    [SerializeField] private Vector2 trackAnchorMin = new Vector2(0.655f, 0.075f);
-    [SerializeField] private Vector2 trackAnchorMax = new Vector2(1.160f, 0.520f);
-    [SerializeField] private Vector2 trackScale = new Vector2(1f, 0.5f);
+    [SerializeField] private Vector2 trackAnchorMin = new Vector2(0.455f, 0.175f);
+    [SerializeField] private Vector2 trackAnchorMax = new Vector2(0.960f, 0.620f);
+    [SerializeField] private Vector2 trackScale = new Vector2(0.77f, 0.7f);
     [SerializeField] private Color trackColor = new Color32(48, 25, 13, 255);
 
     [Header("씬에 배치된 UI")]
