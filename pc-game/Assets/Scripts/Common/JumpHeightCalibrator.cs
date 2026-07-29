@@ -12,6 +12,10 @@ public class JumpHeightCalibrator : MonoBehaviour
     public PlayerId player;
     public float calibrationSeconds = 1.5f;
 
+    // 테스트용 임시 스위치: true면 평균 없이 트래킹되는 첫 프레임의 값을 그대로 기준선으로
+    // 확정한다(1.5초 대기 스킵). 실제 플레이 전에는 false로 되돌릴 것.
+    public bool skipCalibrationWait = true;
+
     public bool IsCalibrated { get; private set; }
 
     private float _baselineHipY;
@@ -22,6 +26,13 @@ public class JumpHeightCalibrator : MonoBehaviour
         PlayerPoseState state = PoseInputHub.Instance != null ? PoseInputHub.Instance.Get(player) : null;
         if (state == null || !state.IsTracked || IsCalibrated)
             return;
+
+        if (skipCalibrationWait)
+        {
+            _baselineHipY = state.Joints.HipMid.y;
+            IsCalibrated = true;
+            return;
+        }
 
         float hipY = state.Joints.HipMid.y;
         _baselineHipY = _calibTimer <= 0f ? hipY : Mathf.Lerp(_baselineHipY, hipY, 0.15f);

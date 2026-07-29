@@ -1,13 +1,13 @@
 // 점프해서 과일따기 - 우가우가게임_기획_프롬프트.md "3. 점프해서 과일따기" 스펙.
 //
 // 규칙: 각자 독립된 나무(상대와 자원 경쟁 없음). JumpHeightCalibrator.GetJumpHeight()(엉덩이
-// 중점 기반)로 점프 중 도달한 최고 높이(정점, PeakHeight)를 계속 갱신하고, 정점이 갱신될
-// 때마다 그 순간 IsMouthOpen()이었는지도 같이 기록한다(MouthOpenAtPeak) - 정점 갱신이 멈추면
-// (=하강 시작) 자연히 "진짜 정점 프레임"의 입 상태만 남는다. 판정 자체는 실시간이 아니라
-// 착지한 순간 한 번만 한다: 이번 점프의 최종 정점 높이가 어느 단(tierHeightThresholds)을
-// 넘었는지 보고, 그 정점에서 입이 벌어져 있었으면 그 단 하나만 채점한다. 입을 점프 내내
-// 벌리고 있었어도 정점이 3단이면 3단 과일만 채점된다(1/2단은 별도로 채점되지 않음) - 판정이
-// 프레임 단위가 아니라 "이번 점프 전체의 결과" 하나이기 때문이다.
+// 중점 기반)로 점프 중 도달한 최고 높이(정점, PeakHeight)를 계속 갱신한다. 판정 자체는
+// 실시간이 아니라 착지한 순간 한 번만 한다: 이번 점프의 최종 정점 높이가 어느 단
+// (tierHeightThresholds)을 넘었는지 보고 그 단 하나만 채점한다.
+//
+// 원래는 정점에서 입이 벌어져 있어야 채점되는 조건이 있었으나, 카메라에서 멀리 떨어질수록
+// 입 벌림(IsMouthOpen) 인식이 불안정해져서 이 조건은 뺐다 - 정점 높이만으로 단이 결정되면
+// 곧바로 채점된다.
 //
 // 채점된 과일은 화면에서 사라졌다가 다음 점프를 시작하는 순간(이륙) 다시 나타난다.
 //
@@ -15,8 +15,10 @@
 // 구성한다. 낮은/중간/높은 단은 각각 사과/포도/파인애플 실제 소품으로 표시하고, 점프
 // 높이만큼 캐릭터 자체도 화면에서 위로 튀어올라 보이게 한다.
 //
-// 캐릭터 표현: 관절 리깅 대신 jump_1~N 프레임 시퀀스를 점프 높이 비율에 맞춰 통째로 교체
-// (FrameAnimatedCharacter). jump_1이 대기 자세, 뒤로 갈수록 더 높이 뛴 자세라고 가정한다.
+// 캐릭터 표현: 관절 리깅(CavemanSilhouette/Caveman_P1·P2 프리팹) 대신 jump_front_1~4
+// 프레임 시퀀스를 점프 높이 비율에 맞춰 통째로 교체한다(FrameAnimatedCharacter). 리깅
+// 프리팹이 더 이상 필요 없어 씬에서 제거했으므로, 이 스크립트는 캐릭터를 놓을 빈 Transform
+// 하나(p1Anchor/p2Anchor)만 있으면 된다.
 using System.Collections;
 using UnityEngine;
 
@@ -32,9 +34,20 @@ public class FruitJumpGame : MonoBehaviour
     public float fruitEatSeconds = 0.2f; // 채점된 과일이 사라지는 데 걸리는 시간(연출용)
     public float characterFrameWidth = 1.2f; // jump_N 프레임 캐릭터의 표시 폭(월드 유닛) - 기존 리깅과 크기가 맞게 에디터에서 눈으로 보고 조정할 것
 
+    // 테스트용 임시 스위치: true면 P2 캘리브레이션 여부와 무관하게 P1만 캘리브레이션되면
+    // 바로 진행한다(P2용 카메라/입력 없이 P1만으로 확인할 때). 실제 2인 플레이 전에는
+    // false로 되돌릴 것.
+    public bool debugP1OnlyTest = true;
+
+    // jump_front_1(대기 자세) 원본 PNG는 600x900 캔버스에서 발이 바닥까지 닿지 않고 약 50px의
+    // 투명 여백을 남겨둔 채 그려져 있다(양쪽 캐릭터 공통). FrameAnimatedCharacter는 캔버스
+    // 하단을 곧 "발이 서 있는 자리"로 가정하므로 보정 없이 그대로 쓰면 그 여백만큼 붕 떠
+    // 보인다 - characterFrameWidth 비율로 환산해 아래로 그만큼 당겨서 바닥에 붙인다.
+    private const float CharacterBottomPaddingRatio = 50f / 600f;
+
     [Header("씬에 배치된 오브젝트")]
-    [SerializeField] private CavemanSilhouette p1Silhouette;
-    [SerializeField] private CavemanSilhouette p2Silhouette;
+    [SerializeField] private Transform p1Anchor; // 캐릭터가 서는 자리(바닥) - 빈 GameObject면 충분
+    [SerializeField] private Transform p2Anchor;
     [SerializeField] private JumpHeightCalibrator p1Jump;
     [SerializeField] private JumpHeightCalibrator p2Jump;
     [SerializeField] private SpriteRenderer[] p1Fruits;
@@ -43,14 +56,14 @@ public class FruitJumpGame : MonoBehaviour
 
     private class TreeState
     {
+        public PlayerId Player;
         public JumpHeightCalibrator Jump;
-        public CavemanSilhouette Silhouette;
+        public Transform Anchor;
         public Vector3 BasePosition;
         public SpriteRenderer[] Fruits;
         public Vector3[] FruitBaseScales;
         public bool WasAirborne;
         public float PeakHeight;
-        public bool MouthOpenAtPeak;
         public FrameAnimatedCharacter Anim;
     }
 
@@ -65,12 +78,12 @@ public class FruitJumpGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
 
-        _p1Tree = BuildTree(p1Silhouette, p1Jump, p1Fruits);
-        _p2Tree = BuildTree(p2Silhouette, p2Jump, p2Fruits);
+        _p1Tree = BuildTree(PlayerId.P1, p1Anchor, p1Jump, p1Fruits);
+        _p2Tree = BuildTree(PlayerId.P2, p2Anchor, p2Jump, p2Fruits);
         hud?.SetTimeRemaining(matchSeconds);
     }
 
-    private TreeState BuildTree(CavemanSilhouette silhouette, JumpHeightCalibrator jump, SpriteRenderer[] fruits)
+    private TreeState BuildTree(PlayerId player, Transform anchor, JumpHeightCalibrator jump, SpriteRenderer[] fruits)
     {
         var baseScales = new Vector3[fruits.Length];
         for (int i = 0; i < fruits.Length; i++)
@@ -78,34 +91,39 @@ public class FruitJumpGame : MonoBehaviour
 
         var state = new TreeState
         {
+            Player = player,
             Jump = jump,
-            Silhouette = silhouette,
-            BasePosition = silhouette.transform.position,
+            Anchor = anchor,
+            BasePosition = anchor.position,
             Fruits = fruits,
             FruitBaseScales = baseScales,
         };
-        state.Anim = FrameAnimatedCharacter.Attach(silhouette.gameObject,
-            ArtAssets.LoadCharacterSequence(silhouette.player, "jump"), characterFrameWidth);
+        // jump_front_1~6은 대기->상승->정점->정점->하강->착지(대기와 거의 동일) 순의 "왕복
+        // 애니메이션"이라 5/6번은 1/2번과 높이가 겹친다(원본 그림 기준 여백 실측: 50/130/
+        // 250/250/160/50px). 이 게임은 정점 하나로 프레임을 고르는 SetProgress(높이 비율)
+        // 방식이라 뒤쪽 하강 프레임까지 넣으면 점프 최고점에서 오히려 착지 자세가 나온다 -
+        // 그래서 상승 구간만(1~4, 대기->정점) 오름차순으로 사용한다.
+        Sprite[] jumpFrames = ArtAssets.LoadCharacterSequence(player, "jump_front");
+        if (jumpFrames.Length > 4) System.Array.Resize(ref jumpFrames, 4);
+        state.Anim = FrameAnimatedCharacter.Attach(anchor.gameObject, jumpFrames, characterFrameWidth,
+            yOffset: -characterFrameWidth * CharacterBottomPaddingRatio);
         return state;
     }
 
     private void Update()
     {
-        PoseInputHub hub = PoseInputHub.Instance;
-        PlayerPoseState p1 = hub?.Get(PlayerId.P1);
-        PlayerPoseState p2 = hub?.Get(PlayerId.P2);
-        _p1Tree.Silhouette.ApplyPose(p1);
-        _p2Tree.Silhouette.ApplyPose(p2);
-
-        if (!_p1Tree.Jump.IsCalibrated || !_p2Tree.Jump.IsCalibrated)
-            return; // 캘리브레이션 끝날 때까지 대기 (둘 다 가만히 서 있어야 함)
+        bool calibrationReady = debugP1OnlyTest
+            ? _p1Tree.Jump.IsCalibrated
+            : _p1Tree.Jump.IsCalibrated && _p2Tree.Jump.IsCalibrated;
+        if (!calibrationReady)
+            return; // 캘리브레이션 끝날 때까지 대기 (테스트 모드가 아니면 둘 다 가만히 서 있어야 함)
 
         if (_ended) return;
 
         _elapsed += Time.deltaTime;
 
-        TickTree(_p1Tree, p1, ref _p1Score);
-        TickTree(_p2Tree, p2, ref _p2Score);
+        TickTree(_p1Tree, ref _p1Score);
+        if (!debugP1OnlyTest) TickTree(_p2Tree, ref _p2Score);
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
 
         if (_elapsed >= matchSeconds)
@@ -115,14 +133,14 @@ public class FruitJumpGame : MonoBehaviour
         }
     }
 
-    private void TickTree(TreeState tree, PlayerPoseState state, ref int score)
+    private void TickTree(TreeState tree, ref int score)
     {
         float height = tree.Jump.GetJumpHeight();
 
         // 점프 높이만큼 캐릭터를 실제로 위로 띄워서 화면에서 보이게 한다.
-        tree.Silhouette.transform.position = tree.BasePosition + Vector3.up * (height * jumpBounceHeight);
+        tree.Anchor.position = tree.BasePosition + Vector3.up * (height * jumpBounceHeight);
 
-        // 가장 높은 단 임계값을 1.0 기준으로 삼아, 점프 높이에 비례해 jump_1(대기)~jump_N
+        // 가장 높은 단 임계값을 1.0 기준으로 삼아, 점프 높이에 비례해 jump_front_1(대기)~jump_front_4
         // (최고점) 프레임을 고른다.
         float topThreshold = tierHeightThresholds[tierHeightThresholds.Length - 1];
         if (topThreshold > 0f) tree.Anim?.SetProgress(height / topThreshold);
@@ -134,33 +152,29 @@ public class FruitJumpGame : MonoBehaviour
             // 이륙(새 점프 시작): 이전 점프에서 먹은 과일을 되돌리고 정점 추적을 초기화.
             RespawnFruits(tree);
             tree.PeakHeight = 0f;
-            tree.MouthOpenAtPeak = false;
         }
 
         if (airborne)
         {
-            // 정점이 갱신될 때마다 그 순간의 입 상태를 같이 기록한다. 하강이 시작되면 더
-            // 이상 갱신되지 않으므로, 결국 "실제 정점 프레임"의 입 상태만 남게 된다.
+            // 정점 높이를 계속 갱신한다. 하강이 시작되면 더 이상 갱신되지 않으므로, 결국
+            // "이번 점프의 진짜 정점 높이"만 남게 된다.
             if (height > tree.PeakHeight)
-            {
                 tree.PeakHeight = height;
-                tree.MouthOpenAtPeak = state != null && state.IsTracked && state.IsMouthOpen();
-            }
         }
         else if (tree.WasAirborne)
         {
-            // 착지(점프 종료): 이번 점프의 최종 정점 높이 하나로 단을 판정한다.
+            // 착지(점프 종료): 이번 점프의 최종 정점 높이 하나로 단을 판정하고 곧바로 채점한다.
             int tier = -1;
             for (int i = tierHeightThresholds.Length - 1; i >= 0; i--)
             {
                 if (tree.PeakHeight >= tierHeightThresholds[i]) { tier = i; break; }
             }
 
-            if (tier >= 0 && tree.MouthOpenAtPeak)
+            if (tier >= 0)
             {
                 score += tierScores[tier];
-                hud?.SetScore(tree.Silhouette.player, score);
-                hud?.ShowEvent($"{tree.Silhouette.player} +{tierScores[tier]}!");
+                hud?.SetScore(tree.Player, score);
+                hud?.ShowEvent($"{tree.Player} +{tierScores[tier]}!");
                 StartCoroutine(EatFruit(tree.Fruits[tier], tree.FruitBaseScales[tier]));
             }
         }
@@ -212,7 +226,10 @@ public class FruitJumpGame : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!_p1Tree.Jump.IsCalibrated || !_p2Tree.Jump.IsCalibrated)
+        bool calibrationReady = debugP1OnlyTest
+            ? _p1Tree.Jump.IsCalibrated
+            : _p1Tree.Jump.IsCalibrated && _p2Tree.Jump.IsCalibrated;
+        if (!calibrationReady)
             GUI.Label(new Rect(20, 20, 400, 30), "캘리브레이션 중 - 가만히 서 있으세요...");
     }
 }
