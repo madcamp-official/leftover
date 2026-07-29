@@ -37,7 +37,8 @@ public static class FeatherFlightSceneSetup
 
         Transform p1Rig = CreateRig(root, "P1Rig", anchorX: 0f);
         Transform p1Cliff = AddSprite(p1Rig, "Cliff", ArtAssets.LoadFeatherFlight("cliff_p1"), Vector3.zero, 5f, -10);
-        // RestPoint = 인트로 도약이 끝난 뒤 캐릭터가 고정되는 화면 중앙 쪽 자리(화면 세로 중앙).
+        // RestPoint = 인트로 중 캐릭터가 X로 이동해 가는 화면 쪽 자리(Y는 안 쓰임 - 인트로는
+        // 항상 원래 스폰 Y로 돌아온다. 그 Y가 곧 HUD 게이지 중심 기준이다).
         Transform p1RestPoint = CreateEmpty(p1Rig, "RestPoint", new Vector3(3f, 1f, 0f));
 
         Transform p2Rig = CreateRig(root, "P2Rig", anchorX: 1f);
@@ -65,7 +66,7 @@ public static class FeatherFlightSceneSetup
         SetFloats(game,
             ("matchSeconds", 20f), ("fallSpeed", 1.2f),
             ("flapBoost", .35f), ("raiseRatio", .15f), ("resultDisplaySeconds", 2f),
-            ("jumpIntroSeconds", .5f), ("cliffDropSeconds", .3f), ("introDropHeight", 1f),
+            ("jumpIntroSeconds", .5f), ("introHopHeight", .5f),
             ("wingAnimationSmoothing", 10f));
     }
 

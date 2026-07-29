@@ -10,14 +10,16 @@
 //     자동 계산한다. height가 floor에 닿는 즉시(제한시간 전이라도) 그 플레이어가 패배.
 //   - matchSeconds 경과 시 더 높은 쪽(height)이 승리, 같으면 무승부.
 //
-// 인트로: 캐릭터가 절벽 위에 서 있는 자리(절벽 바닥 = 캐릭터 발)에서 뛰어올라, 화면 중앙
-// 쪽 X(RestPoint의 X)와 절벽 Y보다 introDropHeight만큼 높은 자리로 도약한다(jump 컷 재생).
-// 도약이 끝나는 순간 실제 게임플레이 height가 그 introDropHeight에서 시작한다.
+// 인트로: 캐릭터가 절벽 위 시작 자리(=씬에 배치된 원래 위치)에서 X만 RestPoint의 X로
+// 서서히 이동하면서, Y는 원래 자리에서 introHopHeight만큼 살짝 떴다가 다시 원래 Y로
+// 돌아오는 "제자리 홉"을 한다(jump 컷 재생). 홉이 끝나 원래 Y로 돌아오는 그 순간부터 실제
+// 게임플레이(하강/날갯짓)가 시작된다(RestPoint의 Y는 쓰지 않는다, X 이동 목표로만 쓰인다).
 //
 // 화면 표현: 절벽(Cliff)은 씬에 배치한 자리에서 전혀 움직이지 않는다. 대신 캐릭터가
 // "절벽 Y + height"를 따라 위아래로 움직인다. P1/P2는 각자 독립적으로 움직이고, 절벽 Y가
 // 다르면 각자의 ceiling/floor도 따로 계산된다. 캐릭터 표현 자체(프레임 전환)는
-// FeatherFlightCharacterView가 맡는다(런타임 인스턴스화 없음).
+// FeatherFlightCharacterView가 맡는다(런타임 인스턴스화 없음). 높이는 캐릭터가 화면에서
+// 실제로 오르내리는 것으로 이미 드러나므로 별도 HUD 게이지는 쓰지 않는다.
 using System.Collections;
 using UnityEngine;
 
@@ -28,16 +30,15 @@ public class FeatherFlightGame : MonoBehaviour
     public float flapBoost = .35f;        // 날갯짓 1회(양손 rising edge)당 즉시 더해지는 높이
     public float raiseRatio = .15f;       // IsHandRaised에 전달하는 임계값(공용 기본값)
     public float resultDisplaySeconds = 2f;
-    public float jumpIntroSeconds = .5f;  // 절벽 위 시작 자리에서 도약 완료까지 걸리는 시간
-    public float cliffDropSeconds = .3f;  // (미사용 - 절벽이 안 움직이므로 더는 의미 없음, 기존 값 보존용)
-    public float introDropHeight = 1f;    // 도약이 끝났을 때 캐릭터의 시작 height(절벽 Y 위로 뜬 양)
+    public float jumpIntroSeconds = .5f;  // 인트로 홉(제자리 도약) 재생 시간
+    public float introHopHeight = .5f;    // 인트로 중 원래 Y에서 살짝 떴다가 다시 돌아오는 높이(유닛)
     public float wingAnimationSmoothing = 10f; // 날갯짓 프레임 전환이 뚝뚝 끊기지 않게 하는 속도
 
     [Header("씬에 배치된 오브젝트")]
-    [Tooltip("이 플레이어의 절벽 - 움직이지 않는다. 이 오브젝트의 Y가 height=0 기준선(게이지 중심)이다.")]
+    [Tooltip("이 플레이어의 절벽 - 움직이지 않는다. 이 오브젝트의 Y가 height=0 기준선이다.")]
     [SerializeField] private Transform p1Cliff;
     [SerializeField] private Transform p2Cliff;
-    [Tooltip("캐릭터가 도약한 뒤 머무는 화면 쪽 X 위치(Y는 height 계산에 안 쓰인다).")]
+    [Tooltip("캐릭터가 인트로 중 X만 이동해서 도착하는 화면 쪽 자리(Y는 쓰이지 않는다 - 인트로는 원래 Y로 돌아온다).")]
     [SerializeField] private Transform p1RestPoint;
     [SerializeField] private Transform p2RestPoint;
     [SerializeField] private FeatherFlightCharacterView p1View;
@@ -48,6 +49,7 @@ public class FeatherFlightGame : MonoBehaviour
     private float _p1FloorY, _p2FloorY;       // 절벽 Y = height 0 기준선(월드 좌표)
     private float _p1Ceiling, _p2Ceiling;     // 화면 위쪽 끝까지의 height(항상 양수)
     private float _p1Floor, _p2Floor;         // 화면 아래쪽 끝까지의 height(항상 음수)
+    private float _p1RestHeight, _p2RestHeight; // 캐릭터의 원래 스폰 Y를 height로 환산한 값 - 인트로 홉이 끝나 돌아오는 자리(실제 게임플레이 시작 height)
     private bool _p1PrevRaised, _p2PrevRaised;
     private float _p1WingProgress, _p2WingProgress;
     private float _elapsed;
@@ -67,11 +69,17 @@ public class FeatherFlightGame : MonoBehaviour
             return;
         }
 
-        // 절벽은 절대 움직이지 않으므로, 절벽 오브젝트 자체의 Y를 "height=0" 기준선(게이지
-        // 중심)으로 캐싱해둔다. 그 기준선에서 카메라 화면 위/아래 끝까지의 거리가 각각
-        // ceiling(최고 높이)/floor(최저 높이)가 된다.
+        // 절벽은 절대 움직이지 않으므로, 절벽 오브젝트 자체의 Y를 "height=0" 기준선으로
+        // 캐싱해둔다. 그 기준선에서 카메라 화면 위/아래 끝까지의 거리가 각각 ceiling(최고
+        // 높이)/floor(최저 높이)가 된다.
         _p1FloorY = p1Cliff.position.y;
         _p2FloorY = p2Cliff.position.y;
+
+        // 캐릭터가 씬에 배치된 원래 Y(=인트로 홉이 끝나고 돌아오는 자리)를 실제 게임플레이
+        // 시작 height로 쓴다. Start() 시점에는 아직 SetBase가 한 번도 호출되지 않았으므로
+        // transform.position이 곧 씬에서 배치한 원래 자리다.
+        _p1RestHeight = p1View.transform.position.y - _p1FloorY;
+        _p2RestHeight = p2View.transform.position.y - _p2FloorY;
 
         Camera cam = Camera.main;
         if (cam != null)
@@ -86,8 +94,6 @@ public class FeatherFlightGame : MonoBehaviour
 
         _p1Height = 0f;
         _p2Height = 0f;
-        hud?.SetHeight(PlayerId.P1, 0f);
-        hud?.SetHeight(PlayerId.P2, 0f);
         hud?.SetTimeRemaining(matchSeconds);
 
         StartCoroutine(PlayIntro());
@@ -95,12 +101,13 @@ public class FeatherFlightGame : MonoBehaviour
 
     private IEnumerator PlayIntro()
     {
-        // 절벽 위 시작 자리(=캐릭터가 씬에 배치된 그 자리) -> RestPoint의 X, 절벽 Y보다
-        // introDropHeight만큼 높은 Y로 도약.
+        // 절벽 위 시작 자리(=캐릭터가 씬에 배치된 그 자리)에서 X만 RestPoint의 X로 이동하고,
+        // Y는 원래 Y에서 introHopHeight만큼 살짝 떴다가(t=0.5에서 정점) 다시 원래 Y로
+        // 돌아오는 제자리 홉이다. 실제 게임플레이는 Y가 원래 자리로 돌아온 뒤(t=1)에 시작한다.
         Vector3 p1Start = p1View.transform.position;
         Vector3 p2Start = p2View.transform.position;
-        Vector3 p1End = new Vector3(p1RestPoint.position.x, _p1FloorY + introDropHeight, p1Start.z);
-        Vector3 p2End = new Vector3(p2RestPoint.position.x, _p2FloorY + introDropHeight, p2Start.z);
+        float p1EndX = p1RestPoint.position.x;
+        float p2EndX = p2RestPoint.position.x;
         int p1Frames = Mathf.Max(p1View.JumpFrameCount, 1);
         int p2Frames = Mathf.Max(p2View.JumpFrameCount, 1);
 
@@ -108,21 +115,20 @@ public class FeatherFlightGame : MonoBehaviour
         while (t < 1f)
         {
             t = jumpIntroSeconds > 0f ? Mathf.Clamp01(t + Time.deltaTime / jumpIntroSeconds) : 1f;
+            float hop = introHopHeight * Mathf.Sin(t * Mathf.PI);
 
-            p1View.SetBase(Vector3.Lerp(p1Start, p1End, t));
-            p2View.SetBase(Vector3.Lerp(p2Start, p2End, t));
+            p1View.SetBase(new Vector3(Mathf.Lerp(p1Start.x, p1EndX, t), p1Start.y + hop, p1Start.z));
+            p2View.SetBase(new Vector3(Mathf.Lerp(p2Start.x, p2EndX, t), p2Start.y + hop, p2Start.z));
             p1View.ShowJumpFrame(Mathf.FloorToInt(t * (p1Frames - 1)));
             p2View.ShowJumpFrame(Mathf.FloorToInt(t * (p2Frames - 1)));
 
             yield return null;
         }
-        p1View.SetBase(p1End);
-        p2View.SetBase(p2End);
+        p1View.SetBase(new Vector3(p1EndX, p1Start.y, p1Start.z));
+        p2View.SetBase(new Vector3(p2EndX, p2Start.y, p2Start.z));
 
-        _p1Height = Mathf.Clamp(introDropHeight, _p1Floor, _p1Ceiling);
-        _p2Height = Mathf.Clamp(introDropHeight, _p2Floor, _p2Ceiling);
-        hud?.SetHeight(PlayerId.P1, SignedRatio(_p1Height, _p1Ceiling, _p1Floor));
-        hud?.SetHeight(PlayerId.P2, SignedRatio(_p2Height, _p2Ceiling, _p2Floor));
+        _p1Height = Mathf.Clamp(_p1RestHeight, _p1Floor, _p1Ceiling);
+        _p2Height = Mathf.Clamp(_p2RestHeight, _p2Floor, _p2Ceiling);
 
         _introDone = true;
     }
@@ -135,9 +141,9 @@ public class FeatherFlightGame : MonoBehaviour
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
 
-        bool p1Landed = TickPlayer(PlayerId.P1, p1, ref _p1Height, ref _p1PrevRaised, ref _p1WingProgress,
+        bool p1Landed = TickPlayer(p1, ref _p1Height, ref _p1PrevRaised, ref _p1WingProgress,
             p1View, p1RestPoint.position.x, _p1FloorY, _p1Ceiling, _p1Floor);
-        bool p2Landed = TickPlayer(PlayerId.P2, p2, ref _p2Height, ref _p2PrevRaised, ref _p2WingProgress,
+        bool p2Landed = TickPlayer(p2, ref _p2Height, ref _p2PrevRaised, ref _p2WingProgress,
             p2View, p2RestPoint.position.x, _p2FloorY, _p2Ceiling, _p2Floor);
 
         if (p1Landed || p2Landed)
@@ -159,7 +165,7 @@ public class FeatherFlightGame : MonoBehaviour
     }
 
     // 반환값: 이 플레이어가 이번 프레임에 화면 아래쪽 끝(height<=floor)에 닿았는지.
-    private bool TickPlayer(PlayerId id, PlayerPoseState state, ref float height, ref bool prevRaised,
+    private bool TickPlayer(PlayerPoseState state, ref float height, ref bool prevRaised,
         ref float wingProgress, FeatherFlightCharacterView view, float fixedX, float floorY,
         float ceiling, float floor)
     {
@@ -186,18 +192,7 @@ public class FeatherFlightGame : MonoBehaviour
                 view.ShowFlapFrame(Mathf.RoundToInt(wingProgress * (view.FlapFrameCount - 1)));
         }
 
-        hud?.SetHeight(id, SignedRatio(height, ceiling, floor));
-
         return height <= floor;
-    }
-
-    // 절벽(height 0)을 가운데(0)로 두고, 화면 위쪽 끝(ceiling)에서 +1, 아래쪽 끝(floor)에서
-    // -1이 되도록 정규화한다. 게이지가 이 값을 그대로 좌우 위치로 쓴다.
-    private static float SignedRatio(float height, float ceiling, float floor)
-    {
-        if (height >= 0f)
-            return ceiling > 0f ? Mathf.Clamp01(height / ceiling) : 0f;
-        return floor < 0f ? -Mathf.Clamp01(height / floor) : 0f;
     }
 
     private void EndMatch(PlayerId? winner)
@@ -224,8 +219,7 @@ public class FeatherFlightGame : MonoBehaviour
         raiseRatio = Mathf.Max(0f, raiseRatio);
         resultDisplaySeconds = Mathf.Max(0f, resultDisplaySeconds);
         jumpIntroSeconds = Mathf.Max(0f, jumpIntroSeconds);
-        cliffDropSeconds = Mathf.Max(0f, cliffDropSeconds);
-        introDropHeight = Mathf.Max(0f, introDropHeight);
+        introHopHeight = Mathf.Max(0f, introHopHeight);
         wingAnimationSmoothing = Mathf.Max(.01f, wingAnimationSmoothing);
     }
 }
