@@ -121,17 +121,23 @@ public class HubController : MonoBehaviour
         var titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
         var labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true };
 
-        GUILayout.BeginArea(new Rect(16, 16, 320, 200), boxStyle);
+        GUILayout.BeginArea(new Rect(16, 16, 320, 240), boxStyle);
         GUILayout.Label("네트워크 모드", titleStyle);
         GUILayout.Label($"{DescribeRole(net.Role)} / {DescribeState(net.ConnectionState)}", labelStyle);
 
         switch (net.Role)
         {
             case NetworkRole.Offline:
-                if (GUILayout.Button("호스트로 시작")) net.StartHost();
+                if (GUILayout.Button("호스트로 시작")) { SoloBotController.SetEnabled(false); net.StartHost(); }
                 GUILayout.Label("접속할 호스트 IP:", labelStyle);
                 _joinAddressInput = GUILayout.TextField(_joinAddressInput);
-                if (GUILayout.Button("접속")) net.StartClient(_joinAddressInput);
+                if (GUILayout.Button("접속")) { SoloBotController.SetEnabled(false); net.StartClient(_joinAddressInput); }
+                GUILayout.Space(6);
+                // 혼자하기 - 실제 카메라 없이 P2를 봇이 대신 조작한다(SoloBotController).
+                // 상대방 없이도 매치를 끝까지 진행해볼 수 있는 연습용 모드.
+                bool soloOn = SoloBotController.IsEnabled;
+                string soloLabel = soloOn ? "혼자하기 ON (P2 = 봇)" : "혼자하기 OFF";
+                if (GUILayout.Button(soloLabel)) SoloBotController.SetEnabled(!soloOn);
                 break;
             case NetworkRole.Host:
                 GUILayout.Label($"내 IP: {net.LocalAddressHint} (포트 {GameEventChannel.DefaultPort})", labelStyle);
