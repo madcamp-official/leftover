@@ -62,7 +62,7 @@ public class CavemanSilhouette : MonoBehaviour
         => pivot != null && part != null ? Mathf.Max(0.01f, Mathf.Abs(part.localPosition.y) * 2f) : 0.5f;
 
     // 상황별 표정으로 잠깐 바꾸고 싶을 때(예: 돌에 맞음, 바나나를 먹음) 사용. part는
-    // "face_grimacing", "face_stone_hit_one_tooth_broken" 같은 ArtAssets.LoadCharacter 규칙.
+    // "stone_throw_hit_fullbody", "face_stone_hit_one_tooth_broken" 같은 ArtAssets.LoadCharacter 규칙.
     public void SetFace(string facePart)
     {
         if (head == null) return;

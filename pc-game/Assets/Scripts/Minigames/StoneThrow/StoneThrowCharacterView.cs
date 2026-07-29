@@ -13,7 +13,7 @@ public class StoneThrowCharacterView : MonoBehaviour
     [SerializeField] private bool backView;
     [SerializeField] private Transform visualRoot;
     [SerializeField] private SpriteRenderer characterRenderer;
-    [SerializeField] private SpriteRenderer hitFaceRenderer;
+    [SerializeField] private Sprite hitFullBodySprite;
 
     [Header("좌우 회피 위치 (Slot 기준)")]
     [SerializeField] private Transform leftDodgeAnchor;
@@ -31,15 +31,20 @@ public class StoneThrowCharacterView : MonoBehaviour
     [SerializeField] private Sprite[] leftHandFrames;
     [SerializeField] private Sprite[] rightHandFrames;
 
-    private Coroutine _hitFaceRoutine;
+    private Coroutine _hitReactionRoutine;
+    private Sprite _requestedSprite;
 
     public PlayerId Player => player;
     public bool IsBackView => backView;
 
     private void Awake()
     {
+        if (!backView && hitFullBodySprite == null)
+        {
+            int playerNumber = player == PlayerId.P1 ? 1 : 2;
+            hitFullBodySprite = Resources.Load<Sprite>($"Characters/p{playerNumber}_stone_throw_hit_fullbody");
+        }
         ShowIdle();
-        if (hitFaceRenderer != null) hitFaceRenderer.enabled = false;
     }
 
     public void SetSide(StoneThrowSide side)
@@ -53,7 +58,7 @@ public class StoneThrowCharacterView : MonoBehaviour
     {
         Sprite[] frames = Frames(hand);
         if (characterRenderer == null || frames == null || frames.Length == 0) return;
-        characterRenderer.sprite = frames[Mathf.Clamp(frameIndex, 0, frames.Length - 1)];
+        SetRequestedSprite(frames[Mathf.Clamp(frameIndex, 0, frames.Length - 1)]);
     }
 
     public void ShowIdle()
@@ -61,7 +66,7 @@ public class StoneThrowCharacterView : MonoBehaviour
         Sprite[] frames = rightHandFrames != null && rightHandFrames.Length > 0
             ? rightHandFrames : leftHandFrames;
         if (characterRenderer != null && frames != null && frames.Length > 0)
-            characterRenderer.sprite = frames[0];
+            SetRequestedSprite(frames[0]);
     }
 
     public int FrameCount(StoneThrowHand hand) => Frames(hand)?.Length ?? 0;
@@ -78,19 +83,26 @@ public class StoneThrowCharacterView : MonoBehaviour
         return anchor != null ? anchor.position : transform.position;
     }
 
-    public void ShowHitFace(float seconds)
+    public void ShowHitFullBody(float seconds)
     {
-        if (backView || hitFaceRenderer == null) return;
-        if (_hitFaceRoutine != null) StopCoroutine(_hitFaceRoutine);
-        _hitFaceRoutine = StartCoroutine(HitFaceRoutine(seconds));
+        if (backView || characterRenderer == null || hitFullBodySprite == null) return;
+        if (_hitReactionRoutine != null) StopCoroutine(_hitReactionRoutine);
+        _hitReactionRoutine = StartCoroutine(HitFullBodyRoutine(seconds));
     }
 
-    private IEnumerator HitFaceRoutine(float seconds)
+    private IEnumerator HitFullBodyRoutine(float seconds)
     {
-        hitFaceRenderer.enabled = true;
+        characterRenderer.sprite = hitFullBodySprite;
         yield return new WaitForSeconds(seconds);
-        hitFaceRenderer.enabled = false;
-        _hitFaceRoutine = null;
+        _hitReactionRoutine = null;
+        if (_requestedSprite != null) characterRenderer.sprite = _requestedSprite;
+    }
+
+    private void SetRequestedSprite(Sprite sprite)
+    {
+        _requestedSprite = sprite;
+        if (_hitReactionRoutine == null && characterRenderer != null)
+            characterRenderer.sprite = sprite;
     }
 
     private Sprite[] Frames(StoneThrowHand hand)

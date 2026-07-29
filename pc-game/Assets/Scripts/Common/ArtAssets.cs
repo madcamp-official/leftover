@@ -41,7 +41,7 @@ public static class ArtAssets
     // games/01~05 아래에 둔다. Resources로 들여올 때는
     // p1_*/p2_* 이름을 사용하며 여기서는 그 통일된 이름만 쓴다.
     // part 예: "head", "torso", "left_upper_arm", "right_lower_arm_hand",
-    //          "face_grimacing", "face_stone_hit_one_tooth_broken"
+    //          "stone_throw_hit_fullbody", "face_stone_hit_one_tooth_broken"
     public static Sprite LoadCharacter(PlayerId player, string part)
         => LoadSprite($"Characters/{(player == PlayerId.P1 ? "p1" : "p2")}_{part}");
 

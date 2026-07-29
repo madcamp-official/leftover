@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 171f6b0928313344a8342d921baa36e7
+guid: 7a91c4e2b63d48f0a5c7821e9d34b6f8
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -8661391426509835760
-    second: p1_face_grimacing_0
+      213: 6754750813574252126
+    second: p2_stone_throw_hit_fullbody_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -49,8 +49,8 @@ TextureImporter:
   spriteMode: 1
   spriteExtrude: 1
   spriteMeshType: 1
-  alignment: 0
-  spritePivot: {x: 0.5, y: 0.5}
+  alignment: 9
+  spritePivot: {x: 0.4994229, y: 0.07928806}
   spritePixelsToUnits: 100
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
@@ -126,23 +126,23 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: p1_face_grimacing_0
+      name: p2_stone_throw_hit_fullbody_0
       rect:
         serializedVersion: 2
-        x: 60
-        y: 45
-        width: 1814
-        height: 2397
+        x: 187
+        y: 26
+        width: 212
+        height: 552
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 012744a336e8cc780800000000000000
-      internalID: -8661391426509835760
+      spriteID: e56cf55a312bdbd50800000000000000
+      internalID: 6754750813574252126
       vertices: []
       indices: 
       edges: []
@@ -152,7 +152,7 @@ TextureImporter:
     physicsShape: []
     bones: []
     spriteID: 5e97eb03825dee720800000000000000
-    internalID: 0
+    internalID: 1537655665
     vertices: []
     indices: 
     edges: []
@@ -161,7 +161,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      p1_face_grimacing_0: -8661391426509835760
+      p2_stone_throw_hit_fullbody_0: 6754750813574252126
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

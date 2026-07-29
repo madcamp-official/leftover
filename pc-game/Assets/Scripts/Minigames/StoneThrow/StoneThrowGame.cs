@@ -10,14 +10,17 @@ public class StoneThrowGame : MonoBehaviour
     [Min(1f)] public float matchSeconds = 30f;
     [Min(0f)] public float headSideThreshold = 0.12f;
     [Min(0f)] public float headSideHoldSeconds = 0.1f;
-    [Min(0.05f)] public float stoneTravelSeconds = 0.25f;
+    [Min(0.05f)] public float stoneTravelSeconds = 1f;
     [Min(0.05f)] public float throwAnimationSeconds = 0.6f;
-    [Min(0f)] public float hitFaceDisplaySeconds = 0.7f;
+    [Min(0f)] public float hitReactionDisplaySeconds = 0.7f;
     [Min(0f)] public float resultDisplaySeconds = 2f;
 
     [Header("돌 원근 크기 (월드 가로 폭)")]
-    [Min(0.01f)] public float nearStoneWidth = 0.52f;
-    [Min(0.01f)] public float farStoneWidth = 0.16f;
+    [Min(0.01f)] public float nearStoneWidth = 2.6f;
+    [Min(0.01f)] public float farStoneWidth = 0.25f;
+
+    [Header("돌 회전")]
+    [Min(0f)] public float stoneSpinDegreesPerSecond = 1440f;
 
     [Header("씬에 배치된 캐릭터 뷰")]
     [SerializeField] private StoneThrowCharacterView p1FrontView;
@@ -60,6 +63,8 @@ public class StoneThrowGame : MonoBehaviour
     {
         if (_ended) return;
 
+        // 카메라 준비 여부는 로딩 단계에서만 확인한다. 경기가 시작된 뒤에는 추적이
+        // 끊겨도 타이머와 기존 투사체/명중 판정은 계속 진행한다.
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
@@ -81,12 +86,12 @@ public class StoneThrowGame : MonoBehaviour
         while (_p1FireTimer >= fireIntervalSeconds)
         {
             _p1FireTimer -= fireIntervalSeconds;
-            TriggerFireEvent(PlayerId.P1, p1, _p2Side);
+            TriggerFireEvent(PlayerId.P1, p1);
         }
         while (_p2FireTimer >= fireIntervalSeconds)
         {
             _p2FireTimer -= fireIntervalSeconds;
-            TriggerFireEvent(PlayerId.P2, p2, _p1Side);
+            TriggerFireEvent(PlayerId.P2, p2);
         }
     }
 
@@ -128,28 +133,51 @@ public class StoneThrowGame : MonoBehaviour
         BackView(player)?.SetSide(side);
     }
 
-    private void TriggerFireEvent(PlayerId thrower, PlayerPoseState state, StoneThrowSide targetSide)
+    private void TriggerFireEvent(PlayerId thrower, PlayerPoseState state)
     {
-        if (state == null || !state.IsTracked)
-        {
-            hud?.ShowEvent($"{Label(thrower)} 추적 대기");
-            return;
-        }
-        bool right = state.IsHandRaised(rightHand: true);
-        bool left = state.IsHandRaised(rightHand: false);
-        if (right == left)
-        {
-            hud?.ShowEvent(right ? $"{Label(thrower)} 양손은 무효!" : $"{Label(thrower)} 한 손을 드세요!");
-            return;
-        }
+        // 발사 이벤트 순간 현재 카메라에서 한 손만 인식됐을 때만 던진다.
+        // 미추적/양손/무손 상태는 단순히 이번 이벤트를 건너뛰며 경기는 멈추지 않는다.
+        if (!TryGetRecognizedThrowHand(state, out StoneThrowHand hand)) return;
 
-        StoneThrowHand hand = right ? StoneThrowHand.Right : StoneThrowHand.Left;
-        StoneThrowSide aimSide = right ? StoneThrowSide.Right : StoneThrowSide.Left;
-        bool hit = aimSide == targetSide;
-        StartCoroutine(PlayThrow(thrower, hand, aimSide, hit));
+        // 던지는 사람 화면의 오른쪽은 마주 보는 상대의 왼쪽이다.
+        // 반대로 던지는 사람 화면의 왼쪽은 상대의 오른쪽이다.
+        StoneThrowSide aimedTargetSide = hand == StoneThrowHand.Right
+            ? StoneThrowSide.Left
+            : StoneThrowSide.Right;
+        PlayerId target = thrower == PlayerId.P1 ? PlayerId.P2 : PlayerId.P1;
+        StoneThrowCharacterView throwerFront = FrontView(thrower);
+        StoneThrowCharacterView throwerBack = BackView(thrower);
+
+        // 발사 이벤트 순간 선택된 손 위치와 그 손이 조준한 상대 기준 좌/우 목표 좌표를
+        // 잠근다. 상대가 어디에 서 있는지는 목표를 정하지 않고 명중 여부에만 사용한다.
+        Vector3 lockedFrontRelease = throwerFront != null
+            ? throwerFront.ReleasePosition(hand) : Vector3.zero;
+        Vector3 lockedBackRelease = throwerBack != null
+            ? throwerBack.ReleasePosition(hand) : Vector3.zero;
+        Vector3 lockedFrontTarget = FrontView(target) != null
+            ? FrontView(target).TargetPosition(aimedTargetSide) : Vector3.zero;
+        Vector3 lockedBackTarget = BackView(target) != null
+            ? BackView(target).TargetPosition(aimedTargetSide) : Vector3.zero;
+        StartCoroutine(PlayThrow(thrower, hand, aimedTargetSide,
+            lockedFrontRelease, lockedBackRelease, lockedFrontTarget, lockedBackTarget));
     }
 
-    private IEnumerator PlayThrow(PlayerId thrower, StoneThrowHand hand, StoneThrowSide aimSide, bool hit)
+    private static bool TryGetRecognizedThrowHand(PlayerPoseState state, out StoneThrowHand hand)
+    {
+        hand = default;
+        if (state == null || !state.IsTracked) return false;
+
+        bool right = state.IsHandRaised(rightHand: true);
+        bool left = state.IsHandRaised(rightHand: false);
+        if (right == left) return false;
+
+        hand = right ? StoneThrowHand.Right : StoneThrowHand.Left;
+        return true;
+    }
+
+    private IEnumerator PlayThrow(PlayerId thrower, StoneThrowHand hand, StoneThrowSide lockedTargetSide,
+        Vector3 lockedFrontRelease, Vector3 lockedBackRelease,
+        Vector3 lockedFrontTarget, Vector3 lockedBackTarget)
     {
         StoneThrowCharacterView front = FrontView(thrower);
         StoneThrowCharacterView back = BackView(thrower);
@@ -161,14 +189,18 @@ public class StoneThrowGame : MonoBehaviour
         {
             front?.ShowThrowFrame(hand, frame);
             back?.ShowThrowFrame(hand, frame);
-            if (frame == 3) ReleaseStones(thrower, hand, aimSide, hit);
+            if (frame == 3)
+                ReleaseStones(thrower, lockedTargetSide, lockedFrontRelease, lockedBackRelease,
+                    lockedFrontTarget, lockedBackTarget);
             yield return new WaitForSeconds(frameSeconds);
         }
         front?.ShowIdle();
         back?.ShowIdle();
     }
 
-    private void ReleaseStones(PlayerId thrower, StoneThrowHand hand, StoneThrowSide aimSide, bool hit)
+    private void ReleaseStones(PlayerId thrower, StoneThrowSide lockedTargetSide,
+        Vector3 lockedFrontRelease, Vector3 lockedBackRelease,
+        Vector3 lockedFrontTarget, Vector3 lockedBackTarget)
     {
         PlayerId target = thrower == PlayerId.P1 ? PlayerId.P2 : PlayerId.P1;
         StoneThrowCharacterView throwerBack = BackView(thrower);
@@ -176,33 +208,53 @@ public class StoneThrowGame : MonoBehaviour
         StoneThrowCharacterView targetFront = FrontView(target);
         StoneThrowCharacterView targetBack = BackView(target);
 
-        // 각 플레이어 화면에서 같은 사건을 동시에 본다.
+        // 각 플레이어 화면에서 같은 사건을 동시에 본다. 피격 판정은 실제 돌 하나가
+        // 끝점에 도착한 프레임에 연결해서 이동 시간과 표정 타이밍이 어긋나지 않게 한다.
+        bool outcomeBoundToStone = false;
         if (throwerBack != null && targetFront != null)
-            StartCoroutine(FlyStone(throwerBack.ReleasePosition(hand), targetFront.TargetPosition(aimSide),
-                nearStoneWidth, farStoneWidth));
+        {
+            StartCoroutine(FlyStone(lockedBackRelease, lockedFrontTarget,
+                nearStoneWidth, farStoneWidth,
+                () => ResolveThrowOutcome(thrower, target, lockedTargetSide)));
+            outcomeBoundToStone = true;
+        }
         if (throwerFront != null && targetBack != null)
-            StartCoroutine(FlyStone(throwerFront.ReleasePosition(hand), targetBack.TargetPosition(aimSide),
-                farStoneWidth, nearStoneWidth));
+        {
+            StartCoroutine(FlyStone(lockedFrontRelease, lockedBackTarget,
+                farStoneWidth, nearStoneWidth,
+                outcomeBoundToStone ? null : () => ResolveThrowOutcome(thrower, target, lockedTargetSide)));
+            outcomeBoundToStone = true;
+        }
 
-        StartCoroutine(ResolveThrowOutcome(thrower, target, hit));
+        if (!outcomeBoundToStone)
+            StartCoroutine(ResolveThrowOutcomeAfterDelay(thrower, target, lockedTargetSide));
     }
 
-    private IEnumerator ResolveThrowOutcome(PlayerId thrower, PlayerId target, bool hit)
+    private IEnumerator ResolveThrowOutcomeAfterDelay(PlayerId thrower, PlayerId target,
+        StoneThrowSide lockedTargetSide)
     {
         yield return new WaitForSeconds(stoneTravelSeconds);
+        ResolveThrowOutcome(thrower, target, lockedTargetSide);
+    }
+
+    private void ResolveThrowOutcome(PlayerId thrower, PlayerId target, StoneThrowSide lockedTargetSide)
+    {
+        // 도착 순간에도 처음 조준한 위치에 남아 있어야 명중한다.
+        bool hit = CurrentSide(target) == lockedTargetSide;
         if (!hit)
         {
             hud?.ShowEvent($"{Label(target)} 회피!");
-            yield break;
+            return;
         }
         if (thrower == PlayerId.P1) _p1Hits++; else _p2Hits++;
         int receivedHits = thrower == PlayerId.P1 ? _p1Hits : _p2Hits;
         hud?.SetHits(target, receivedHits);
         hud?.ShowEvent($"{Label(thrower)} 명중!");
-        FrontView(target)?.ShowHitFace(hitFaceDisplaySeconds);
+        FrontView(target)?.ShowHitFullBody(hitReactionDisplaySeconds);
     }
 
-    private IEnumerator FlyStone(Vector3 from, Vector3 to, float startWidth, float endWidth)
+    private IEnumerator FlyStone(Vector3 from, Vector3 to, float startWidth, float endWidth,
+        System.Action onArrived = null)
     {
         if (stoneTemplate == null) yield break;
         SpriteRenderer stone = Instantiate(stoneTemplate, projectileContainer);
@@ -217,9 +269,12 @@ public class StoneThrowGame : MonoBehaviour
             float t = Mathf.Clamp01(elapsed / stoneTravelSeconds);
             stone.transform.position = Vector3.Lerp(from, to, t);
             FitStoneWidth(stone, Mathf.Lerp(startWidth, endWidth, t));
-            stone.transform.Rotate(0f, 0f, 540f * Time.deltaTime);
+            stone.transform.Rotate(0f, 0f, stoneSpinDegreesPerSecond * Time.deltaTime);
             yield return null;
         }
+        stone.transform.position = to;
+        FitStoneWidth(stone, endWidth);
+        onArrived?.Invoke();
         Destroy(stone.gameObject);
     }
 
@@ -232,6 +287,7 @@ public class StoneThrowGame : MonoBehaviour
 
     private StoneThrowCharacterView FrontView(PlayerId id) => id == PlayerId.P1 ? p1FrontView : p2FrontView;
     private StoneThrowCharacterView BackView(PlayerId id) => id == PlayerId.P1 ? p1BackView : p2BackView;
+    private StoneThrowSide CurrentSide(PlayerId id) => id == PlayerId.P1 ? _p1Side : _p2Side;
     private static string Label(PlayerId id) => id == PlayerId.P1 ? "플레이어 1" : "플레이어 2";
 
     private void EndMatch(PlayerId? winner)
