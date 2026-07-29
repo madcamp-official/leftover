@@ -1,4 +1,4 @@
-// 원시인 캐릭터 표현. image/characters/character{1,2}/front/의 실제 리깅 아트(머리, 몸통,
+// 원시인 캐릭터 표현. image/characters/character{1,2}/joints/front/의 실제 리깅 아트(머리, 몸통,
 // 팔은 상완+하완(손 포함) 2단 관절, 다리는 정적 장식)로 조립한다. P1=character1,
 // P2=character2. 팔은 PoseInputHub의 실제 어깨/팔꿈치/손목 각도로 매 프레임 회전시켜서
 // 관절이 굽혀지는 것처럼 보이게 한다 - 길이는 아트의 고정 비율을 쓰고, 방향(각도)만

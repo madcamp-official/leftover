@@ -36,8 +36,9 @@ public static class ArtAssets
     public static Sprite LoadMatchResult(string name) => LoadSprite($"UI/MatchResults/{name}");
     public static Sprite LoadGameIcon(string name) => LoadSprite($"UI/GameIcons/{name}");
 
-    // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래에서
-    // front/back/faces와 공통 파츠명으로 정리되어 있다. Resources로 들여올 때는
+    // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래의
+    // joints/front, joints/back에 공통 파츠명으로 정리되어 있다. 게임별 표정/애니메이션은
+    // games/01~05 아래에 둔다. Resources로 들여올 때는
     // p1_*/p2_* 이름을 사용하며 여기서는 그 통일된 이름만 쓴다.
     // part 예: "head", "torso", "left_upper_arm", "right_lower_arm_hand",
     //          "face_grimacing", "face_stone_hit_one_tooth_broken"
