@@ -28,6 +28,7 @@ public class HubController : MonoBehaviour
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        ArtAssets.PreloadScreamDuel();
 
         gameStartButton?.onClick.AddListener(OnGameStartClicked);
         howToPlayButton?.onClick.AddListener(OnHowToPlayClicked);

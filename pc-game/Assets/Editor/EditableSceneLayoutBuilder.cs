@@ -16,6 +16,43 @@ public static class EditableSceneLayoutBuilder
     private const string SceneDir = "Assets/Scenes/";
     private const string PrefabDir = "Assets/Prefabs/";
     private const float StandardCameraSize = 5f;
+    private static bool _isAutoBuildingScreamDuel;
+
+    // 초기 ScreamDuel 씬은 카메라/조명/GameController만 있는 빈 뼈대였다. 씬을 처음 열거나
+    // 스크립트가 리로드됐을 때 EditableLayout이 아직 없으면 전용 레이아웃을 한 번만 생성한다.
+    // 이미 생성된 씬은 절대 다시 덮어쓰지 않는다.
+    [InitializeOnLoadMethod]
+    private static void RegisterScreamDuelAutoBuild()
+    {
+        EditorSceneManager.sceneOpened -= OnSceneOpened;
+        EditorSceneManager.sceneOpened += OnSceneOpened;
+        EditorApplication.delayCall += () => TryAutoBuildScreamDuel(SceneManager.GetActiveScene());
+    }
+
+    private static void OnSceneOpened(Scene scene, OpenSceneMode mode)
+        => TryAutoBuildScreamDuel(scene);
+
+    private static void TryAutoBuildScreamDuel(Scene scene)
+    {
+        if (_isAutoBuildingScreamDuel || EditorApplication.isPlayingOrWillChangePlaymode ||
+            !scene.IsValid() || !scene.isLoaded || scene.name != "ScreamDuel" || scene.isDirty)
+            return;
+
+        bool hasEditableLayout = scene.GetRootGameObjects().Any(x => x.name == "EditableLayout");
+        if (hasEditableLayout) return;
+
+        _isAutoBuildingScreamDuel = true;
+        try
+        {
+            BuildScreamDuel();
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Uga Uga] 빈 ScreamDuel 씬에 기본 배경/캐릭터/HUD를 자동 생성했습니다.");
+        }
+        finally
+        {
+            _isAutoBuildingScreamDuel = false;
+        }
+    }
 
     [MenuItem("Tools/Uga Uga/Rebuild All Editable Scene Layouts...")]
     private static void RebuildFromMenu()
@@ -157,6 +194,17 @@ public static class EditableSceneLayoutBuilder
         StoneOrBananaSceneSetup.Rebuild();
     }
 
+    // ScreamDuel은 아직 EditableLayout이 없는 완전히 새 씬이라(Assets/Scenes/ScreamDuel.unity는
+    // 카메라/조명/GameController만 있는 최소 뼈대) RebuildAll()에는 안 넣는다 - 거기 넣으면
+    // 이미 손으로 다듬어둔 다른 5개 씬까지 전부 같이 덮어써진다. 이것만 따로 실행할 것.
+    [MenuItem("Tools/Uga Uga/ScreamDuel/Build Scene")]
+    public static void BuildScreamDuelScene()
+    {
+        BuildScreamDuel();
+        AssetDatabase.SaveAssets();
+        Debug.Log("[Uga Uga] ScreamDuel 씬 레이아웃 생성 완료");
+    }
+
     // -executeMethod EditableSceneLayoutBuilder.RebuildAll 로 CI/초기 마이그레이션에서도 호출 가능.
     public static void RebuildAll()
     {
@@ -281,6 +329,7 @@ public static class EditableSceneLayoutBuilder
         cam.orthographicSize = size;
         cam.transform.position = new Vector3(0, 1, -10);
         cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = Color.black;
     }
 
     private static SpriteRenderer AddSprite(Transform parent, string name, Sprite sprite, Vector3 position, float width, int order)
@@ -407,6 +456,25 @@ public static class EditableSceneLayoutBuilder
         var t2 = new GameObject("P2 EyeTimer").AddComponent<EyeCloseTimer>(); t2.transform.SetParent(root); t2.player = PlayerId.P2;
         StaringContestHud hud = StaringContestHud.Build(60); hud.transform.SetParent(root, false);
         SetRefs(Controller<StaringContestGame>(), ("p1Anchor", p1Anchor), ("p2Anchor", p2Anchor), ("p1Timer", t1), ("p2Timer", t2), ("hud", hud)); Save(s);
+    }
+
+    // 소리지르기(ScreamDuel) - docs/minigames/07_소리지르기.md 5장: 옆모습 대결 구도.
+    // P1(오른쪽을 보는 옆모습)은 화면 왼쪽, P2(왼쪽을 보는 옆모습)는 화면 오른쪽에 좌우
+    // 대칭 배치해서 서로 마주 본다. 관절 리깅이 없는 게임이라 AddCaveman 대신 얼굴 그림
+    // 한 장짜리 SpriteRenderer만 놓으면 된다 - 실제 스프라이트/폭 갱신은
+    // ScreamDuelGame.Start()가 ArtAssets.LoadCharacter로 직접 불러와서 처리하므로, 여기서는
+    // 자리 표시용 초기 스프라이트(idle)만 넣어둔다.
+    private static void BuildScreamDuel()
+    {
+        Scene s = Open("ScreamDuel"); Transform root = ResetLayout(s); SetupCamera(StandardCameraSize);
+        AddBackground(root, ArtAssets.LoadScreamDuel("background"), StandardCameraSize);
+        SpriteRenderer p1Face = AddSprite(root, "P1 Face", ArtAssets.LoadCharacter(PlayerId.P1, "scream_idle"),
+            new Vector3(-2.9f, -0.5f, 0), 3f, 1);
+        SpriteRenderer p2Face = AddSprite(root, "P2 Face", ArtAssets.LoadCharacter(PlayerId.P2, "scream_idle"),
+            new Vector3(2.9f, -0.5f, 0), 3f, 1);
+        ScreamDuelHud hud = ScreamDuelHud.Build(3f); hud.transform.SetParent(root, false);
+        SetRefs(Controller<ScreamDuelGame>(), ("p1Face", p1Face), ("p2Face", p2Face), ("hud", hud));
+        Save(s);
     }
 
     private static void BuildHub()

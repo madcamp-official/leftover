@@ -41,6 +41,13 @@ public sealed class PlayerPoseState
     public float EyeAspectRatio { get; internal set; } = 0.3f;
     internal float LastSeenAt;
 
+    // 소리지르기(ScreamDuel) 전용 - 0(무음)~1(최대 음량)로 정규화된 마이크 순간 음량.
+    // pose/face와 별도로 마이크만 끊길 수 있어(예: 마이크만 음소거) IsTracked와 분리된
+    // 자체 스테일 타임아웃을 둔다 - PROTOCOL.md "계획 중: 마이크 음량(voice) 필드" 참고.
+    public float VoiceLevel { get; internal set; }
+    public bool IsVoiceTracked { get; internal set; }
+    internal float LastVoiceSeenAt;
+
     // --- 공용 제스처 판정 (전부 상태 없는 순간값 - 임계값은 게임마다 다를 수 있어 인자로 받음) ---
 
     public bool IsHandRaised(bool rightHand, float raiseRatio = 0.15f)
@@ -120,6 +127,8 @@ public sealed class PoseInputHub : MonoBehaviour
         float now = Time.unscaledTime;
         if (P1.IsTracked && now - P1.LastSeenAt > staleTimeout) P1.IsTracked = false;
         if (P2.IsTracked && now - P2.LastSeenAt > staleTimeout) P2.IsTracked = false;
+        if (P1.IsVoiceTracked && now - P1.LastVoiceSeenAt > staleTimeout) { P1.IsVoiceTracked = false; P1.VoiceLevel = 0f; }
+        if (P2.IsVoiceTracked && now - P2.LastVoiceSeenAt > staleTimeout) { P2.IsVoiceTracked = false; P2.VoiceLevel = 0f; }
     }
 
     // PoseStreamReceiver가 메인 스레드에서 프레임마다 호출한다. 테스트 코드에서 vision-server
@@ -136,6 +145,15 @@ public sealed class PoseInputHub : MonoBehaviour
             state.LastSeenAt = Time.unscaledTime;
             state.MouthOpenRatio = player.face.mouthOpenRatio;
             state.EyeAspectRatio = player.face.eyeAspectRatio;
+            // voice는 아직 이 값을 보내는 vision-server(소리지르기용)에서만 온다 - 다른
+            // 게임들은 이 필드 없이 프레임을 보내므로 null일 수 있다(JsonUtility가 없는
+            // 필드는 채우지 않고 기본값 null로 둠).
+            if (player.voice != null)
+            {
+                state.VoiceLevel = player.voice.level;
+                state.IsVoiceTracked = true;
+                state.LastVoiceSeenAt = Time.unscaledTime;
+            }
             state.Joints = new JointSample
             {
                 nose = player.pose.nose.ToVector2(),
@@ -192,12 +210,20 @@ public class FaceData
     public float eyeAspectRatio;
 }
 
+// 소리지르기(ScreamDuel) 전용, 선택 필드 - 이 필드를 보내는 vision-server(--voice)만 채운다.
+[Serializable]
+public class VoiceData
+{
+    public float level;
+}
+
 [Serializable]
 public class PlayerFrameData
 {
     public string id;
     public PoseData pose;
     public FaceData face;
+    public VoiceData voice;
 }
 
 [Serializable]

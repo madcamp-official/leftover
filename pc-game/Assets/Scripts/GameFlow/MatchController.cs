@@ -29,6 +29,7 @@ public sealed class MatchController : MonoBehaviour
         "CoconutCrack",
         "StoneOrBanana",
         "StaringContest",
+        "ScreamDuel",
     };
 
     public const string HubSceneName = "Hub";

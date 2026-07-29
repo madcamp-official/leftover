@@ -5,6 +5,9 @@ using UnityEngine;
 
 public static class ArtAssets
 {
+    private static readonly System.Collections.Generic.Dictionary<string, Sprite> SpriteCache
+        = new System.Collections.Generic.Dictionary<string, Sprite>();
+
     // spriteMode가 Single이든 Multiple(자동 슬라이스)이든 상관없이 항상 동작하게 LoadAll을
     // 쓴다 - Multiple일 때는 Resources.Load<Sprite>가 null을 반환할 수 있다.
     //
@@ -14,6 +17,9 @@ public static class ArtAssets
     // 7x122 파편 + 581x1754 팔뚝으로 잘려서 오른팔이 사라졌었다).
     public static Sprite LoadSprite(string resourcePath)
     {
+        if (SpriteCache.TryGetValue(resourcePath, out Sprite cached) && cached != null)
+            return cached;
+
         Sprite[] sprites = Resources.LoadAll<Sprite>(resourcePath);
         Sprite best = null;
         float bestArea = -1f;
@@ -22,6 +28,7 @@ public static class ArtAssets
             float area = sprite.rect.width * sprite.rect.height;
             if (area > bestArea) { bestArea = area; best = sprite; }
         }
+        if (best != null) SpriteCache[resourcePath] = best;
         return best;
     }
 
@@ -32,6 +39,7 @@ public static class ArtAssets
     public static Sprite LoadCoconutBreak(string name) => LoadSprite($"CoconutBreak/{name}");
     public static Sprite LoadStoneOrBanana(string name) => LoadSprite($"StoneOrBanana/{name}");
     public static Sprite LoadStaringContest(string name) => LoadSprite($"StaringContest/{name}");
+    public static Sprite LoadScreamDuel(string name) => LoadSprite($"ScreamDuel/{name}");
 
     // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래의
     // joints/front, joints/back에 공통 파츠명으로 정리되어 있다. 게임별 표정/애니메이션은
@@ -41,6 +49,24 @@ public static class ArtAssets
     //          "stone_throw_hit_fullbody", "face_stone_hit_one_tooth_broken"
     public static Sprite LoadCharacter(PlayerId player, string part)
         => LoadSprite($"Characters/{(player == PlayerId.P1 ? "p1" : "p2")}_{part}");
+
+    // Hub 화면에서 미리 호출해두면 ScreamDuel 진입 시 PNG 디코딩/Resources 탐색이 발생하지
+    // 않는다. Unity의 파일 임포트 자체는 Assets에 들어오는 순간 에디터가 이미 완료하며,
+    // 이 메서드는 플레이 중 사용할 Sprite를 메모리 캐시에 미리 올리는 역할만 한다.
+    public static void PreloadScreamDuel()
+    {
+        LoadScreamDuel("background");
+        LoadScreamDuel("hud_required_level");
+        LoadScreamDuel("hud_current_level_fill_p1");
+        LoadScreamDuel("hud_current_level_fill_p2");
+
+        LoadCharacter(PlayerId.P1, "scream_idle");
+        LoadCharacter(PlayerId.P1, "scream_shout");
+        LoadCharacter(PlayerId.P1, "scream_shout_swollen");
+        LoadCharacter(PlayerId.P2, "scream_idle");
+        LoadCharacter(PlayerId.P2, "scream_shout");
+        LoadCharacter(PlayerId.P2, "scream_shout_swollen");
+    }
 
     // 돌던지기의 오버더숄더 구도처럼 같은 플레이어를 앞/뒤에서 동시에 보여줄 때 사용한다.
     // 기존 6개 게임은 이름 호환성을 위해 앞모습 로더(위 메서드)를 그대로 쓴다.

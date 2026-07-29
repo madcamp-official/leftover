@@ -29,6 +29,12 @@ Face Landmarker 모델(face_landmarker.task)이 models/ 밑에 없으면 얼굴 
   python main.py --pc-ip <Unity가 돌아가는 PC의 LAN IP> --player-id p2
 실행(구모드, 카메라 1대에 두 명):
   python main.py --pc-ip 127.0.0.1
+
+소리지르기(ScreamDuel)에서만 필요한 마이크 음량(voice.level)은 기본적으로 캡처하지 않는다 -
+--voice 플래그를 추가하면 이 PC의 시스템 기본 마이크로 RMS 음량을 재서 매 프레임에 얹어
+보낸다(shared/PROTOCOL.md "계획 중: 마이크 음량(voice) 필드" 참고). sounddevice/numpy가
+설치돼 있어야 한다: python -m pip install sounddevice numpy
+  python main.py --pc-ip 127.0.0.1 --player-id p1 --voice
 """
 
 import argparse
@@ -42,6 +48,13 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core.base_options import BaseOptions
+
+try:
+    import numpy as np
+    import sounddevice as sd
+except ImportError:
+    np = None
+    sd = None
 
 POSE_MODEL_PATH = pathlib.Path(__file__).parent / "models" / "pose_landmarker_lite.task"
 FACE_MODEL_PATH = pathlib.Path(__file__).parent / "models" / "face_landmarker.task"
@@ -160,6 +173,46 @@ class JumpHeightTracker:
             return
         self.current_height = max(0.0, (self._baseline_y - hip_y) / torso)
         self.max_height_seen = max(self.max_height_seen, self.current_height)
+
+
+class VoiceLevelMeter:
+    """마이크 RMS 음량을 실시간으로 0(무음)~1(설계상 최대 음량)로 정규화해서 들고 있는
+    백그라운드 캡처기. 소리지르기(ScreamDuel) 전용 - shared/PROTOCOL.md "계획 중: 마이크
+    음량(voice) 필드"에 정의한 그대로: RMS를 dB로 바꾼 뒤 [min_db, max_db] 구간을 0~1로
+    클램프한다. sounddevice의 콜백은 별도 오디오 스레드에서 돌기 때문에 카메라/포즈 추론
+    루프(메인 스레드)를 전혀 막지 않는다 - 마지막으로 계산된 값을 읽기만 하면 된다."""
+
+    def __init__(self, min_db: float = -60.0, max_db: float = 0.0,
+                 samplerate: int = 16000, blocksize: int = 1024, device=None):
+        if sd is None or np is None:
+            raise RuntimeError(
+                "--voice 옵션을 쓰려면 sounddevice/numpy가 필요합니다.\n"
+                "  -> python -m pip install sounddevice numpy"
+            )
+        self.min_db = min_db
+        self.max_db = max_db
+        self._level = 0.0
+        self._stream = sd.InputStream(
+            samplerate=samplerate, blocksize=blocksize, channels=1,
+            dtype="float32", device=device, callback=self._on_audio,
+        )
+
+    def _on_audio(self, indata, frames, time_info, status):
+        rms = float(np.sqrt(np.mean(np.square(indata))))
+        db = 20.0 * math.log10(rms) if rms > 1e-9 else self.min_db
+        normalized = (db - self.min_db) / (self.max_db - self.min_db)
+        self._level = max(0.0, min(1.0, normalized))
+
+    @property
+    def level(self) -> float:
+        return self._level
+
+    def start(self):
+        self._stream.start()
+
+    def stop(self):
+        self._stream.stop()
+        self._stream.close()
 
 
 def _face_center_x(face_landmarks):
@@ -315,10 +368,23 @@ def main():
              " 바라보게 하면 됨(Unity 쪽 PoseInputHub는 id별로 값을 받으므로 별도 수정 불필요)."
              " 생략하면 기존처럼 카메라 1대에 두 명이 같이 잡히는 모드로 동작."
     )
+    parser.add_argument(
+        "--voice", action="store_true",
+        help="마이크 음량(voice.level)도 같이 캡처해서 보낸다 - 소리지르기(ScreamDuel) 전용,"
+             " 다른 미니게임에는 필요 없다(기본 꺼짐). 이 PC의 시스템 기본 마이크를 그대로 쓴다."
+    )
+    parser.add_argument("--voice-min-db", type=float, default=-60.0, help="이 dB 이하는 voice.level=0으로 클램프")
+    parser.add_argument("--voice-max-db", type=float, default=0.0, help="이 dB 이상은 voice.level=1로 클램프")
     args = parser.parse_args()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest = (args.pc_ip, args.port)
+
+    voice_meter = None
+    if args.voice:
+        voice_meter = VoiceLevelMeter(min_db=args.voice_min_db, max_db=args.voice_max_db)
+        voice_meter.start()
+        print(f"[voice] 마이크 캡처 시작 (min={args.voice_min_db}dB, max={args.voice_max_db}dB)")
 
     num_people = 1 if args.player_id else 2
     pose_landmarker = load_pose_landmarker(num_people)
@@ -362,6 +428,11 @@ def main():
             face_result = face_landmarker.detect_for_video(mp_image, now_ms) if face_landmarker else None
 
             players = build_players_payload(pose_result, face_result, prev_hip_x, fixed_player_id=args.player_id)
+            if voice_meter is not None:
+                # 마이크 하나로 이 프로세스가 담당하는 플레이어(들) 전체에 같은 순간 음량을
+                # 얹는다 - 소리지르기는 턴제라 한 마이크를 공유해도 문제없다(PROTOCOL.md 참고).
+                for player in players:
+                    player["voice"] = {"level": voice_meter.level}
             sock.sendto(
                 json.dumps({"t": time.time(), "players": players}).encode("utf-8"),
                 dest,
@@ -382,9 +453,10 @@ def main():
                         jump_label = f"height={tracker.current_height:.2f} max={tracker.max_height_seen:.2f}"
                     else:
                         jump_label = "캘리브레이션 중..."
+                    voice_label = f"  voice={voice_meter.level:.2f}" if voice_meter is not None else ""
                     label = (
                         f"{player['id']}  mouth={player['face']['mouthOpenRatio']:.2f}"
-                        f"  EAR={player['face']['eyeAspectRatio']:.2f}  {jump_label}"
+                        f"  EAR={player['face']['eyeAspectRatio']:.2f}  {jump_label}{voice_label}"
                     )
                     anchor_x = int(player["pose"]["nose"]["x"] * w)
                     anchor_y = max(20, int(player["pose"]["nose"]["y"] * h) - 20)
@@ -409,6 +481,8 @@ def main():
         pose_landmarker.close()
         if face_landmarker:
             face_landmarker.close()
+        if voice_meter is not None:
+            voice_meter.stop()
 
 
 if __name__ == "__main__":

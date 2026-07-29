@@ -1,2 +1,5 @@
 mediapipe>=0.10
 opencv-python>=4.9
+# 아래 둘은 --voice(소리지르기용 마이크 음량 캡처)를 쓸 때만 필요.
+sounddevice>=0.4
+numpy>=1.24
