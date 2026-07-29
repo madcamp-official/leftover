@@ -40,6 +40,7 @@ public static class ArtAssets
     public static Sprite LoadStoneOrBanana(string name) => LoadSprite($"StoneOrBanana/{name}");
     public static Sprite LoadStaringContest(string name) => LoadSprite($"StaringContest/{name}");
     public static Sprite LoadScreamDuel(string name) => LoadSprite($"ScreamDuel/{name}");
+    public static Sprite LoadFeatherFlight(string name) => LoadSprite($"FeatherFlight/{name}");
 
     // 캐릭터 파츠. 원본은 image/characters/character1, character2 아래의
     // joints/front, joints/back에 공통 파츠명으로 정리되어 있다. 게임별 표정/애니메이션은
