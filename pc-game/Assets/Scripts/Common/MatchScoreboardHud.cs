@@ -24,9 +24,8 @@ public sealed class MatchScoreboardHud : MonoBehaviour
     [SerializeField] private Sprite _drawSprite;
     private int _displayedVersion = -1;
 
-    // 원래 하단 중앙(920x424)에 크게 떠 있어 플레이 화면을 가린다는 피드백을 받아, 절반
-    // 크기로 줄이고 하단 우측 구석으로 옮겼다 - 다른 미니게임 HUD는 상단 좌/우(네임플레이트)와
-    // 상단 중앙(타이머)만 쓰므로 하단 구석은 비어 있다.
+    // StoneThrow에서 확정한 공용 배치: 원본 좌표계는 유지하고 루트 스케일을 절반으로 줄여
+    // 하단 중앙에 둔다. 모든 씬을 다시 만들어도 같은 위치가 유지된다.
     private const float Scale = 0.5f;
 
     public static MatchScoreboardHud Build(Transform parent)
@@ -34,10 +33,11 @@ public sealed class MatchScoreboardHud : MonoBehaviour
         var go = new GameObject("MatchScoreboard");
         go.transform.SetParent(parent, false);
         var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = new Vector2(1f, 0f);
-        rt.pivot = new Vector2(1f, 0f);
-        rt.anchoredPosition = new Vector2(-30f, 24f);
-        rt.sizeDelta = new Vector2(920f, 424f) * Scale;
+        rt.anchorMin = rt.anchorMax = new Vector2(.5f, 0f);
+        rt.pivot = new Vector2(.5f, 0f);
+        rt.anchoredPosition = new Vector2(0f, 18f);
+        rt.sizeDelta = new Vector2(920f, 424f);
+        rt.localScale = Vector3.one * Scale;
 
         MatchScoreboardHud hud = go.AddComponent<MatchScoreboardHud>();
         hud.BuildWidgets(rt);
