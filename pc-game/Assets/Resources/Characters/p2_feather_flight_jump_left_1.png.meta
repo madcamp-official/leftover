@@ -129,12 +129,12 @@ TextureImporter:
       name: p2_feather_flight_jump_left_1_0
       rect:
         serializedVersion: 2
-        x: 287
-        y: 215
-        width: 325
-        height: 470
+        x: 0
+        y: 0
+        width: 900
+        height: 900
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -151,7 +151,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: b669ec25cb4f9409ca0af51e39549271
     internalID: 0
     vertices: []
     indices: 

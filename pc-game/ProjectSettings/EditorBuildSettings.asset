@@ -26,6 +26,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/ScreamDuel.unity
     guid: 34c08cee0bfc4dd0bcb8ccce5306ce34
+  - enabled: 1
+    path: Assets/Scenes/FeatherFlight.unity
+    guid: b135af1145ecb4713a3e7032dcd56820
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}

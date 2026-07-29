@@ -1,16 +1,7 @@
 fileFormatVersion: 2
 guid: ed78ca5a75fb449b58786b7f2d86602e
 TextureImporter:
-  internalIDToNameTable:
-  - first:
-      213: 163149239745307038
-    second: p1_feather_flight_flap_right_3_0
-  - first:
-      213: -1819006430884695959
-    second: p1_feather_flight_flap_right_3_1
-  - first:
-      213: 304526468808491938
-    second: p1_feather_flight_flap_right_3_2
+  internalIDToNameTable: []
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -52,7 +43,7 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 2
+  spriteMode: 1
   spriteExtrude: 1
   spriteMeshType: 1
   alignment: 0
@@ -130,79 +121,13 @@ TextureImporter:
     forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
-    sprites:
-    - serializedVersion: 2
-      name: p1_feather_flight_flap_right_3_0
-      rect:
-        serializedVersion: 2
-        x: 51
-        y: 401
-        width: 79
-        height: 83
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: e91e4608e5f934200800000000000000
-      internalID: 163149239745307038
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: p1_feather_flight_flap_right_3_1
-      rect:
-        serializedVersion: 2
-        x: 51
-        y: 398
-        width: 14
-        height: 6
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 96077f2e94791c6e0800000000000000
-      internalID: -1819006430884695959
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: p1_feather_flight_flap_right_3_2
-      rect:
-        serializedVersion: 2
-        x: 137
-        y: 119
-        width: 630
-        height: 552
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 2a3c80eb535e93400800000000000000
-      internalID: 304526468808491938
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
+    sprites: []
     outline: []
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
-    internalID: 0
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 1537655665
     vertices: []
     indices: 
     edges: []
@@ -210,10 +135,7 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable:
-      p1_feather_flight_flap_right_3_0: 163149239745307038
-      p1_feather_flight_flap_right_3_1: -1819006430884695959
-      p1_feather_flight_flap_right_3_2: 304526468808491938
+    nameFileIdTable: {}
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
