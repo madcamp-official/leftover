@@ -50,6 +50,22 @@ public static class ArtAssets
     public static Sprite LoadCharacterBack(PlayerId player, string part)
         => LoadSprite($"Characters/{(player == PlayerId.P1 ? "p1" : "p2")}_back_{part}");
 
+    // 관절 리깅 대신 통짜 프레임으로 재생하는 캐릭터 동작(예: 점프, 코코넛 내려치기)용.
+    // Characters/{p1|p2}_{prefix}_1, _2, ... 순서로 있는 만큼 전부 불러온다 - 프레임 장수가
+    // 나중에 늘거나 줄어도(재생성 등) 코드를 안 고쳐도 되게, 없는 번호가 나올 때까지 계속
+    // 찾는 방식이다. frames[0]은 항상 "기본(대기)" 프레임으로 취급된다(FrameAnimatedCharacter 참고).
+    public static Sprite[] LoadCharacterSequence(PlayerId player, string prefix, int maxFrames = 30)
+    {
+        var frames = new System.Collections.Generic.List<Sprite>();
+        for (int i = 1; i <= maxFrames; i++)
+        {
+            Sprite sprite = LoadCharacter(player, $"{prefix}_{i}");
+            if (sprite == null) break;
+            frames.Add(sprite);
+        }
+        return frames.ToArray();
+    }
+
     // 원본 이미지 해상도가 몇 px든(AI 생성 이미지라 보통 1024px 안팎으로 큼) 상관없이 항상 같은
     // 인게임 크기로 보이도록, SpriteRenderer의 가로 폭을 targetWidth(월드 유닛)에 맞춰 균일
     // 스케일을 적용한다.

@@ -9,6 +9,10 @@
 //
 // 아래는 부트스트랩 + 사이클 카운터 상태 머신 + 타격 시각 피드백(코코넛 펀치 스케일/색 플래시)
 // 까지 채워둔 상태. 임계값은 실측 후 조정할 것.
+//
+// 캐릭터 표현: 관절 리깅 대신 coconut_1~N 프레임 시퀀스를 쓴다(FrameAnimatedCharacter).
+// coconut_1이 대기 자세, 타격이 인정되는 순간 나머지 프레임을 hitAnimSeconds 동안 순서대로
+// 재생한 뒤 다시 대기 자세로 돌아온다(코코넛이 쪼개지는 연출/어지러운 표정과 같은 길이로 맞춤).
 using System.Collections;
 using UnityEngine;
 
@@ -19,6 +23,7 @@ public class CoconutCrackGame : MonoBehaviour
     public float releaseDistance = 0.45f; // 이 이상으로 벌어져야 다음 타격을 셀 준비 완료
     public float resultDisplaySeconds = 2f;
     public float coconutWidth = 0.5f; // 인게임에서 보일 코코넛 가로 폭(월드 유닛)
+    public float hitAnimSeconds = 0.28f; // 코코넛 쪼개짐/어지러운 표정/캐릭터 타격 프레임이 재생되는 시간
 
     private Sprite _coconutSprite;
     private Sprite _coconutBreakLeftSprite;
@@ -30,6 +35,8 @@ public class CoconutCrackGame : MonoBehaviour
     [SerializeField] private SpriteRenderer p1Coconut;
     [SerializeField] private SpriteRenderer p2Coconut;
     [SerializeField] private CoconutBreakHud hud;
+    private FrameAnimatedCharacter _p1Anim;
+    private FrameAnimatedCharacter _p2Anim;
     private float _elapsed;
     private int _p1Hits;
     private int _p2Hits;
@@ -44,6 +51,10 @@ public class CoconutCrackGame : MonoBehaviour
         _coconutSprite = ArtAssets.LoadProp("coconut");
         _coconutBreakLeftSprite = ArtAssets.LoadProp("coconut_break_left");
         _coconutBreakRightSprite = ArtAssets.LoadProp("coconut_break_right");
+        _p1Anim = FrameAnimatedCharacter.Attach(p1Silhouette.gameObject,
+            ArtAssets.LoadCharacterSequence(PlayerId.P1, "coconut"));
+        _p2Anim = FrameAnimatedCharacter.Attach(p2Silhouette.gameObject,
+            ArtAssets.LoadCharacterSequence(PlayerId.P2, "coconut"));
 
         hud?.SetTimeRemaining(matchSeconds);
     }
@@ -58,8 +69,8 @@ public class CoconutCrackGame : MonoBehaviour
 
         if (_ended) return;
 
-        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, p1Coconut, p1Silhouette);
-        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, p2Coconut, p2Silhouette);
+        CountHits(PlayerId.P1, p1, ref _p1ReadyToHit, ref _p1Hits, p1Coconut, p1Silhouette, _p1Anim);
+        CountHits(PlayerId.P2, p2, ref _p2ReadyToHit, ref _p2Hits, p2Coconut, p2Silhouette, _p2Anim);
 
         _elapsed += Time.deltaTime;
         hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
@@ -70,7 +81,7 @@ public class CoconutCrackGame : MonoBehaviour
         }
     }
 
-    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref int hitCount, SpriteRenderer coconut, CavemanSilhouette silhouette)
+    private void CountHits(PlayerId id, PlayerPoseState state, ref bool readyToHit, ref int hitCount, SpriteRenderer coconut, CavemanSilhouette silhouette, FrameAnimatedCharacter anim)
     {
         if (state == null || !state.IsTracked) return;
         float distance = state.HandToHeadDistance();
@@ -81,7 +92,10 @@ public class CoconutCrackGame : MonoBehaviour
             readyToHit = false;
             hud?.SetHits(id, hitCount);
             StartCoroutine(PunchCoconut(coconut));
-            StartCoroutine(ReactToHit(silhouette));
+            if (anim != null)
+                anim.PlayOnce(hitAnimSeconds); // 프레임 애니메이션이 얼굴까지 포함하므로 어지러운 표정 교체는 생략(둘 다 하면 리깅 머리가 숨겨진 상태라 표정 교체가 안 보임)
+            else
+                StartCoroutine(ReactToHit(silhouette)); // 프레임이 없는 폴백: 기존 리깅 표정 교체 유지
         }
         else if (!readyToHit && distance >= releaseDistance)
         {
@@ -95,7 +109,7 @@ public class CoconutCrackGame : MonoBehaviour
     {
         if (silhouette == null) yield break;
         silhouette.SetFace("face_coconut_bump_dizzy");
-        yield return new WaitForSeconds(0.28f);
+        yield return new WaitForSeconds(hitAnimSeconds);
         silhouette.ResetFace();
     }
 
@@ -110,7 +124,7 @@ public class CoconutCrackGame : MonoBehaviour
         SpriteRenderer right = SpawnHalf(coconut.transform, _coconutBreakRightSprite);
         coconut.enabled = false;
 
-        const float duration = 0.28f;
+        float duration = hitAnimSeconds;
         float elapsed = 0f;
         while (elapsed < duration)
         {

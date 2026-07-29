@@ -14,6 +14,9 @@
 // 화면은 image/games/fruit_jump/의 실제 아트(나무가 그려진 배경 + 점수 네임플레이트)로
 // 구성한다. 낮은/중간/높은 단은 각각 사과/포도/파인애플 실제 소품으로 표시하고, 점프
 // 높이만큼 캐릭터 자체도 화면에서 위로 튀어올라 보이게 한다.
+//
+// 캐릭터 표현: 관절 리깅 대신 jump_1~N 프레임 시퀀스를 점프 높이 비율에 맞춰 통째로 교체
+// (FrameAnimatedCharacter). jump_1이 대기 자세, 뒤로 갈수록 더 높이 뛴 자세라고 가정한다.
 using System.Collections;
 using UnityEngine;
 
@@ -47,6 +50,7 @@ public class FruitJumpGame : MonoBehaviour
         public bool WasAirborne;
         public float PeakHeight;
         public bool MouthOpenAtPeak;
+        public FrameAnimatedCharacter Anim;
     }
 
     private TreeState _p1Tree;
@@ -79,6 +83,8 @@ public class FruitJumpGame : MonoBehaviour
             Fruits = fruits,
             FruitBaseScales = baseScales,
         };
+        state.Anim = FrameAnimatedCharacter.Attach(silhouette.gameObject,
+            ArtAssets.LoadCharacterSequence(silhouette.player, "jump"));
         return state;
     }
 
@@ -114,6 +120,11 @@ public class FruitJumpGame : MonoBehaviour
 
         // 점프 높이만큼 캐릭터를 실제로 위로 띄워서 화면에서 보이게 한다.
         tree.Silhouette.transform.position = tree.BasePosition + Vector3.up * (height * jumpBounceHeight);
+
+        // 가장 높은 단 임계값을 1.0 기준으로 삼아, 점프 높이에 비례해 jump_1(대기)~jump_N
+        // (최고점) 프레임을 고른다.
+        float topThreshold = tierHeightThresholds[tierHeightThresholds.Length - 1];
+        if (topThreshold > 0f) tree.Anim?.SetProgress(height / topThreshold);
 
         bool airborne = height >= tierHeightThresholds[0] * 0.5f;
 
