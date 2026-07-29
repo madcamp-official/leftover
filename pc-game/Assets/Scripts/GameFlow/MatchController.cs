@@ -30,6 +30,7 @@ public sealed class MatchController : MonoBehaviour
         "StoneOrBanana",
         "StaringContest",
         "ScreamDuel",
+        "FeatherFlight",
     };
 
     public const string HubSceneName = "Hub";
@@ -39,8 +40,11 @@ public sealed class MatchController : MonoBehaviour
     public int P2Wins { get; private set; }
     public int ResultsVersion { get; private set; }
 
-    private readonly PlayerId?[] _roundWinners = new PlayerId?[6];
-    private readonly bool[] _roundReported = new bool[6];
+    // RoundScenes.Count로 초기화해서, 라운드를 추가/제거할 때마다 이 배열 크기를 손으로
+    // 맞춰야 하는 실수를 원천 차단한다(과거에 하드코딩 6으로 두었다가 게임을 추가하면서
+    // IndexOutOfRange가 날 뻔한 적이 있음 - docs/멀티플레이_분산_아키텍처_설계.md 9장 참고).
+    private readonly PlayerId?[] _roundWinners = new PlayerId?[RoundScenes.Count];
+    private readonly bool[] _roundReported = new bool[RoundScenes.Count];
 
     private void Awake()
     {
