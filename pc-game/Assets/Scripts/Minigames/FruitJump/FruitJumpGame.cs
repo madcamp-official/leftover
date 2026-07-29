@@ -30,6 +30,7 @@ public class FruitJumpGame : MonoBehaviour
     public float fruitWidth = 0.4f;
     public float jumpBounceHeight = 1.5f; // 점프 높이 1.0(=몸통 길이만큼 뜸) 기준 캐릭터가 튀어오르는 월드 유닛
     public float fruitEatSeconds = 0.2f; // 채점된 과일이 사라지는 데 걸리는 시간(연출용)
+    public float characterFrameWidth = 1.2f; // jump_N 프레임 캐릭터의 표시 폭(월드 유닛) - 기존 리깅과 크기가 맞게 에디터에서 눈으로 보고 조정할 것
 
     [Header("씬에 배치된 오브젝트")]
     [SerializeField] private CavemanSilhouette p1Silhouette;
@@ -84,7 +85,7 @@ public class FruitJumpGame : MonoBehaviour
             FruitBaseScales = baseScales,
         };
         state.Anim = FrameAnimatedCharacter.Attach(silhouette.gameObject,
-            ArtAssets.LoadCharacterSequence(silhouette.player, "jump"));
+            ArtAssets.LoadCharacterSequence(silhouette.player, "jump"), characterFrameWidth);
         return state;
     }
 

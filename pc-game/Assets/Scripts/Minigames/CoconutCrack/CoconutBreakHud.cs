@@ -12,6 +12,7 @@ public class CoconutBreakHud : MonoBehaviour
     [Header("씬에 배치된 UI")]
     [SerializeField] private Text _p1Hits, _p2Hits, _timer, _eventText;
     private float _eventTimer;
+    private int _displayedSecond = int.MinValue;
 
     public static CoconutBreakHud Build(float matchSeconds)
     {
@@ -68,7 +69,10 @@ public class CoconutBreakHud : MonoBehaviour
 
     public void SetTimeRemaining(float seconds)
     {
-        if (_timer != null) _timer.text = Mathf.CeilToInt(seconds).ToString();
+        int displayedSecond = Mathf.CeilToInt(seconds);
+        if (_timer == null || displayedSecond == _displayedSecond) return;
+        _displayedSecond = displayedSecond;
+        _timer.text = displayedSecond.ToString();
     }
 
     public void ShowEvent(string text, float seconds = 0.8f)

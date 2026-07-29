@@ -27,14 +27,35 @@ public class CavemanSilhouette : MonoBehaviour
 
     private Sprite _defaultHeadSprite;
     private float _leftUpperArmLength, _rightUpperArmLength;
+    private float _leftLowerArmLength, _rightLowerArmLength;
 
     public Transform HeadTransform => head != null ? head.transform : null;
+
+    // 손(하완 끝) 월드 위치 - 리깅 파츠가 화면에 안 보이게 숨겨진 상태(FrameAnimatedCharacter
+    // 적용 등)에서도 팔꿈치 피벗 회전 자체는 계속 갱신되므로, 코코넛 깨기처럼 "손 위치를
+    // 그대로" 따라가야 하는 소품의 좌표로 재사용할 수 있다. 회전 0일 때 파츠가 로컬 -Y를
+    // 향하므로 -elbowPivot.up 방향으로 하완 길이만큼 이동한 지점이 손끝이다.
+    public Vector3 LeftHandPosition => HandPosition(leftElbowPivot, _leftLowerArmLength);
+    public Vector3 RightHandPosition => HandPosition(rightElbowPivot, _rightLowerArmLength);
+    public Vector3 HandMidpoint => (LeftHandPosition + RightHandPosition) * 0.5f;
+
+    // elbowPivot이 없으면(참조가 깨졌거나 아직 준비 안 됐거나) 월드 원점(0,0,0)이 아니라
+    // 이 캐릭터의 현재 위치로 대신한다 - 계산에 실패했다고 소품이 맵 원점으로 순간이동해서
+    // "안 보이는" 것보다는, 캐릭터 옆에라도 붙어 있는 편이 훨씬 덜 헷갈린다.
+    private Vector3 HandPosition(Transform elbowPivot, float lowerArmLength)
+    {
+        if (elbowPivot == null) return transform.position;
+        float worldLength = lowerArmLength * Mathf.Abs(elbowPivot.lossyScale.y);
+        return elbowPivot.position - elbowPivot.up * worldLength;
+    }
 
     private void Awake()
     {
         _defaultHeadSprite = head != null ? head.sprite : null;
         _leftUpperArmLength = DistanceFromPivot(leftShoulderPivot, leftUpperArm);
         _rightUpperArmLength = DistanceFromPivot(rightShoulderPivot, rightUpperArm);
+        _leftLowerArmLength = DistanceFromPivot(leftElbowPivot, leftLowerArm);
+        _rightLowerArmLength = DistanceFromPivot(rightElbowPivot, rightLowerArm);
     }
 
     private static float DistanceFromPivot(Transform pivot, Transform part)

@@ -48,6 +48,25 @@ python main.py --pc-ip <Unity PC의 LAN IP> --player-id p2
 Unity를 실행하는 PC 자체에서 vision-server 하나를 같이 돌려도 된다(`--pc-ip 127.0.0.1
 --player-id p1`), 그러면 노트북은 한 대만 더 있으면 된다.
 
+### 팀 테스트용 간편 실행
+
+옵션을 외우지 않고 아래 런처를 실행해도 된다. 각 PC에서 Unity PC의 LAN IP와 담당 플레이어
+번호만 입력하면 기존 `main.py`를 올바른 옵션으로 실행한다.
+
+```bash
+python run_team_test.py
+```
+
+또는 입력 과정 없이 바로 실행:
+
+```bash
+# 플레이어 1 PC
+python run_team_test.py --pc-ip 192.168.0.12 --player-id p1
+
+# 플레이어 2 PC
+python run_team_test.py --pc-ip 192.168.0.12 --player-id p2
+```
+
 `--player-id`를 생략하면 예전처럼 카메라 1대 앞에 두 사람이 같이 서서 좌/우로 자동 구분하는
 구모드로 동작한다(장비가 노트북 한 대뿐일 때 빠르게 테스트하는 용도로는 여전히 쓸 수 있지만,
 위 문제 때문에 데모용 기본값으로는 권장하지 않음):
