@@ -129,12 +129,12 @@ TextureImporter:
       name: p1_feather_flight_flap_right_2_0
       rect:
         serializedVersion: 2
-        x: 51
-        y: 195
-        width: 798
-        height: 483
+        x: 0
+        y: 0
+        width: 900
+        height: 900
       alignment: 0
-      pivot: {x: 0, y: 0}
+      pivot: {x: 0.5, y: 0.5}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -151,7 +151,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 
+    spriteID: 2c5e16b779de74b5f8cde504fb0e1034
     internalID: 0
     vertices: []
     indices: 
