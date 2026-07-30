@@ -123,6 +123,16 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
             yield return FadeTo(1f, fadeOutSeconds);
             _loadingScreen.Hide();
+
+            // 씬이 활성화되는 이 순간부터 카운트다운이 끝날 때까지 실제 게임 진행을 전부
+            // 막는다. 예전에는 이 줄이 RunSynchronizedCountdown() 안, 그것도 대기 루프
+            // "뒤"에 있어서, 씬 활성화 직후 페이드인이 끝날 때까지(그리고 "상대방을
+            // 기다리는 중" 문구가 떠 있는 동안까지) 미니게임의 Start()/Update()가 이미
+            // 정상 속도로 돌고 있었다 - 아직 화면이 안 보이는데도 포즈가 인식되고 점수가
+            // 잠깐 카운트되는 버그로 이어졌다(실측 확인). RunSynchronizedCountdown()이
+            // 카운트다운이 끝나는 순간 다시 1로 되돌린다(오프라인/솔로처럼 그 함수가 곧장
+            // yield break하는 경로도 반드시 되돌린다).
+            Time.timeScale = 0f;
             load.allowSceneActivation = true;
             while (!load.isDone) yield return null;
         }
@@ -160,19 +170,21 @@ public sealed class SceneFadeTransition : MonoBehaviour
     private IEnumerator RunSynchronizedCountdown()
     {
         NetworkSession net = NetworkSession.Instance;
-        if (net == null || !net.IsNetworked) yield break;
+        if (net == null || !net.IsNetworked)
+        {
+            // 오프라인/솔로는 기다릴 상대가 없다 - 씬 활성화 시점부터 이미 걸려있는 얼림을
+            // 곧장 풀고 통과한다(LoadRoutine에서 showLoadingScreen 분기마다 항상 얼려두므로
+            // 여기서 반드시 되돌려야 한다).
+            Time.timeScale = 1f;
+            yield break;
+        }
 
         EnsureCountdownSubscribed();
         EnsureCountdownUi();
 
         int myRound = MatchController.Instance != null ? MatchController.Instance.CurrentRoundIndex : 0;
-        Debug.Log($"[SyncStart:{net.Role}] round={myRound} 대기 시작, timeScale=0으로 얼림");
+        Debug.Log($"[SyncStart:{net.Role}] round={myRound} 대기 시작 (timeScale은 씬 활성화 시점부터 이미 0)");
 
-        // "상대방을 기다리는 중" 문구가 떠 있는 동안에도 이미 로드된 씬의 미니게임 로직
-        // (타이머/판정)이 계속 돌고 있던 버그가 있었다(실측 확인) - 예전엔 이 줄이 대기 루프
-        // "뒤"에 있어서, 대기 시간이 긴 쪽만 그만큼 게임이 먼저 진행돼버렸다. 대기를 시작하는
-        // 바로 이 순간부터 얼려야 대기 시간 자체가 어느 쪽에도 유·불리하게 작용하지 않는다.
-        Time.timeScale = 0f;
         _countdownRoot.SetActive(true);
         _countdownText.text = "상대방을 기다리는 중...";
         net.Send(RoundReadyEvent, new RoundReadyPayload { round = myRound });
