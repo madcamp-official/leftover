@@ -1,4 +1,4 @@
-// 최종 결과("엔딩") 화면 - 승리/무승부 배너, 점수판, 왕관, 다시하기/메인으로 버튼.
+// 최종 결과("엔딩") 화면 - 승리/무승부 배너, 점수판, 다시하기/메인으로 버튼.
 // 다른 코드 생성형 화면들과 같은 패턴: Resources/UI/Prefabs/ResultCanvas 프리팹이 있으면
 // 그걸 불러와 쓰고(에디터에서 마우스로 다듬은 결과), 없으면 코드로 기본 레이아웃을
 // 생성한다. 프리팹을 새로 만들거나 갱신하려면 Tools > UGAUGA > Rebuild Hub Screen
@@ -19,7 +19,6 @@ public sealed class ResultScreenView : MonoBehaviour
     private GameObject _canvasObject;
     private Image _banner;
     private Text _bannerText;
-    private Image _crown;
     private Text _p1ScoreText;
     private Text _p2ScoreText;
     private Button _replayButton;
@@ -59,13 +58,6 @@ public sealed class ResultScreenView : MonoBehaviour
         _banner.sprite = ArtAssets.LoadUi(isDraw ? "result_panel_draw" : "result_panel_victory");
         _bannerText.text = isDraw ? "무승부!" : $"{winner} 승리!";
 
-        _crown.gameObject.SetActive(!isDraw);
-        if (!isDraw)
-        {
-            float side = winner == PlayerId.P1 ? -270f : 270f;
-            _crown.rectTransform.anchoredPosition = new Vector2(side, 260f);
-        }
-
         _p1ScoreText.text = $"P1\n{match.P1Wins}";
         _p2ScoreText.text = $"P2\n{match.P2Wins}";
     }
@@ -91,13 +83,12 @@ public sealed class ResultScreenView : MonoBehaviour
         Transform root = _canvasObject.transform;
         _banner = UiBuilder.FindDescendant(root, "Banner")?.GetComponent<Image>();
         _bannerText = UiBuilder.FindDescendant(root, "BannerText")?.GetComponent<Text>();
-        _crown = UiBuilder.FindDescendant(root, "Crown")?.GetComponent<Image>();
         _p1ScoreText = UiBuilder.FindDescendant(root, "P1ScoreText")?.GetComponent<Text>();
         _p2ScoreText = UiBuilder.FindDescendant(root, "P2ScoreText")?.GetComponent<Text>();
         _replayButton = UiBuilder.FindDescendant(root, "ReplayButton")?.GetComponent<Button>();
         _mainMenuButton = UiBuilder.FindDescendant(root, "MainMenuButton")?.GetComponent<Button>();
 
-        if (_banner == null || _bannerText == null || _crown == null || _p1ScoreText == null ||
+        if (_banner == null || _bannerText == null || _p1ScoreText == null ||
             _p2ScoreText == null || _replayButton == null || _mainMenuButton == null)
         {
             throw new InvalidOperationException(
@@ -130,9 +121,6 @@ public sealed class ResultScreenView : MonoBehaviour
         _bannerText = UiBuilder.AddText(root, "BannerText", "", 64);
         UiBuilder.SetRect(_bannerText.rectTransform, new Vector2(0.5f, 0.72f), new Vector2(-100f, 0f),
             new Vector2(900f, 200f));
-
-        _crown = UiBuilder.AddImage(root, "Crown", ArtAssets.LoadUi("result_crown_icon"),
-            new Vector2(0.5f, 0.38f), new Vector2(-270f, 260f), new Vector2(180f, 180f));
 
         UiBuilder.AddImage(root, "ScoreboardPanel", ArtAssets.LoadUi("result_scoreboard_panel"),
             new Vector2(0.5f, 0.38f), Vector2.zero, new Vector2(1100f, 420f));
