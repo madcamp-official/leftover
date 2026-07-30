@@ -40,6 +40,12 @@ public sealed class PlayerPoseState
     public float MouthOpenRatio { get; internal set; }
     public float EyeAspectRatio { get; internal set; } = 0.3f;
     internal float LastSeenAt;
+    // 이 플레이어 스트림에서 마지막으로 실제 적용한 프레임의 vision-server 타임스탬프
+    // (FramePayload.t) - UDP는 도착 순서를 보장하지 않으므로, 온라인 모드에서 실제
+    // 와이파이를 타고 오는 원격 플레이어 쪽은 특히 오래된 패킷이 새 패킷보다 늦게 도착할
+    // 수 있다. 이걸 그냥 덮어쓰면 순간적으로 관절 위치가 뒤로 튀는 현상이 생긴다(PoseInputHub
+    // 참고 - 실측으로 의심된 원인).
+    internal double LastAppliedFrameTime = double.MinValue;
 
     // 소리지르기(ScreamDuel) 전용 - 0(무음)~1(최대 음량)로 정규화된 마이크 순간 음량.
     // pose/face와 별도로 마이크만 끊길 수 있어(예: 마이크만 음소거) IsTracked와 분리된
@@ -207,6 +213,13 @@ public sealed class PoseInputHub : MonoBehaviour
         {
             PlayerPoseState state = player.id == "p1" ? P1 : player.id == "p2" ? P2 : null;
             if (state == null) continue;
+
+            // 이 플레이어 스트림 안에서 시간이 거꾸로 가는 프레임은 버린다 - UDP 재정렬로
+            // 늦게 도착한 오래된 패킷이 방금 적용한 최신 프레임을 덮어써서 관절이 순간적으로
+            // 튀는 걸 막는다. 다른 플레이어는 온라인 모드에서 별도 vision-server 프로세스라
+            // 시계가 안 맞을 수 있으므로 서로 비교하지 않는다(플레이어별로 독립적으로 검사).
+            if (frame.t > 0 && frame.t < state.LastAppliedFrameTime) continue;
+            state.LastAppliedFrameTime = frame.t;
 
             state.IsTracked = true;
             state.LastSeenAt = Time.unscaledTime;
