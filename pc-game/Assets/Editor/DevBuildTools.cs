@@ -96,8 +96,9 @@ public static class DevBuildTools
         return report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded;
     }
 
-    // macOS: VisionServerLauncher.ResolveBinaryPath()가 Application.dataPath의 부모
-    // (.app/Contents/Resources) 밑 vision-server/를 찾으므로 그 자리에 그대로 복사한다.
+    // macOS: VisionServerLauncher.ResolveBinaryPath()가 Application.dataPath(=.app/Contents,
+    // 실측 확인 - Contents/Resources/Data가 아니다) 밑 Resources/vision-server/를 찾으므로
+    // 그 자리에 그대로 복사한다.
     private static void CopyVisionServerIntoMacApp(string appPath)
     {
         string dest = Path.Combine(appPath, "Contents", "Resources", "vision-server");

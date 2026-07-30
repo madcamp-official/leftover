@@ -34,6 +34,7 @@ public sealed class VisionServerLauncher : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        Debug.Log($"[VisionServerLauncher] dataPath={Application.dataPath}");
     }
 
     // 이미 같은 인자로 돌고 있으면 아무것도 안 한다(멱등) - Hub 화면을 왔다갔다 하거나
@@ -45,13 +46,14 @@ public sealed class VisionServerLauncher : MonoBehaviour
 
         StopProcess();
 
-        string exePath = ResolveBinaryPath();
+        string exePath = ResolveBinaryPath(out string bundledCandidate, out string devCandidate);
         if (exePath == null)
         {
             Debug.LogError(
                 "[VisionServerLauncher] vision-server 실행파일을 찾지 못했습니다 - "
                 + "vision-server/vision-server.spec으로 PyInstaller 빌드를 먼저 만들어야 합니다 "
-                + "(Editor Play 중이라면 리포 안 vision-server/dist/vision-server/를 찾습니다).");
+                + "(Editor Play 중이라면 리포 안 vision-server/dist/vision-server/를 찾습니다).\n"
+                + $"확인한 경로1(번들): {bundledCandidate}\n확인한 경로2(개발용 폴백): {devCandidate}");
             return;
         }
 
@@ -99,27 +101,36 @@ public sealed class VisionServerLauncher : MonoBehaviour
     // 시스템 기본)을 쓰는 것보다 더 나쁘다고 판단해 일부러 비워뒀다 - 해결하려면 먼저 두
     // 라이브러리의 장치 이름을 실측으로 비교해 신뢰할 수 있는 매핑을 확인해야 한다.
 
-    private static string ResolveBinaryPath()
+    // DevBuildTools.cs가 빌드 직후 vision-server를 실행파일 바로 옆(macOS는
+    // .app/Contents/Resources/vision-server/, Windows는 exe와 같은 폴더의 vision-server/)에
+    // 자동으로 복사해준다 - 그 위치를 최우선으로 찾는다. 못 찾으면 리포를 통째로 갖고 있는
+    // 개발 중(Editor Play 등)을 위해 vision-server/dist/vision-server/로 폴백한다.
+    //
+    // Application.dataPath는 플랫폼마다 다른 곳을 가리킨다(실측으로 확인) -
+    //  - macOS 빌드: <App>.app/Contents (Contents/Resources/Data일 거라 짐작했다가 실제
+    //    배포 dmg를 실행해보고서야 아니라는 걸 확인함 - dataPath 바로 밑에 Resources/가 있음).
+    //  - Windows 빌드: <빌드폴더>/<제품명>_Data.
+    //  - Editor: <리포>/pc-game/Assets.
+    private static string ResolveBinaryPath(out string bundledCandidate, out string devCandidate)
     {
-        string exeName = Application.platform == RuntimePlatform.WindowsPlayer
-            || Application.platform == RuntimePlatform.WindowsEditor
+        bool isMacPlayer = Application.platform == RuntimePlatform.OSXPlayer;
+        bool isWindowsPlayer = Application.platform == RuntimePlatform.WindowsPlayer;
+        string exeName = isWindowsPlayer || Application.platform == RuntimePlatform.WindowsEditor
             ? "vision-server.exe" : "vision-server";
 
-        // 배포_아키텍처_설계.md 3장: 빌드 결과물 옆에 vision-server를 동봉할 예정이지만 그
-        // 복사 후처리 스크립트는 아직 없다(TODO) - 일단은 실행파일 바로 옆 vision-server/
-        // 폴더를 잠정 규칙으로 삼는다(macOS는 Application.dataPath의 부모가 .app/Contents/
-        // Resources라 자연스럽게 번들 안쪽이 된다. Windows는 빌드 루트 옆).
-        string buildRoot = Path.GetDirectoryName(Application.dataPath);
-        string bundled = buildRoot == null ? null : Path.Combine(buildRoot, "vision-server", exeName);
-        if (bundled != null && File.Exists(bundled)) return Path.GetFullPath(bundled);
+        if (isMacPlayer)
+            bundledCandidate = Path.Combine(Application.dataPath, "Resources", "vision-server", exeName);
+        else if (isWindowsPlayer)
+            bundledCandidate = Path.Combine(
+                Path.GetDirectoryName(Application.dataPath) ?? "", "vision-server", exeName);
+        else
+            bundledCandidate = "(Editor에서는 번들 경로를 쓰지 않음 - 아래 개발용 폴백만 확인)";
 
-        // 위 복사 단계가 아직 없으므로, 리포를 통째로 갖고 있는 개발 중(Editor Play 또는
-        // 이 리포 옆에서 만든 Standalone 빌드 테스트)에는 PyInstaller 산출물을 상대 경로로
-        // 바로 찾아 쓴다 - 배포용 실행파일만 따로 받은 사람에게는 이 경로가 없을 테니 안전하게
-        // null로 빠진다.
-        string devPath = Path.GetFullPath(Path.Combine(
+        devCandidate = Path.GetFullPath(Path.Combine(
             Application.dataPath, "..", "..", "vision-server", "dist", "vision-server", exeName));
-        return File.Exists(devPath) ? devPath : null;
+
+        if (File.Exists(bundledCandidate)) return Path.GetFullPath(bundledCandidate);
+        return File.Exists(devCandidate) ? devCandidate : null;
     }
 
     private void StopProcess()
