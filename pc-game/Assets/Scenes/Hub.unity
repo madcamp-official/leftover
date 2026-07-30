@@ -785,11 +785,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: -558.80432
+      value: -418.80432
       objectReference: {fileID: 0}
     - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: 85
       objectReference: {fileID: 0}
     - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_ConstrainProportionsScale
@@ -825,11 +825,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: -278.80432
+      value: -418.80432
       objectReference: {fileID: 0}
     - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: -85
       objectReference: {fileID: 0}
     - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_ConstrainProportionsScale
