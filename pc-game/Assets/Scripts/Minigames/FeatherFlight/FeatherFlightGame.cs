@@ -60,10 +60,22 @@ public class FeatherFlightGame : MonoBehaviour
     private bool _ended;
     private bool _introDone;
 
+    // --- 호스트-클라이언트 배선 (docs/멀티플레이_분산_아키텍처_설계.md 4장) ---
+    // 이 미니게임은 예전에 네트워크 배선이 아예 없었다 - 매 프레임 실시간 포즈로 높이를
+    // 계산하는 구조라 다른 미니게임들의 "판정 순간에만 이벤트" 패턴과 다르게 접근해야
+    // 했는데, 그 작업이 빠진 채로 남아있었다. 그 결과 클라이언트(P2) 화면에서는
+    // PoseInputHub가 항상 비어 있어서(vision-server는 포즈를 호스트에게만 보낸다) 아무도
+    // 손을 들어도 인식이 안 되고 캐릭터가 그냥 계속 떨어지기만 했다(실측 확인된 원인).
+    // 호스트는 매 프레임 계산한 높이/날갯짓 진행도를 그대로 클라이언트에 중계하고,
+    // 클라이언트는 판정을 전혀 하지 않고 받은 값을 화면에 반영만 한다.
+    private const float StateSendInterval = 1f / 30f; // 부드러운 시각 동기화에 필요한 주기
+    private float _lastStateSentAt;
+
     private void Start()
     {
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
+        GameBootstrap.EnsureNetwork();
 
         if (p1Cliff == null || p2Cliff == null || p1RestPoint == null || p2RestPoint == null
             || p1View == null || p2View == null)
@@ -71,6 +83,13 @@ public class FeatherFlightGame : MonoBehaviour
             Debug.LogError($"{nameof(FeatherFlightGame)}: Cliff/RestPoint/View 참조를 모두 연결해야 합니다.", this);
             enabled = false;
             return;
+        }
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            net.Subscribe("ff_state", OnNetState);
+            net.Subscribe("ff_ended", OnNetEnded);
         }
 
         // 절벽은 절대 움직이지 않으므로, 절벽 오브젝트 자체의 Y를 "height=0" 기준선으로
@@ -141,6 +160,13 @@ public class FeatherFlightGame : MonoBehaviour
     {
         if (!_introDone || _ended) return;
 
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsClient)
+        {
+            UpdateAsClient();
+            return;
+        }
+
         PoseInputHub hub = PoseInputHub.Instance;
         PlayerPoseState p1 = hub?.Get(PlayerId.P1);
         PlayerPoseState p2 = hub?.Get(PlayerId.P2);
@@ -165,10 +191,59 @@ public class FeatherFlightGame : MonoBehaviour
                 ? (PlayerId?)null
                 : (_p1Height > _p2Height ? PlayerId.P1 : PlayerId.P2);
             EndMatch(winner);
+            return;
         }
+
+        BroadcastStateAsHost(net);
+    }
+
+    // 클라이언트는 포즈 판정을 전혀 하지 않는다(vision-server가 포즈를 호스트에게만 보내므로
+    // 클라이언트의 PoseInputHub는 항상 비어 있다) - 호스트가 매 프레임 보내주는 높이/날갯짓
+    // 진행도를 받은 그대로 화면에 반영만 한다.
+    private void UpdateAsClient()
+    {
+        ApplyVisual(p1View, p1RestPoint.position.x, _p1FloorY, _p1Height, _p1WingProgress);
+        ApplyVisual(p2View, p2RestPoint.position.x, _p2FloorY, _p2Height, _p2WingProgress);
+        hud?.SetTimeRemaining(Mathf.Max(0f, matchSeconds - _elapsed));
+    }
+
+    private void BroadcastStateAsHost(NetworkSession net)
+    {
+        if (net == null || !net.IsHost) return;
+        if (Time.unscaledTime - _lastStateSentAt < StateSendInterval) return;
+        _lastStateSentAt = Time.unscaledTime;
+        net.Send("ff_state", new StatePayload
+        {
+            p1Height = _p1Height,
+            p2Height = _p2Height,
+            p1Wing = _p1WingProgress,
+            p2Wing = _p2WingProgress,
+            elapsed = _elapsed,
+        });
+    }
+
+    private void OnNetState(NetworkEvent evt)
+    {
+        StatePayload payload = NetworkSession.Read<StatePayload>(evt);
+        _p1Height = payload.p1Height;
+        _p2Height = payload.p2Height;
+        _p1WingProgress = payload.p1Wing;
+        _p2WingProgress = payload.p2Wing;
+        _elapsed = payload.elapsed;
+    }
+
+    private void OnNetEnded(NetworkEvent evt)
+    {
+        EndedPayload payload = NetworkSession.Read<EndedPayload>(evt);
+        _ended = true;
+        PlayerId? winner = DecodeWinner(payload.winner);
+        hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
+        // 다음 라운드 전환은 MatchController가 호스트의 load_round 이벤트를 받아 알아서
+        // 처리한다 - 여기서 따로 LoadNextRound를 부를 필요 없다(다른 미니게임들과 동일).
     }
 
     // 반환값: 이 플레이어가 이번 프레임에 화면 아래쪽 끝(height<=floor)에 닿았는지.
+    // 호스트/오프라인 전용 - 실제 포즈 판정을 한다(클라이언트는 UpdateAsClient/ApplyVisual만 씀).
     private bool TickPlayer(PlayerPoseState state, ref float height, ref bool prevRaised,
         ref float wingProgress, ref float lastFlapSfxAt, FeatherFlightCharacterView view, float fixedX, float floorY,
         float ceiling, float floor)
@@ -196,14 +271,20 @@ public class FeatherFlightGame : MonoBehaviour
         float targetWing = raisedNow ? 1f : 0f;
         float blend = 1f - Mathf.Exp(-wingAnimationSmoothing * Time.deltaTime);
         wingProgress = Mathf.Lerp(wingProgress, targetWing, blend);
-        if (view != null)
-        {
-            view.SetBase(new Vector3(fixedX, floorY + height, 0f));
-            if (view.FlapFrameCount > 0)
-                view.ShowFlapFrame(Mathf.RoundToInt(wingProgress * (view.FlapFrameCount - 1)));
-        }
+        ApplyVisual(view, fixedX, floorY, height, wingProgress);
 
         return height <= floor;
+    }
+
+    // 시각 갱신만 담당(포즈 판정과 분리) - 호스트의 TickPlayer와 클라이언트의
+    // UpdateAsClient가 둘 다 이 메서드로 캐릭터를 화면에 반영한다.
+    private static void ApplyVisual(FeatherFlightCharacterView view, float fixedX, float floorY,
+        float height, float wingProgress)
+    {
+        if (view == null) return;
+        view.SetBase(new Vector3(fixedX, floorY + height, 0f));
+        if (view.FlapFrameCount > 0)
+            view.ShowFlapFrame(Mathf.RoundToInt(wingProgress * (view.FlapFrameCount - 1)));
     }
 
     private void EndMatch(PlayerId? winner)
@@ -212,9 +293,26 @@ public class FeatherFlightGame : MonoBehaviour
         hud?.ShowEvent(winner == null ? "무승부!" : $"{Label(winner.Value)} 승리!", resultDisplaySeconds);
         MatchController.Instance?.ReportRoundResult(winner);
         StartCoroutine(ProceedAfterDelay());
+
+        NetworkSession net = NetworkSession.Instance;
+        if (net != null && net.IsHost)
+            net.Send("ff_ended", new EndedPayload { winner = EncodeWinner(winner) });
     }
 
     private static string Label(PlayerId id) => id == PlayerId.P1 ? "플레이어 1" : "플레이어 2";
+
+    private static int EncodeWinner(PlayerId? winner) => winner == PlayerId.P1 ? 0 : winner == PlayerId.P2 ? 1 : -1;
+    private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
+
+    [System.Serializable]
+    private class StatePayload
+    {
+        public float p1Height, p2Height;
+        public float p1Wing, p2Wing;
+        public float elapsed;
+    }
+
+    [System.Serializable] private class EndedPayload { public int winner; }
 
     private IEnumerator ProceedAfterDelay()
     {
