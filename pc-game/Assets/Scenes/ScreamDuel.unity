@@ -667,7 +667,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dfc94c299f56482da6b1feb4ce83f2b1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ScreamDuelGame
-  turnSeconds: 3
+  turnSeconds: 5
   baselineRequiredLevel: 0.05
   maxFaceScale: 2.2
   resultDisplaySeconds: 2

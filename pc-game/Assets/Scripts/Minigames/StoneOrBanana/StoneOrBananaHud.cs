@@ -62,14 +62,16 @@ public class StoneOrBananaHud : MonoBehaviour
         _timer.text = "";
 
         // 공격/수비는 같은 3초 동안 동시에 선택하므로 두 안내판을 겹치지 않게 나란히 둔다.
+        // 초기 x는 임시값 - 실제 위치는 SetTurnRoles가 던지는/받는 플레이어의 실제 화면
+        // 위치(p1FrontView/p2FrontView)에 맞춰 매 턴 다시 잡는다.
         _throwPrompt = HudWidgets.CreateImage(root, "ThrowPrompt", ArtAssets.LoadStoneOrBanana("ui_throw_turn_prompt"),
-            new Vector2(0.5f, 0.5f), new Vector2(-350f, 260f), 560f);
+            new Vector2(0.5f, 0.5f), new Vector2(-PromptSideOffset, 260f), 680f);
         _receivePrompt = HudWidgets.CreateImage(root, "ReceivePrompt", ArtAssets.LoadStoneOrBanana("ui_receive_turn_prompt"),
-            new Vector2(0.5f, 0.5f), new Vector2(350f, 260f), 560f);
+            new Vector2(0.5f, 0.5f), new Vector2(PromptSideOffset, 260f), 680f);
         _throwPrompt.gameObject.SetActive(false);
         _receivePrompt.gameObject.SetActive(false);
 
-        _turnRoleText = HudWidgets.CreateText(root, "TurnRoleText", new Vector2(0.5f, 0.78f), 1000f, 46);
+        _turnRoleText = HudWidgets.CreateText(root, "TurnRoleText", new Vector2(0.5f, 0.78f), 1000f, 62);
         _eventText = HudWidgets.CreateText(root, "EventText", new Vector2(0.5f, 0.66f), 1100f, 58);
         _turnRoleText.text = "";
         _eventText.text = "";
@@ -125,10 +127,26 @@ public class StoneOrBananaHud : MonoBehaviour
         _receivePrompt?.gameObject.SetActive(show);
     }
 
+    // 씬 배치상 p1FrontView는 화면 오른쪽(+x), p2FrontView는 왼쪽(-x)에 고정돼 있다. 안내판을
+    // "왼쪽=던지기/오른쪽=받기"로 고정해두면 턴마다 실제 캐릭터 위치와 안 맞아 헷갈리므로,
+    // 이번 턴 던지는/받는 플레이어가 서 있는 쪽으로 매번 다시 배치한다.
+    private const float PromptSideOffset = 600f;
+
     public void SetTurnRoles(PlayerId thrower, PlayerId receiver)
     {
         if (_turnRoleText != null)
             _turnRoleText.text = $"{Label(thrower)} 던지기  ·  {Label(receiver)} 받기";
+
+        SetPromptSide(_throwPrompt, thrower);
+        SetPromptSide(_receivePrompt, receiver);
+    }
+
+    private static void SetPromptSide(RectTransform prompt, PlayerId player)
+    {
+        if (prompt == null) return;
+        float x = player == PlayerId.P1 ? PromptSideOffset : -PromptSideOffset;
+        Vector2 pos = prompt.anchoredPosition;
+        prompt.anchoredPosition = new Vector2(x, pos.y);
     }
 
     public void ShowEvent(string message, float seconds = .8f)
