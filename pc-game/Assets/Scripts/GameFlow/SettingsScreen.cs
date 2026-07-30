@@ -146,10 +146,11 @@ public sealed class SettingsScreen : MonoBehaviour
         UiBuilder.AddImage(root, "Panel", ArtAssets.LoadUi("howto_panel_instruction"),
             new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1600f, 1050f));
 
+        // 흰 글씨 + 진한 갈색 테두리(UiBuilder.AddText 기본값) - 게임 시작 버튼 등 기존
+        // baked-in 텍스트와 같은 조합.
         Text title = UiBuilder.AddText(root, "Title", "설정", 48);
         UiBuilder.SetRect(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -110f),
             new Vector2(1200f, 90f));
-        title.color = new Color(0.32f, 0.18f, 0.08f, 1f);
 
         ApplySavedAudioSettings();
         float musicVolume = PlayerPrefs.GetFloat(MusicVolumeKey, 0.8f);
@@ -205,7 +206,6 @@ public sealed class SettingsScreen : MonoBehaviour
         Text labelText = UiBuilder.AddText(rowRt, "Label", label, 32, TextAnchor.MiddleLeft);
         UiBuilder.SetRect(labelText.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0f),
             new Vector2(220f, 80f));
-        labelText.color = new Color(0.32f, 0.18f, 0.08f, 1f);
 
         UiBuilder.AddButton(rowRt, "Toggle", ArtAssets.LoadUi("settings_toggle_off"),
             new Vector2(0f, 0.5f), new Vector2(260f, 0f), new Vector2(140f, 78f));
@@ -227,7 +227,6 @@ public sealed class SettingsScreen : MonoBehaviour
         Text labelText = UiBuilder.AddText(rowRt, "Label", label, 32, TextAnchor.MiddleLeft);
         UiBuilder.SetRect(labelText.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0f),
             new Vector2(220f, 80f));
-        labelText.color = new Color(0.32f, 0.18f, 0.08f, 1f);
 
         Button frameButton = UiBuilder.AddButton(rowRt, "DeviceFrame", ArtAssets.LoadUi("settings_dropdown_frame"),
             new Vector2(0f, 0.5f), new Vector2(260f, 0f), new Vector2(920f, 130f));

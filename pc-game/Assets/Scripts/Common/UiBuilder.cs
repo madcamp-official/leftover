@@ -7,6 +7,23 @@ using UnityEngine.UI;
 
 public static class UiBuilder
 {
+    // Neo둥근모(NeoDunggeunmo) - 1990년대 도스용 비트맵 폰트 "둥근모꼴"을 기반으로 한 현대
+    // 트루타입 폰트, SIL OFL 1.1 라이선스(재배포/상업적 사용 자유).
+    // 출처: https://github.com/neodgm/neodgm , 라이선스 파일은 같은 폴더에 동봉.
+    private const string ArcadeFontResourcePath = "Fonts/NeoDunggeunmo";
+    private static Font _arcadeFont;
+
+    private static Font ArcadeFont
+    {
+        get
+        {
+            if (_arcadeFont == null)
+                _arcadeFont = Resources.Load<Font>(ArcadeFontResourcePath)
+                    ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            return _arcadeFont;
+        }
+    }
+
     public static GameObject CreateOverlayCanvas(string name, Transform parent, int sortingOrder)
     {
         var go = new GameObject(name);
@@ -51,7 +68,7 @@ public static class UiBuilder
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
         var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.font = ArcadeFont;
         text.fontSize = fontSize;
         text.fontStyle = style;
         text.alignment = alignment;
