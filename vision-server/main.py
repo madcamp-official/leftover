@@ -387,6 +387,33 @@ def load_face_landmarker(num_faces: int = 2):
     return vision.FaceLandmarker.create_from_options(options)
 
 
+def open_camera_with_retry(
+    camera_index: int, timeout_s: float = 60.0, retry_interval_s: float = 1.0
+) -> cv2.VideoCapture:
+    """macOS에서 카메라 권한이 아직 "결정 안 됨" 상태면 OpenCV가 시스템 허용 대화상자를
+    띄우도록 요청은 하지만, 그 응답을 기다려주지는 않는다 - cv2.VideoCapture()가 그 순간
+    바로 실패로 리턴해버린다(실측: "OpenCV: not authorized to capture video (status 0),
+    requesting..." 직후 곧바로 "camera failed to properly initialize!"). 사용자가 실제로
+    대화상자에서 "허용"을 누를 시간을 벌어주기 위해, 안 열리면 짧은 간격으로 재시도한다 -
+    두 번째 시도부터는 이미 허용된 상태라 바로 성공한다."""
+    deadline = time.time() + timeout_s
+    attempt = 0
+    while True:
+        attempt += 1
+        cap = cv2.VideoCapture(camera_index)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        if time.time() >= deadline:
+            raise RuntimeError(
+                f"카메라 {camera_index}번을 열 수 없습니다 ({attempt}번 시도, {timeout_s:.0f}초 대기). "
+                "macOS 시스템 설정 > 개인정보 보호 및 보안 > 카메라에서 권한을 확인하세요."
+            )
+        print(f"[camera] 아직 안 열림({attempt}번째 시도) - 권한 대화상자 응답을 기다리는 중일 수 있음, "
+              f"{retry_interval_s:.0f}초 후 재시도...")
+        time.sleep(retry_interval_s)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pc-ip", default="127.0.0.1", help="Unity가 돌아가는 PC의 IP (같은 PC면 127.0.0.1)")
@@ -484,9 +511,7 @@ def main():
     pose_landmarker = load_pose_landmarker(num_people)
     face_landmarker = load_face_landmarker(num_people)
 
-    cap = cv2.VideoCapture(args.camera_index)
-    if not cap.isOpened():
-        raise RuntimeError(f"카메라 {args.camera_index}번을 열 수 없습니다.")
+    cap = open_camera_with_retry(args.camera_index)
     # 테스트 시 화면이 너무 작아 잘 안 보인다는 피드백 - 캡처 해상도 자체를 높여서 요청.
     # 카메라가 이 해상도를 지원 안 하면 드라이버가 가장 가까운 값으로 알아서 맞춘다.
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)

@@ -102,9 +102,14 @@ public sealed class VisionServerLauncher : MonoBehaviour
     // 라이브러리의 장치 이름을 실측으로 비교해 신뢰할 수 있는 매핑을 확인해야 한다.
 
     // DevBuildTools.cs가 빌드 직후 vision-server를 실행파일 바로 옆(macOS는
-    // .app/Contents/Resources/vision-server/, Windows는 exe와 같은 폴더의 vision-server/)에
-    // 자동으로 복사해준다 - 그 위치를 최우선으로 찾는다. 못 찾으면 리포를 통째로 갖고 있는
-    // 개발 중(Editor Play 등)을 위해 vision-server/dist/vision-server/로 폴백한다.
+    // .app/Contents/Resources/, Windows는 exe와 같은 폴더)에 자동으로 복사해준다 - 그
+    // 위치를 최우선으로 찾는다. 못 찾으면 리포를 통째로 갖고 있는 개발 중(Editor Play 등)을
+    // 위해 vision-server/dist/로 폴백한다.
+    //
+    // macOS는 vision-server 자체가 맨 실행파일이 아니라 .app 번들이어야 한다 - 실측 확인:
+    // Info.plist 없는 맨 실행파일은 NSCameraUsageDescription을 읽을 데가 없어서, macOS가
+    // 카메라 권한 대화상자 자체를 안 띄우고 조용히 거부한다(vision-server.spec의 BUNDLE()
+    // 단계 참고). Windows는 이런 제약이 없어서 예전처럼 onedir 폴더 그대로 쓴다.
     //
     // Application.dataPath는 플랫폼마다 다른 곳을 가리킨다(실측으로 확인) -
     //  - macOS 빌드: <App>.app/Contents (Contents/Resources/Data일 거라 짐작했다가 실제
@@ -113,21 +118,28 @@ public sealed class VisionServerLauncher : MonoBehaviour
     //  - Editor: <리포>/pc-game/Assets.
     private static string ResolveBinaryPath(out string bundledCandidate, out string devCandidate)
     {
-        bool isMacPlayer = Application.platform == RuntimePlatform.OSXPlayer;
+        bool isMac = Application.platform == RuntimePlatform.OSXPlayer
+            || Application.platform == RuntimePlatform.OSXEditor;
         bool isWindowsPlayer = Application.platform == RuntimePlatform.WindowsPlayer;
-        string exeName = isWindowsPlayer || Application.platform == RuntimePlatform.WindowsEditor
-            ? "vision-server.exe" : "vision-server";
 
-        if (isMacPlayer)
-            bundledCandidate = Path.Combine(Application.dataPath, "Resources", "vision-server", exeName);
-        else if (isWindowsPlayer)
-            bundledCandidate = Path.Combine(
-                Path.GetDirectoryName(Application.dataPath) ?? "", "vision-server", exeName);
+        if (isMac)
+        {
+            const string macRelPath = "vision-server.app/Contents/MacOS/vision-server";
+            bundledCandidate = Application.platform == RuntimePlatform.OSXPlayer
+                ? Path.Combine(Application.dataPath, "Resources", macRelPath)
+                : "(Editor에서는 번들 경로를 쓰지 않음 - 아래 개발용 폴백만 확인)";
+            devCandidate = Path.GetFullPath(Path.Combine(
+                Application.dataPath, "..", "..", "vision-server", "dist", macRelPath));
+        }
         else
-            bundledCandidate = "(Editor에서는 번들 경로를 쓰지 않음 - 아래 개발용 폴백만 확인)";
-
-        devCandidate = Path.GetFullPath(Path.Combine(
-            Application.dataPath, "..", "..", "vision-server", "dist", "vision-server", exeName));
+        {
+            const string exeName = "vision-server.exe";
+            bundledCandidate = isWindowsPlayer
+                ? Path.Combine(Path.GetDirectoryName(Application.dataPath) ?? "", "vision-server", exeName)
+                : "(Editor에서는 번들 경로를 쓰지 않음 - 아래 개발용 폴백만 확인)";
+            devCandidate = Path.GetFullPath(Path.Combine(
+                Application.dataPath, "..", "..", "vision-server", "dist", "vision-server", exeName));
+        }
 
         if (File.Exists(bundledCandidate)) return Path.GetFullPath(bundledCandidate);
         return File.Exists(devCandidate) ? devCandidate : null;

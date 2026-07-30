@@ -72,3 +72,25 @@ coll = COLLECT(
     upx_exclude=[],
     name='vision-server',
 )
+
+# macOS 전용: 맨 실행파일(bare executable)로는 카메라/마이크 권한을 절대 못 받는다(실측
+# 확인) - Info.plist가 없는 실행파일은 NSCameraUsageDescription을 읽을 데가 없어서, TCC가
+# "권한 요청 중..." 상태에서 대화상자도 안 띄우고 그냥 거부해버린다(OpenCV 로그: "not
+# authorized to capture video (status 0)" 직후 바로 실패). .app 번들로 감싸서 Info.plist에
+# 카메라/마이크 사용 설명을 넣어야 macOS가 정상적으로 허용 대화상자를 띄운다.
+# LSUIElement=True로 Dock 아이콘/메뉴바가 안 뜨게 한다 - --no-show와 마찬가지로 백그라운드
+# 헬퍼 프로세스라 화면에 나설 필요가 없고, 안 그러면 실행될 때마다 Unity 게임 창에서 포커스를
+# 뺏어간다.
+if sys.platform == "darwin":
+    app = BUNDLE(
+        coll,
+        name="vision-server.app",
+        icon=None,
+        bundle_identifier="com.madcamp.ugauga.visionserver",
+        info_plist={
+            "NSCameraUsageDescription": "우가우가 게임이 카메라로 플레이어의 동작을 인식하기 위해 사용합니다.",
+            "NSMicrophoneUsageDescription": "우가우가 게임이 일부 미니게임에서 마이크 음량을 인식하기 위해 사용합니다.",
+            "LSUIElement": True,
+            "CFBundleShortVersionString": "1.0.0",
+        },
+    )
