@@ -1,0 +1,51 @@
+Medieval combat SFX - sourced from freesound.org, all filtered to license:"Creative Commons 0" (CC0 / Public Domain).
+CC0 requires no attribution, but original authors and source pages are listed below for
+traceability. Files were downloaded via each sound's public "-hq" preview stream
+(https://cdn.freesound.org/previews/.../..._...-hq.mp3), which does not require a Freesound
+login - a real account login was not available in this session. This is a compressed
+128 kbps preview encode, not the original uploaded master (typically 16/24-bit WAV/FLAC),
+since downloading the original file does require a logged-in Freesound account. If you have
+your own Freesound account, you can fetch the uncompressed originals from the same sound
+pages below and drop them in over these files (same filenames) for a quality upgrade.
+
+swordSlice          -> 507466_swordSlice_swoosh.mp3
+  "Clean fast Swoosh.aiff" by Danjocross
+  https://freesound.org/people/Danjocross/sounds/507466/
+
+swordSliceHeavy     -> 733891_swordSliceHeavy_whooshTriple.mp3
+  "Whoosh Triple" by velcronator
+  https://freesound.org/people/velcronator/sounds/733891/
+
+swordDraw           -> 107589_swordDraw_unsheathe.mp3
+  "unsheath_sword.wav" by Qat
+  https://freesound.org/people/Qat/sounds/107589/
+
+swordHit            -> 334169_swordHit_clash.mp3
+  "Sword Clash" by loudernoises
+  https://freesound.org/people/loudernoises/sounds/334169/
+
+shieldBlock         -> 370203_shieldBlock_guard.mp3
+  "shield guard" by nekoninja
+  https://freesound.org/people/nekoninja/sounds/370203/
+
+shieldBlockHeavy    -> 636103_shieldBlockHeavy_hit1.mp3
+  "SHIELDHIT1.wav" by fonografico
+  https://freesound.org/people/fonografico/sounds/636103/
+
+parryBell           -> 760636_parryBell_metalParry.mp3
+  "Metal_Sword_Parry_Impact_Hit_4" by chungkury
+  https://freesound.org/people/chungkury/sounds/760636/
+
+guardBreak          -> 653750_guardBreak_titanMetal.mp3
+  "Titan Metal.mp3" by Streetpoptunez
+  https://freesound.org/people/Streetpoptunez/sounds/653750/
+
+bodyImpactHeavy     -> 517744_bodyImpactHeavy_punch.mp3
+  "Punch" by danlucaz
+  https://freesound.org/people/danlucaz/sounds/517744/
+
+bodyImpactMedium    -> 276600_bodyImpactMedium_bodyHit.mp3
+  "body_hit.wav" by insanity54
+  https://freesound.org/people/insanity54/sounds/276600/
+
+License text (CC0 1.0 Universal): https://creativecommons.org/publicdomain/zero/1.0/
