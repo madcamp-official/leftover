@@ -634,7 +634,7 @@ public sealed class LoadingScreenController : MonoBehaviour
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
         var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.font = UiBuilder.ArcadeFont; // 게임 전체 텍스트 폰트 통일 - Neo둥근모.
         text.fontSize = fontSize;
         text.fontStyle = FontStyle.Bold;
         text.alignment = TextAnchor.MiddleCenter;
