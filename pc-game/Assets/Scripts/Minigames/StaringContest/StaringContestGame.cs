@@ -55,6 +55,7 @@ public class StaringContestGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
 
         if (p1Anchor == null || p2Anchor == null)
         {

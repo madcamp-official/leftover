@@ -90,6 +90,7 @@ public class CoconutCrackGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
 
         if (p1View == null || p2View == null || p1Coconut == null || p2Coconut == null)
         {

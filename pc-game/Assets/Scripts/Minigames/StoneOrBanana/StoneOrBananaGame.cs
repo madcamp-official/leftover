@@ -56,6 +56,7 @@ public class StoneOrBananaGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
         if (stoneTemplate != null) stoneTemplate.gameObject.SetActive(false);
         if (bananaTemplate != null) bananaTemplate.gameObject.SetActive(false);
         _p1Teeth = _p2Teeth = Mathf.RoundToInt(maxTeeth);

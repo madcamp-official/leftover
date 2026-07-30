@@ -39,6 +39,7 @@ public sealed class GameSelectionSceneController : MonoBehaviour
 
         EnsureCamera();
         EnsureEventSystem();
+        GameBootstrap.EnsureLetterbox();
 
         Transform authoredCanvas = UiBuilder.FindDescendant(transform, "GameSelectionCanvas");
         if (authoredCanvas != null)

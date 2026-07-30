@@ -69,6 +69,7 @@ public class ScreamDuelGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
 
         _p1Idle = ArtAssets.LoadCharacter(PlayerId.P1, "scream_idle");
         _p1Shout = ArtAssets.LoadCharacter(PlayerId.P1, "scream_shout");

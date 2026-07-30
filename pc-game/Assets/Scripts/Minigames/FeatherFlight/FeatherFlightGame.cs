@@ -76,6 +76,7 @@ public class FeatherFlightGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
 
         if (p1Cliff == null || p2Cliff == null || p1RestPoint == null || p2RestPoint == null
             || p1View == null || p2View == null)

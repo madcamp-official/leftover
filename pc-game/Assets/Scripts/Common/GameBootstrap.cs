@@ -51,4 +51,15 @@ public static class GameBootstrap
             go.AddComponent<VisionServerLauncher>();
         }
     }
+
+    // 창을 자유롭게 리사이즈해도 게임 출력은 항상 16:9로 고정한다(레터박스) - LetterboxController.cs
+    // 참고.
+    public static void EnsureLetterbox()
+    {
+        if (LetterboxController.Instance == null)
+        {
+            var go = new GameObject("LetterboxController");
+            go.AddComponent<LetterboxController>();
+        }
+    }
 }

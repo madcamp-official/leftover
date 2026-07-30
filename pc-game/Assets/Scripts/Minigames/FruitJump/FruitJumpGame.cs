@@ -118,6 +118,7 @@ public class FruitJumpGame : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
 
         _p1Tree = BuildTree(PlayerId.P1, p1Anchor, p1Jump, p1Fruits);
         _p2Tree = BuildTree(PlayerId.P2, p2Anchor, p2Jump, p2Fruits);
