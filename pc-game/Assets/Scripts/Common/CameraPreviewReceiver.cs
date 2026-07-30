@@ -16,9 +16,6 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
     {
         public string Player;
         public byte[] Jpeg;
-        // 호스트가 TCP로 중계해준 프레임인지 여부. 중계로 들어온 프레임을 다시 중계 대기열에
-        // 넣으면 무한 에코가 되므로 구분해야 한다.
-        public bool FromRelay;
     }
 
     private static CameraPreviewReceiver _instance;
@@ -42,8 +39,11 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
     private readonly Dictionary<string, Texture2D> _textures = new Dictionary<string, Texture2D>();
     private readonly Dictionary<string, float> _lastSeen = new Dictionary<string, float>();
     // 호스트-클라이언트 구조에서 vision-server는 프리뷰를 호스트로만 보낸다(설계 문서 2장).
-    // 그래서 호스트가 받은 프레임을 TCP 이벤트 채널로 클라이언트에 중계해야 클라이언트
-    // 로딩 화면에도 카메라가 보인다 - 그 중계 대상 프레임을 여기 담아둔다.
+    // 그래서 호스트가 받은 프레임을 클라이언트에게 다시 UDP로 그대로 전달해야 클라이언트
+    // 로딩 화면에도 카메라가 보인다 - 그 전달 대상 프레임을 여기 담아둔다.
+    // (예전에는 이걸 base64로 인코딩해 게임 이벤트용 TCP 채널로 보냈는데, 하트비트/점수처럼
+    // 시간이 중요한 이벤트와 같은 소켓·같은 스트림을 타면서 head-of-line blocking으로
+    // 그 이벤트들을 지연시킬 위험이 있었다 - UDP 직접 전달로 완전히 분리했다.)
     private readonly Dictionary<string, byte[]> _relayPending = new Dictionary<string, byte[]>();
 
     private void Awake()
@@ -110,8 +110,7 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
         while (_incoming.TryDequeue(out PreviewPacket packet))
         {
             latest[packet.Player] = packet.Jpeg;
-            // UDP로 직접 받은 프레임만 중계 대상이다(중계로 받은 걸 다시 중계하면 에코 루프).
-            if (!packet.FromRelay) _relayPending[packet.Player] = packet.Jpeg;
+            _relayPending[packet.Player] = packet.Jpeg;
         }
 
         foreach (KeyValuePair<string, byte[]> pair in latest)
@@ -146,12 +145,19 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
         return true;
     }
 
-    // 클라이언트가 호스트로부터 중계받은 프레임을 주입한다 - 이후 디코딩/스테일 판정은
-    // UDP로 직접 받은 경우와 완전히 같은 경로를 탄다.
-    public void ApplyRelayedFrame(string player, byte[] jpeg)
+    // 호스트가 TryDequeueRelayFrame으로 꺼낸 프레임을 클라이언트의 CameraPreviewReceiver
+    // 포트로 직접 재전송한다 - 같은 "UGAPREV1|player|" + JPEG 포맷 그대로라, 클라이언트
+    // 쪽은 vision-server에서 직접 받은 프레임과 완전히 같은 경로(ReceiveLoop/Parse)로
+    // 처리한다. 별도의 "중계 수신" 코드가 필요 없다.
+    public void ForwardRelayFrame(string player, byte[] jpeg, IPEndPoint destination)
     {
-        if (string.IsNullOrEmpty(player) || jpeg == null || jpeg.Length == 0) return;
-        _incoming.Enqueue(new PreviewPacket { Player = player, Jpeg = jpeg, FromRelay = true });
+        if (_udp == null || destination == null || string.IsNullOrEmpty(player) || jpeg == null) return;
+        byte[] header = Encoding.ASCII.GetBytes($"UGAPREV1|{player}|");
+        var packet = new byte[header.Length + jpeg.Length];
+        Buffer.BlockCopy(header, 0, packet, 0, header.Length);
+        Buffer.BlockCopy(jpeg, 0, packet, header.Length, jpeg.Length);
+        try { _udp.Send(packet, packet.Length, destination); }
+        catch (Exception e) { Debug.LogWarning($"[CameraPreview] 클라이언트로 중계 전송 실패: {e.Message}"); }
     }
 
     public Texture GetTexture(PlayerId player)

@@ -56,7 +56,12 @@ public sealed class NetworkSession : MonoBehaviour
     private float _lastHeartbeatSentAt;
     private float _lastHeartbeatReceivedAt;
     private const float HeartbeatIntervalSeconds = 1f;
-    private const float HeartbeatTimeoutSeconds = 5f;
+    // 실제 노트북 두 대를 같은 와이파이에 놓고 돌리면, 카메라 프리뷰/포즈 UDP 스트림까지
+    // 같은 네트워크를 타면서 공유기 부하나 순간 간섭으로 몇 초씩 지연되는 경우가 흔하다.
+    // 5초는 그런 정상적인 혼잡까지 "끊김"으로 오판해서 불필요하게 재연결을 유발했다(실측
+    // 확인된 불안정성의 한 원인) - 실제 끊김은 대부분 몇 초가 아니라 훨씬 오래 지속되므로
+    // 여유를 넉넉히 둬도 진짜 끊김 감지가 느려지는 체감은 거의 없다.
+    private const float HeartbeatTimeoutSeconds = 12f;
 
     private void Awake()
     {
