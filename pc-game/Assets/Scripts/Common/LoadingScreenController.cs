@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -74,6 +73,9 @@ public sealed class LoadingScreenController : MonoBehaviour
     // 이 ack을 받기 전까지는 IsReady를 true로 올리지 않는다.
     private bool _clientAcked; // 호스트: 이번 라운드에 클라이언트의 ack을 받았는지
     private bool _ackSentThisRound; // 클라이언트: 이번 라운드에 ack을 이미 보냈는지
+    // 실측 디버깅용 - 각 상태 전환을 라운드당 한 번만 로그로 남긴다(Update()의 로그 참고).
+    private bool _hostLocallyReadyLogged;
+    private bool _finalReadyLogged;
 
     private void Awake()
     {
@@ -89,18 +91,38 @@ public sealed class LoadingScreenController : MonoBehaviour
         NetworkSession net = NetworkSession.Instance;
         if (net == null) return;
         net.Subscribe("loading_status", OnNetStatus);
+        net.Subscribe("loading_preview", OnNetPreview);
         net.Subscribe("loading_client_ack", OnNetClientAck);
         _subscribed = true;
     }
 
     private void OnNetStatus(NetworkEvent evt) => _relayedStatus = NetworkSession.Read<StatusPayload>(evt);
 
-    private void OnNetClientAck(NetworkEvent evt) => _clientAcked = true;
+    private void OnNetPreview(NetworkEvent evt)
+    {
+        PreviewPayload payload = NetworkSession.Read<PreviewPayload>(evt);
+        if (string.IsNullOrEmpty(payload.jpegBase64)) return;
+        try
+        {
+            CameraPreviewReceiver.Instance?.ApplyRelayedFrame(payload.player, Convert.FromBase64String(payload.jpegBase64));
+        }
+        catch (FormatException e)
+        {
+            Debug.LogWarning($"[LoadingScreen] 중계 프리뷰 디코딩 실패: {e.Message}");
+        }
+    }
 
-    // 호스트: 자기가 받은 상태를 클라이언트로 내보낸다. 카메라 프리뷰는 여기서 같이
-    // 보내지 않는다 - CameraPreviewReceiver.ForwardRelayFrame이 별도 UDP로 직접 전달한다
-    // (게임 이벤트용 TCP 채널과 분리해서 큰 JPEG 전송이 하트비트/점수 이벤트를 지연시키지
-    // 않게 하기 위함).
+    private void OnNetClientAck(NetworkEvent evt)
+    {
+        _clientAcked = true;
+        Debug.Log($"[LoadingScreen] 호스트: 클라이언트 ack 수신 (t={Time.unscaledTime:F2})");
+    }
+
+    // 호스트: 자기가 받은 상태/프리뷰를 클라이언트로 내보낸다.
+    // 프리뷰는 게임 이벤트(하트비트/점수)와 같은 TCP 채널을 쓴다 - 한때 별도 UDP로
+    // 직접 보내봤는데, 15~20KB짜리 JPEG가 IP 단편화되면서 와이파이에서 단편 하나만
+    // 유실돼도 프레임 전체가 통째로 버려져 클라이언트 화면이 거의 새까맣게 나오는 회귀가
+    // 있었다(실측 확인) - TCP는 재전송으로 이 문제가 없으므로 되돌렸다.
     private void BroadcastAsHost(NetworkSession net)
     {
         if (Time.unscaledTime - _lastStatusSentAt >= StatusSendInterval || _hostLocallyReady != _lastSentReady)
@@ -125,21 +147,16 @@ public sealed class LoadingScreenController : MonoBehaviour
             });
         }
 
-        // 프리뷰는 vision-server가 보낸 새 프레임이 있을 때만(기본 5fps) 중계하고, 클라이언트의
-        // CameraPreviewReceiver 포트로 UDP로 직접 보낸다.
-        CameraPreviewReceiver previewReceiver = CameraPreviewReceiver.Instance;
-        if (previewReceiver != null && previewReceiver.TryDequeueRelayFrame(out string player, out byte[] jpeg))
+        // 프리뷰는 vision-server가 보낸 새 프레임이 있을 때만(기본 5fps) 중계한다.
+        if (CameraPreviewReceiver.Instance != null &&
+            CameraPreviewReceiver.Instance.TryDequeueRelayFrame(out string player, out byte[] jpeg))
         {
-            IPEndPoint destination = ResolveClientPreviewEndpoint(net, previewReceiver.listenPort);
-            if (destination != null)
-                previewReceiver.ForwardRelayFrame(player, jpeg, destination);
+            net.Send("loading_preview", new PreviewPayload
+            {
+                player = player,
+                jpegBase64 = Convert.ToBase64String(jpeg),
+            });
         }
-    }
-
-    private static IPEndPoint ResolveClientPreviewEndpoint(NetworkSession net, int port)
-    {
-        if (string.IsNullOrEmpty(net.RemoteAddress)) return null;
-        return IPAddress.TryParse(net.RemoteAddress, out IPAddress address) ? new IPEndPoint(address, port) : null;
     }
 
     [Serializable]
@@ -150,6 +167,13 @@ public sealed class LoadingScreenController : MonoBehaviour
         public float p1Progress, p2Progress;
         public bool p1Preview, p2Preview;
         public bool ready;
+    }
+
+    [Serializable]
+    private class PreviewPayload
+    {
+        public string player;
+        public string jpegBase64;
     }
 
     [Serializable]
@@ -169,6 +193,8 @@ public sealed class LoadingScreenController : MonoBehaviour
         _hostLocallyReady = false;
         _clientAcked = false;
         _ackSentThisRound = false;
+        _hostLocallyReadyLogged = false;
+        _finalReadyLogged = false;
 
         Sprite[] backgrounds = _backgroundNames.Select(ArtAssets.LoadLoading)
             .Where(x => x != null).ToArray();
@@ -236,6 +262,7 @@ public sealed class LoadingScreenController : MonoBehaviour
             if (IsReady && !_ackSentThisRound)
             {
                 _ackSentThisRound = true;
+                Debug.Log($"[LoadingScreen] 클라이언트: 내 Show() 이후 {_elapsed:F2}초 만에 준비 완료 → ack 전송");
                 net.Send("loading_client_ack", new ClientAckPayload());
             }
         }
@@ -246,6 +273,12 @@ public sealed class LoadingScreenController : MonoBehaviour
                 && PlayerFullyReady(hub.Get(PlayerId.P1))
                 && PlayerFullyReady(hub.Get(PlayerId.P2));
             _hostLocallyReady = ready && _elapsed >= minimumDisplaySeconds;
+            if (_hostLocallyReady && !_hostLocallyReadyLogged)
+            {
+                _hostLocallyReadyLogged = true;
+                Debug.Log($"[LoadingScreen] 호스트: 내 Show() 이후 {_elapsed:F2}초 만에 로컬 판정 완료 " +
+                          $"(clientAcked={_clientAcked})");
+            }
 
             // 오프라인/솔로(상대가 없는 경우)는 확인할 클라이언트가 없으므로 곧장 통과.
             // 네트워크 호스트일 때만 클라이언트의 ack을 기다린다.
@@ -257,6 +290,15 @@ public sealed class LoadingScreenController : MonoBehaviour
         // 한 명만 켜고 씬 흐름을 확인할 때 로딩 화면에 영구히 갇히지 않게 하는 에디터 전용 우회.
         if (Keyboard.current?.enterKey.wasPressedThisFrame == true) IsReady = true;
 #endif
+        // 실측 디버깅용 - 호스트/클라이언트 콘솔의 이 타임스탬프를 나란히 비교하면 동시
+        // 시작이 실제로 어디서 어긋나는지(호스트 판정이 느린지, 네트워크 전달이 느린지,
+        // ack이 늦는지) 바로 알 수 있다.
+        if (IsReady && !_finalReadyLogged)
+        {
+            _finalReadyLogged = true;
+            string role = net != null ? net.Role.ToString() : "Offline";
+            Debug.Log($"[LoadingScreen] IsReady=true, 로딩 화면 닫힘 (내 Show() 이후 {_elapsed:F2}초, role={role})");
+        }
         if (IsReady)
             _message.text = "두 플레이어 준비 완료!";
 
