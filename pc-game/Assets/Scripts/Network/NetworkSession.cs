@@ -124,22 +124,28 @@ public sealed class NetworkSession : MonoBehaviour
         HadSuccessfulConnection = false;
     }
 
-    // NetworkReconnectOverlay가 주기적으로 호출. 호스트는 할 일이 없다 -
-    // GameEventChannel.AcceptLoop는 클라이언트가 끊겨도 계속 살아서 다음 accept를
-    // 기다리고 있으므로(AttachClient가 ReadLoop에서 블록되다 끊기면 while로 돌아와
-    // 다시 AcceptTcpClient를 부른다), 클라이언트가 재접속하면 HandleChannelConnected가
-    // 저절로 다시 불린다. 여기서 StartHost()를 또 부르면 이미 잘 대기 중인 리스너를
-    // Shutdown()으로 닫아버렸다가 새로 여는 꼴이라, 하필 클라이언트가 재접속을 시도하는
-    // 순간과 겹치면 그 시도를 놓칠 수 있다. 클라이언트만 능동적으로 재접속해야 한다 -
-    // 클라이언트의 접속 시도는 실패/끊김 후 자동으로 재시도되지 않기 때문.
+    // NetworkReconnectOverlay가 주기적으로 호출.
+    //
+    // 예전엔 "호스트는 AcceptLoop가 계속 살아서 기다리고 있으니 아무것도 안 해도 된다"고
+    // 생각했는데, 틀렸다 - 클라이언트가 정상적으로 접속을 끊는 경우에만 그렇고, 하트비트
+    // 타임아웃(케이블이 뽑히는 등 정상 종료 신호 없이 끊기는 경우)은 호스트 자신의
+    // Update()에서도 똑같이 걸려서 Shutdown()이 불린다 - 이게 GameEventChannel.Stop()의
+    // _listener.Stop()까지 닫아버려서 AcceptLoop 자체가 완전히 끝나버린다. 그러면 클라이언트가
+    // 아무리 재접속을 시도해도 받아줄 리스너가 없어서 영원히 실패한다 - 그래서 호스트도
+    // 리스너가 죽어 있으면 다시 StartHost()로 열어줘야 한다.
     public bool TryReconnect()
     {
-        if (LastRole == NetworkRole.Client && !string.IsNullOrEmpty(LastHostAddress))
+        switch (LastRole)
         {
-            StartClient(LastHostAddress);
-            return true;
+            case NetworkRole.Host:
+                StartHost();
+                return true;
+            case NetworkRole.Client when !string.IsNullOrEmpty(LastHostAddress):
+                StartClient(LastHostAddress);
+                return true;
+            default:
+                return false;
         }
-        return false;
     }
 
     private void HandleChannelConnected()
