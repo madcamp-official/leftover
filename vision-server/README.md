@@ -134,3 +134,24 @@ python main.py --pc-ip 127.0.0.1
 
 소리지르기까지 함께 테스트할 때만 기존 명령 끝에 `--voice`를 붙인다. 같은 Python 프로세스가
 카메라와 시스템 기본 마이크를 함께 처리하므로 별도 음성 프로세스를 켤 필요가 없다.
+
+## 실행파일로 패키징 (배포_아키텍처_설계.md 1장)
+
+Unity 게임이 이 vision-server를 자동으로 켜고 끄는 백그라운드 프로세스로 쓰려면, 먼저
+PyInstaller로 얼려서 실행파일(폴더)로 만들어야 한다(`VisionServerLauncher.cs`가 이 결과물을
+찾아서 실행함). **PyInstaller는 크로스 컴파일이 안 된다** - macOS에서 빌드한 결과물은
+Windows에서 못 돌고 그 반대도 마찬가지라, OS별로 그 OS에서 직접 빌드해야 한다.
+
+- **macOS**: `python3 -m venv .venv && source .venv/bin/activate && pip install -r
+  requirements.txt pyinstaller && pyinstaller vision-server.spec --noconfirm --clean`
+- **Windows**: `build_windows.bat`을 더블클릭 (Python 3.9+ 필요, 나머지는 자동)
+
+두 경우 모두 `dist/vision-server/`(Windows는 `vision-server.exe`, macOS는 `vision-server`)가
+생기면 성공 - `--check-models`로 카메라 없이 모델 로딩만 빠르게 검증할 수 있다. 그 다음 Unity
+Editor에서 `Tools > UGAUGA > Build Dev Player (macOS)` 또는 `(Windows)`를 실행하면 이 폴더를
+빌드 결과물에 자동으로 동봉한다(`pc-game/Assets/Editor/DevBuildTools.cs`) - vision-server를
+따로 배포할 필요 없이 Unity 빌드 하나(macOS는 `Build Dev Player + DMG`로 dmg까지)에 다 들어간다.
+
+같은 리포를 그대로 갖고 있다면 vision-server.spec은 그대로 재사용 가능 - `models/*.task`
+동봉과 mediapipe 네이티브 라이브러리(`mediapipe.tasks.c`, OS별로 자동 분기) 문제를 이미
+해결해뒀다.

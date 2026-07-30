@@ -119,9 +119,12 @@ Unity 구조와 편집 위치는 [pc-game/README.md](pc-game/README.md), Python 
 팀원이 그대로 복사할 P1/P2 명령은
 [docs/멀티플레이_실행_명령어.md](docs/멀티플레이_실행_명령어.md)에 별도로 정리되어 있습니다.
 
+배포용 실행파일(macOS dmg / Windows 폴더)을 만드는 방법은
+[docs/빌드_가이드.md](docs/빌드_가이드.md)를 참고하세요.
+
 ## 현재 확인할 사항
 
-- `FeatherFlight`의 호스트/클라이언트 이벤트 동기화와 실제 2대 PC 플레이 검증
 - 장시간 TCP/UDP 운용 시 지연·재접속·프레임 중계 부하 측정
-- MediaPipe Python 프로세스를 Unity 실행파일과 함께 배포하는 패키징
+- Windows에서 배포용 실행파일 빌드 실측(구조는 준비됨, [docs/빌드_가이드.md](docs/빌드_가이드.md)
+  2장 참고) — macOS는 dmg까지 실측 완료
 - 발표 환경의 카메라 거리·조명·마이크에 맞춘 임계값 최종 튜닝

@@ -38,4 +38,17 @@ public static class GameBootstrap
             go.AddComponent<NetworkSession>();
         }
     }
+
+    // 미니게임 씬 단독 실행 시엔 일부러 안 만든다 - 실제 카메라를 켜는 무거운 서브프로세스라,
+    // DebugPoseController/PoseSimulator로 카메라 없이 빠르게 반복 테스트하는 기존 개발
+    // 워크플로를 방해하면 안 된다(Assets/Scripts/Common/README.md 참고). Hub에서 역할이
+    // 실제로 정해질 때만(HubController) 명시적으로 호출한다.
+    public static void EnsureVisionServerLauncher()
+    {
+        if (VisionServerLauncher.Instance == null)
+        {
+            var go = new GameObject("VisionServerLauncher");
+            go.AddComponent<VisionServerLauncher>();
+        }
+    }
 }
