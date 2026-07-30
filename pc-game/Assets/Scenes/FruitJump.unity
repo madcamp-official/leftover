@@ -1339,7 +1339,7 @@ MonoBehaviour:
   minScoreBounceSeconds: 0.2
   maxScoreBounceSeconds: 1.2
   characterFrameWidth: 1.2
-  debugP1OnlyTest: 1
+  debugP1OnlyTest: 0
   debugTierKeys: 1
   p1Anchor: {fileID: 1589824683}
   p2Anchor: {fileID: 1006001092}
