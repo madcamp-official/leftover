@@ -5,6 +5,10 @@ venv/
 .DS_Store
 .claude/
 
+# vision-server PyInstaller 산출물 (재생성 가능, 용량 큼)
+vision-server/build/
+vision-server/dist/
+
 # Unity
 Library/
 Temp/

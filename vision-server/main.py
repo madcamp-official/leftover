@@ -42,6 +42,7 @@ import json
 import math
 import pathlib
 import socket
+import sys
 import time
 
 import cv2
@@ -56,8 +57,17 @@ except ImportError:
     np = None
     sd = None
 
-POSE_MODEL_PATH = pathlib.Path(__file__).parent / "models" / "pose_landmarker_lite.task"
-FACE_MODEL_PATH = pathlib.Path(__file__).parent / "models" / "face_landmarker.task"
+def _resource_dir() -> pathlib.Path:
+    # PyInstaller로 얼려서 배포_아키텍처_설계.md 방식대로 번들링하면 __file__ 기준 상대
+    # 경로가 더 이상 소스 트리를 가리키지 않는다 - sys._MEIPASS(onedir 빌드에서는 실행
+    # 파일 옆 _internal 폴더)가 번들된 데이터 파일의 실제 위치.
+    if getattr(sys, "frozen", False):
+        return pathlib.Path(sys._MEIPASS)
+    return pathlib.Path(__file__).parent
+
+
+POSE_MODEL_PATH = _resource_dir() / "models" / "pose_landmarker_lite.task"
+FACE_MODEL_PATH = _resource_dir() / "models" / "face_landmarker.task"
 
 # PoseLandmark 인덱스 (BlazePose 33 keypoints 중 이번 게임에 쓰는 13개만)
 _NOSE = 0
@@ -384,6 +394,13 @@ def main():
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--show", action="store_true", default=True, help="디버그용 카메라 창 표시")
     parser.add_argument(
+        "--no-show", action="store_true",
+        help="디버그용 카메라 창을 띄우지 않는다 - Unity가 게임 실행파일에 번들링해서 자동으로"
+             " 이 프로세스를 백그라운드로 켤 때 쓴다(배포_아키텍처_설계.md). 이 경우 cv2 창의"
+             " 'q' 키 종료도 같이 꺼지므로, 부모 프로세스(Unity)가 직접 이 프로세스를 종료시켜야"
+             " 한다 - 수동 터미널 실행 중에는 계속 --show 기본값(창 표시)을 쓰면 된다.",
+    )
+    parser.add_argument(
         "--no-preview", action="store_true",
         help="Unity 로딩 화면용 저해상도 카메라 미리보기 전송을 끕니다.",
     )
@@ -416,14 +433,28 @@ def main():
         "--list-audio-devices", action="store_true",
         help="사용 가능한 마이크 번호를 출력하고 종료한다.",
     )
+    parser.add_argument(
+        "--check-models", action="store_true",
+        help="카메라/소켓 없이 포즈/얼굴 모델만 로드해보고 성공 여부를 출력한 뒤 종료한다 -"
+             " PyInstaller 번들에 models/*.task가 제대로 포함됐는지 확인하는 용도.",
+    )
     parser.add_argument("--voice-min-db", type=float, default=-35.0, help="이 dB 이하는 voice.level=0으로 클램프")
     parser.add_argument("--voice-max-db", type=float, default=0.0, help="이 dB 이상은 voice.level=1(100%%)로 클램프")
     args = parser.parse_args()
+    show_window = args.show and not args.no_show
 
     if args.list_audio_devices:
         if sd is None:
             raise RuntimeError("sounddevice가 설치되어 있지 않습니다.")
         print(sd.query_devices())
+        return
+
+    if args.check_models:
+        print(f"[check-models] resource_dir = {_resource_dir()}")
+        load_pose_landmarker()
+        print(f"[check-models] pose OK: {POSE_MODEL_PATH}")
+        face = load_face_landmarker()
+        print(f"[check-models] face {'OK' if face else 'MISSING (경고만, 계속 동작 가능)'}: {FACE_MODEL_PATH}")
         return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -461,7 +492,7 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    if args.show:
+    if show_window:
         cv2.namedWindow("vision-server", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("vision-server", 1280, 720)
 
@@ -536,7 +567,7 @@ def main():
             for player in players:
                 jump_trackers[player["id"]].update(player["pose"], now)
 
-            if args.show:
+            if show_window:
                 h, w = frame.shape[:2]
                 for player in players:
                     color = (0, 120, 255) if player["id"] == "p1" else (255, 120, 0)
