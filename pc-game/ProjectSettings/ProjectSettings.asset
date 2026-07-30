@@ -149,7 +149,8 @@ PlayerSettings:
   visionOSBundleVersion: 1.0
   tvOSBundleVersion: 1.0
   bundleVersion: 1.0
-  preloadedAssets: []
+  preloadedAssets:
+  - {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   xboxOneDisableKinectGpuReservation: 1
@@ -391,7 +392,10 @@ PlayerSettings:
       m_Height: 36
       m_Kind: 0
       m_SubKind: 
-  m_BuildTargetBatching: []
+  m_BuildTargetBatching:
+  - m_BuildTarget: Standalone
+    m_StaticBatching: 1
+    m_DynamicBatching: 0
   m_BuildTargetShaderSettings: []
   m_BuildTargetGraphicsJobs: []
   m_BuildTargetGraphicsJobMode: []
@@ -419,9 +423,13 @@ PlayerSettings:
   enableInternalProfiler: 0
   logObjCUncaughtExceptions: 1
   enableCrashReportAPI: 0
-  cameraUsageDescription: 
+  cameraUsageDescription: "\uC6B0\uAC00\uC6B0\uAC00 \uAC8C\uC784\uC774 \uCE74\uBA54\uB77C\uB85C
+    \uD50C\uB808\uC774\uC5B4\uC758 \uB3D9\uC791\uC744 \uC778\uC2DD\uD558\uAE30 \uC704\uD574
+    \uC0AC\uC6A9\uD569\uB2C8\uB2E4."
   locationUsageDescription: 
-  microphoneUsageDescription: 
+  microphoneUsageDescription: "\uC6B0\uAC00\uC6B0\uAC00 \uAC8C\uC784\uC774 \uC77C\uBD80
+    \uBBF8\uB2C8\uAC8C\uC784\uC5D0\uC11C \uB9C8\uC774\uD06C \uC74C\uB7C9\uC744 \uC778\uC2DD\uD558\uAE30
+    \uC704\uD574 \uC0AC\uC6A9\uD569\uB2C8\uB2E4."
   bluetoothUsageDescription: 
   macOSTargetOSVersion: 12.0
   switchNMETAOverride: 
