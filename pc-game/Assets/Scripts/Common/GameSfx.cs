@@ -13,6 +13,10 @@ public static class GameSfx
     private static readonly Dictionary<string, AudibleRange> LoudestRanges = new();
     private static readonly HashSet<string> MissingClips = new();
 
+    // 설정 화면의 효과음 볼륨 슬라이더가 곱하는 전역 배율. 게임별 개별 볼륨(Play의 volume
+    // 인자)과는 별개로 항상 곱해진다 - PlayerPrefs 로드/저장은 SettingsScreen이 담당한다.
+    public static float Volume { get; set; } = 1f;
+
     public static void Play(string clipName, float volume = 1f, float maxDuration = 0f)
     {
         AudioClip clip = Load(clipName);
@@ -22,7 +26,7 @@ public static class GameSfx
         var source = player.AddComponent<AudioSource>();
         source.playOnAwake = false;
         source.spatialBlend = 0f;
-        source.volume = Mathf.Clamp01(volume);
+        source.volume = Mathf.Clamp01(volume) * Mathf.Clamp01(Volume);
         source.clip = clip;
         AudibleRange range = FindAudibleRange(clipName, clip);
         if (maxDuration > 0f && maxDuration < range.Duration)

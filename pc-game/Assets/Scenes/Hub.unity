@@ -755,43 +755,83 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchorMax.x
       value: 0.5
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0.5
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchorMin.x
       value: 0.5
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchorMin.y
       value: 0.5
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_LocalScale.x
       value: 0.8
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_LocalScale.y
       value: 0.8
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_LocalScale.z
       value: 0.8
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: -418.80432
+      value: -558.80432
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_AnchoredPosition.y
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 8488225567300400062, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+    - target: {fileID: 9200000000000000102, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.8
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.8
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.8
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -278.80432
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9200000000000000202, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
@@ -841,9 +881,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
   m_Name:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
---- !u!114 &370992595 stripped
+--- !u!114 &370992597 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5513385542164154229, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+  m_CorrespondingSourceObject: {fileID: 9200000000000000105, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
+  m_PrefabInstance: {fileID: 370992590}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Button
+--- !u!114 &370992598 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 9200000000000000205, guid: 1307f1072669e44a6b7b911ec17f1a01, type: 3}
   m_PrefabInstance: {fileID: 370992590}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
@@ -1505,7 +1556,8 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::HubController
   startScreenCanvas: {fileID: 370992591}
-  gameStartButton: {fileID: 370992595}
+  buttonPlay2P: {fileID: 370992597}
+  buttonPlay1P: {fileID: 370992598}
   howToPlayButton: {fileID: 370992594}
   settingsButton: {fileID: 370992593}
   exitButton: {fileID: 370992592}
