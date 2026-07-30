@@ -1,51 +1,124 @@
-# leftover
+# 우가우가게임 (Uga Uga Game)
 
-몰입캠프 26s-w4-c2-07 프로젝트 repository
+두 사람이 각자 카메라 앞에서 몸을 움직여 겨루는 1:1 카툰 파티 게임입니다. Python
+`vision-server`가 MediaPipe로 포즈·표정과 마이크 음량을 읽어 Unity 2D 게임에 전달하고,
+Unity가 7개 미니게임의 판정·연출·점수·화면 전환을 담당합니다.
 
-**우가우가게임** — 두 사람이 각자 카메라 앞에서 MediaPipe로 몸짓을 인식하고, 원시인
-캐릭터로 7개 미니게임(돌던지기, 점프해서 과일따기, 머리로 코코넛 깨기, 돌 or 바나나,
-눈빛싸움, 소리지르기, 깃털날기)에서 1:1로 겨루는 파티 게임. `MatchController.RoundScenes`
-순서대로 7판을 진행한다. 기획: [docs/우가우가게임_기획_프롬프트.md](docs/우가우가게임_기획_프롬프트.md)
->
-> 원래 있던 **자세따라하기(PoseCopy)는 구현 난이도 문제로 폐기했다** — 관련 코드/씬/에셋/
-> 문서를 전부 정리했고, 옛 구현은 그 시점 이전 브랜치 히스토리에만 남아있다.
+현재 구현 기준일은 **2026-07-30**입니다. 프로젝트가 바뀐 과정과 주요 파일의 추가·삭제 내역은
+[DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)에 날짜와 커밋 시간별로 정리했습니다.
 
-> 처음엔 웹캠 한 대 앞에 두 사람이 같이 서는 구조였는데, 실측 결과 두 사람이 붙어 있으면
-> 인식이 한쪽만 되는 문제가 확인돼 **플레이어 1명당 카메라 1대(온라인 모드)** 로 바꿨다.
-> Unity 자체는 한 PC에서만 실행되고 두 사람이 그 화면을 같이 본다 — 자세한 배경/실행법은
-> [vision-server/README.md](vision-server/README.md) "실행 모드" 참고.
+## 게임 구성
 
-시작 가이드: [docs/게임_구동방식_정리.md](docs/게임_구동방식_정리.md)
+`MatchController.RoundScenes`에 등록된 실제 진행 순서입니다.
 
-Unity 화면과 캐릭터를 직접 다듬는 법은 [pc-game/README.md](pc-game/README.md) "에디터에서
-화면 편집" 참고.
+| 순서 | 씬 | 게임 | 주 입력 |
+|---:|---|---|---|
+| 1 | `StoneThrow` | 돌던지기 | 손 들기 |
+| 2 | `FruitJump` | 점프해서 과일 따기 | 몸통 높이·입 벌림 |
+| 3 | `CoconutCrack` | 머리로 코코넛 깨기 | 손-머리 거리와 왕복 동작 |
+| 4 | `StoneOrBanana` | 돌 or 바나나 | 손 들기·머리 기울기·입 벌림 |
+| 5 | `StaringContest` | 눈빛싸움 | 눈 감김 비율 |
+| 6 | `ScreamDuel` | 소리지르기 | 마이크 음량 |
+| 7 | `FeatherFlight` | 깃털날기 | 양손 들기의 상승 에지 |
 
-이 게임은 같은 공간에서 마주 보고 즐기는 1:1 대면 플레이가 강점이라, **인터넷 배포 대신
-LAN(같은 와이파이) 전용으로 방향을 잡았다** — 서버 없이 실행파일 하나로 두 사람이 같은
-와이파이에서 바로 붙는 목표 아키텍처는
-[docs/배포_아키텍처_설계.md](docs/배포_아키텍처_설계.md)(설계 단계, 미구현) 참고.
+초기 기획의 `PoseCopy`(자세 따라하기)와 그 이전의 3D 검투 프로토타입은 폐기되어 현재
+코드·씬·에셋에 포함되지 않습니다.
 
-> 이전에 있던 3D 검투 게임 컨셉과 관련 코드/에셋/기획서는 전부 정리했다 — 그 작업은
-> `feature/duel-polish-round3` 등 기존 브랜치 히스토리에 남아있지만, 이 방향으로는 더 이상
-> 진행하지 않는다.
+## 실행 구조
 
-## 폴더 구조 및 분업
+```text
+P1 카메라/마이크 ─ vision-server --player-id p1 ─┐
+                                                   ├─ UDP 9100/9101 ─> 호스트 Unity
+P2 카메라/마이크 ─ vision-server --player-id p2 ─┘                         │
+                                                                            └─ TCP 9200 ─> 클라이언트 Unity
+```
 
-| 폴더 | 내용 | 담당 |
-|---|---|---|
-| [`vision-server/`](vision-server/) | 카메라로 포즈+표정을 인식해서 UDP로 연속 스트리밍하는 Python 프로세스(플레이어별로 1대씩 실행) | **입력팀** |
-| [`pc-game/Assets/Scripts/Common/`](pc-game/Assets/Scripts/Common/) | UDP 스트림을 받아 정리된 API로 노출하는 공용 계층(`PoseInputHub` 등) - 게임팀이 참조하는 계약 | **입력팀** |
-| [`pc-game/Assets/Scripts/GameFlow/`](pc-game/Assets/Scripts/GameFlow/) | 6판 진행/점수 관리 (`MatchController`, `HubController`) | 공용 |
-| [`pc-game/Assets/Scripts/Minigames/`](pc-game/Assets/Scripts/Minigames/) | 판정·연출·HUD가 구현된 미니게임 6종. 정적 화면 오브젝트는 씬/프리팹에서 직접 편집 가능 | **게임팀** |
-| [`shared/PROTOCOL.md`](shared/PROTOCOL.md) | 두 팀이 합의하는 통신 규약 - 이거 하나만 지키면 서로 독립적으로 작업 가능 | 공용 |
+- 포즈·얼굴·음량은 UDP `9100`, 로딩 화면의 카메라 JPEG 미리보기는 UDP `9101`을 사용합니다.
+- LAN 2인 모드에서는 양쪽 `vision-server`가 모두 **호스트 Unity의 IP**로 전송합니다.
+- 호스트 Unity가 판정과 라운드 진행을 담당하고 TCP `9200`으로 클라이언트 Unity에 게임
+  이벤트와 로딩 상태를 전달합니다.
+- `StoneThrow`, `FruitJump`, `CoconutCrack`, `StoneOrBanana`, `StaringContest`,
+  `ScreamDuel`에는 호스트/클라이언트 이벤트 처리가 연결되어 있습니다.
+- `FeatherFlight`는 현재 로컬 판정만 구현되어 있어 2대 Unity 실기 동기화가 남아 있습니다.
+- Hub에서 네트워크 연결 없이 실행하거나 `혼자하기`를 선택하는 개발·솔로 모드도 지원합니다.
 
-**분업 원칙**: 입력팀은 `PoseInputHub`의 public API(어떤 값을 어떻게 노출할지)까지만 책임지고,
-게임팀은 그 API를 소비하는 쪽만 작업한다. vision-server가 아직 안 켜져 있어도
-`PoseInputHub.Instance.ApplyFrame(...)`에 직접 가짜 데이터를 넣어보면 미니게임을 독립적으로
-테스트할 수 있으므로, 두 팀이 서로를 기다릴 필요 없이 동시에 진행 가능하다.
+프로토콜 세부 내용은 [shared/PROTOCOL.md](shared/PROTOCOL.md), Unity 네트워크 설계와 남은
+검증 항목은 [docs/멀티플레이_분산_아키텍처_설계.md](docs/멀티플레이_분산_아키텍처_설계.md)를
+참고하세요.
 
-## 실행
+## 빠른 시작
 
-1. `vision-server/README.md`대로, 두 사람이 각자 PC에서 Python 서버 실행
-   (`python main.py --pc-ip <Unity PC의 LAN IP> --player-id p1` / `p2`)
-2. Unity PC에서 `Hub` 씬을 열고 Play — 두 사람이 그 화면을 같이 보면서 플레이
+### 1. vision-server 준비
+
+Windows PowerShell 기준입니다. P1·P2 PC에서 각각 한 번씩 준비합니다.
+
+```powershell
+cd vision-server
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+`vision-server/models/pose_landmarker_lite.task`와 `face_landmarker.task`가 필요합니다.
+얼굴 모델이 없으면 포즈는 동작하지만 눈빛싸움·입 동작 판정이 정상 작동하지 않습니다.
+
+### 2. 카메라와 마이크 실행
+
+전체 매치에는 소리지르기가 포함되므로 `--voice`를 붙입니다.
+
+```powershell
+# P1 PC
+.\.venv\Scripts\python.exe main.py --pc-ip <호스트_Unity_IP> --player-id p1 --voice
+
+# P2 PC
+.\.venv\Scripts\python.exe main.py --pc-ip <호스트_Unity_IP> --player-id p2 --voice
+```
+
+호스트 PC에서 P1을 함께 실행한다면 `<호스트_Unity_IP>` 대신 `127.0.0.1`도 사용할 수
+있습니다. 옵션 입력을 안내받으려면 `python run_team_test.py`를 실행합니다.
+
+### 3. Unity 실행
+
+1. Unity `6000.5.5f1`로 [`pc-game`](pc-game/)을 엽니다.
+2. 두 PC에서 플레이한다면 양쪽 모두 `Assets/Scenes/Hub.unity`를 실행합니다.
+3. 한쪽에서 `호스트로 시작`, 다른 쪽에서 호스트 IP를 입력해 `접속`합니다.
+4. 호스트에서 게임을 시작합니다. 씬 사이 로딩 화면에서 랜덤 배경·팁·카메라 미리보기와
+   신체 캘리브레이션이 진행됩니다.
+
+방화벽에서 호스트 PC의 UDP `9100`, UDP `9101`, TCP `9200`을 허용해야 할 수 있습니다.
+
+## 저장소 구조
+
+| 경로 | 역할 |
+|---|---|
+| [`pc-game/`](pc-game/) | Unity 2D 본게임, 7개 씬, 게임 흐름, 네트워크, UI, SFX/BGM |
+| [`vision-server/`](vision-server/) | MediaPipe 포즈·얼굴 인식과 선택적 마이크 캡처 |
+| [`image/`](image/) | 캐릭터·게임·화면별 원본 PNG 제작 보관소 |
+| [`audio/`](audio/) | 효과음과 BGM 원본 |
+| [`docs/`](docs/) | 기획, 미니게임 규칙, UI·배포·멀티플레이 설계 |
+| [`shared/PROTOCOL.md`](shared/PROTOCOL.md) | Python → Unity UDP 데이터 계약 |
+
+Unity에서 실제로 읽는 런타임 에셋은 주로 `pc-game/Assets/Resources/`에 있습니다. `image/`와
+`audio/`는 제작 원본이므로 원본을 바꾼 뒤 Unity용 파일도 함께 반영해야 합니다.
+
+## 핵심 코드
+
+| 코드 | 책임 |
+|---|---|
+| `PoseInputHub.cs` | P1/P2 포즈·얼굴·음량 상태의 공용 API |
+| `PoseStreamReceiver.cs` | UDP 9100 JSON 수신 |
+| `CameraPreviewReceiver.cs` | UDP 9101 프리뷰 수신·중계 프레임 반영 |
+| `MatchController.cs` | 7라운드 순서, 승패 누적, 씬 전환 |
+| `NetworkSession.cs` / `GameEventChannel.cs` | LAN 호스트·클라이언트와 TCP 9200 이벤트 |
+| `LoadingScreenController.cs` | 랜덤 배경·팁·준비 상태·캘리브레이션 |
+| `GameSfx.cs` / `GameBgm.cs` | 미니게임 효과음과 씬별 루프 BGM |
+
+Unity 구조와 편집 위치는 [pc-game/README.md](pc-game/README.md), Python 옵션과 모델 설치는
+[vision-server/README.md](vision-server/README.md), 원본 이미지 규칙은
+[image/README.md](image/README.md)를 참고하세요.
+
+## 현재 확인할 사항
+
+- `FeatherFlight`의 호스트/클라이언트 이벤트 동기화와 실제 2대 PC 플레이 검증
+- 장시간 TCP/UDP 운용 시 지연·재접속·프레임 중계 부하 측정
+- MediaPipe Python 프로세스를 Unity 실행파일과 함께 배포하는 패키징
+- 발표 환경의 카메라 거리·조명·마이크에 맞춘 임계값 최종 튜닝

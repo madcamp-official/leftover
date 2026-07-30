@@ -17,6 +17,8 @@
 
 - 로딩 배경은 새로 복제하지 않고 `image/screens/loading/`의 기존 배경 중 하나를 매번 랜덤으로
   선택한다.
+- Unity에서 실제 레이아웃을 편집할 때는 별도 씬을 찾지 말고
+  `pc-game/Assets/Resources/Loading/LoadingScreenCanvas.prefab`을 Prefab Mode로 연다.
 - 로딩 링은 PNG 프레임 교체가 아니라 `loading_ring.png` 하나를 Unity에서 회전시킨다.
 - 안내문, 팁, 본인/상대 상태 문구는 베이스 PNG에 굽지 않고 TextMeshPro로 표시한다.
 - `status_badge_base.png`의 원형 슬롯에는 `status_icon_loading.png` 또는

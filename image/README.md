@@ -1,53 +1,71 @@
 # 이미지 에셋 구조
 
-`image/`는 제작·수정에 사용하는 원본 PNG 보관소다. Unity에서 실제로 읽는 파일은
-`pc-game/Assets/Resources/`에 별도로 복사되어 있으므로, 원본을 갱신한 뒤 필요한 에셋만
-Resources 쪽에 반영한다.
+`image/`는 제작·수정용 원본 PNG 보관소입니다. Unity가 런타임에 읽는 복사본은
+`pc-game/Assets/Resources/`에 있으므로, 원본 수정 뒤 Unity용 파일도 함께 갱신해야 합니다.
 
 ## 폴더 구성
 
 ```text
 image/
 ├── characters/
-│   ├── character1/{front,back,faces}/
-│   └── character2/{front,back,faces}/
+│   ├── character1/
+│   │   ├── common/{idle,jump}/
+│   │   ├── games/{01_stone_throw,02_coconut_smash,04_eye_fight,
+│   │   │          05_stone_or_banana,07_scream_duel,08_feather_flight}/
+│   │   ├── joints/{front,back}/
+│   │   └── reference/
+│   └── character2/                  character1과 같은 기준
 ├── common/
 │   ├── props/
-│   └── ui/{hud,game_icons,match_results}/
+│   └── ui/{hud,loading}/
 ├── games/
-│   ├── fruit_jump/{background,hud,previews}/
-│   ├── coconut_break/{background,hud,previews,props}/
-│   ├── staring_contest/{background,effects,hud,previews,ui}/
-│   ├── stone_or_banana/{background,covers,hud,icons,ui,previews}/
-│   └── stone_throw/{background,hud,previews}/
+│   ├── stone_throw/
+│   ├── fruit_jump/
+│   ├── coconut_break/
+│   ├── stone_or_banana/
+│   ├── staring_contest/
+│   ├── scream_duel/
+│   └── feather_flight/
 └── screens/
-    └── start/{background,buttons,logo,previews}/
+    ├── start/
+    ├── loading/
+    ├── multiplayer/
+    ├── howto/
+    ├── settings/
+    └── result/
 ```
 
 ## 사용 규칙
 
-- 캐릭터 파츠 파일명은 캐릭터 폴더 안에서 동일하게 유지한다. 예: `front/head.png`,
-  `back/right_lower_leg_foot.png`.
-- 모든 게임에서 사용하는 남은 시간판은 `common/ui/hud/time_remaining.png` 하나만 사용한다.
-- 6게임 공통 승패판과 O/X/무승부 표시는 `common/ui/match_results/`에 둔다.
-- 여러 게임에서 재사용하는 돌·바나나·코코넛·과일은 `common/props/`에 둔다.
-- 돌 or 바나나 게임은 공용 `stone.png`, `banana.png`, 남은 시간판, 6게임 승패판을
-  재사용하며 게임 전용 이빨·포만감 HUD와 턴 안내판만 `games/stone_or_banana/`에 둔다.
-- 돌 or 바나나 게임의 은폐 수풀은 배경에 합치지 않고 `covers/`의 투명 PNG를 사용한다.
-  Unity 정렬 순서는 `background → character → cover bush → UI`로 구성한다.
-- 돌 피격 및 바나나 섭취 표정은 각 캐릭터의 `faces/stone_hit_*.png`,
-  `faces/banana_chewing_puffed_cheeks.png`를 재사용한다.
-- 코코넛 깨기와 과일 점프의 게임 아이콘은 각각
-  `common/props/coconut_break_left.png`, `common/props/fruit_grapes.png`를 재사용한다.
-- `previews/` 이미지는 배치 참고용이며 Unity에서 직접 조립할 개별 에셋이 아니다.
-- 새 게임을 추가할 때는 `games/<game_name>/background`, `hud`, `previews` 구조를 따르고,
-  독립 장애물이나 소품이 필요하면 `obstacles` 또는 `props`를 추가한다.
-- Unity 안에서의 실제 위치/크기 변경은 각 씬의 `EditableLayout` 또는
-  `pc-game/Assets/Prefabs`에서 한다. 자세한 방법은 `pc-game/README.md` "에디터에서 화면 편집"
-  참고.
+- 두 캐릭터의 대응 프레임은 같은 폴더명과 번호 체계를 유지합니다.
+- 캐릭터 공통 기본 자세와 점프는 `characters/<character>/common/`에 둡니다.
+- 특정 게임에만 쓰는 표정·동작은 `characters/<character>/games/<game>/`에 둡니다.
+- 여러 게임이 함께 쓰는 돌·바나나·코코넛·과일은 `common/props/`에 둡니다.
+- 남은 시간판 같은 공용 HUD는 `common/ui/hud/`, 로딩 조립 에셋은
+  `common/ui/loading/`에 둡니다.
+- 게임 배경·HUD·환경 오브젝트는 `games/<game>/`에, 전체 화면 UI는
+  `screens/<screen>/`에 둡니다.
+- `previews/`와 `reference/`는 배치·생성 참고용이며 Unity 런타임 의존 대상으로 사용하지
+  않습니다.
+- 투명 PNG의 배경 제거 상태와 캐릭터 피벗을 확인한 뒤 Resources에 복사합니다.
+
+## Unity 반영 위치
+
+| 원본 종류 | Unity 위치 |
+|---|---|
+| 캐릭터 프레임 | `pc-game/Assets/Resources/Characters/` |
+| 게임 배경·HUD | `pc-game/Assets/Resources/<GameName>/` |
+| 로딩 화면 | `pc-game/Assets/Resources/Loading/` |
+| 시작·설정·결과 UI | `pc-game/Assets/Resources/UI/` |
+
+화면에서의 위치·크기는 PNG 자체가 아니라 각 씬의 `EditableLayout` 또는 프리팹에서
+조정합니다. 로딩 화면은 `pc-game/Assets/Resources/Loading/LoadingScreenCanvas.prefab`,
+시작 화면은 `pc-game/Assets/Prefabs/StartScreenCanvas.prefab`이 편집 기준입니다.
 
 ## 정리 원칙
 
-- 개별 PNG 파츠와 내용이 겹치는 스프라이트 시트는 보관하지 않는다.
-- AI 생성 원본이나 크로마키 작업 파일은 최종 에셋을 만든 뒤 저장소에서 제거한다.
-- 같은 기능의 UI는 게임 폴더마다 복사하지 않고 `common/ui/`에서 공유한다.
+- 최종 개별 프레임과 내용이 중복되는 스프라이트 시트·생성 중간물은 남기지 않습니다.
+- AI 생성 원본이나 크로마키 작업 파일은 최종 결과 검수 후 제거합니다.
+- 실제로 쓰지 않는 Resources 복사본도 함께 제거해 빌드 용량과 검색 혼선을 줄입니다.
+- 삭제 전 `rg`와 Unity 참조를 확인하고, 삭제 내역은 루트
+  [DEVELOPMENT_LOG.md](../DEVELOPMENT_LOG.md)에 기록합니다.

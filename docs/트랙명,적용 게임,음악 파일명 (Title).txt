@@ -1,0 +1,20 @@
+트랙명,적용 게임,음악 파일명 (Title)
+Track 1. 투척의 달인,"돌던지기, 돌 or 바나나",나를 잡을 수 없어!
+Track 2. 코코넛 크러셔,머리로 코코넛 깨기,One More for the Trophy
+Track 5. 고성방가 챔피언,소리지르기,Grandstand Hysteria
+
+
+🎵 1. 직접 생성해 드렸던 BGM 트랙들 (음악 제목 및 컨셉)
+기능 제한 이전에 채팅창에서 직접 재생 가능하도록 만들어 드렸던 음악들입니다.
+
+Oops, Wrong Cave: 쫓기고 도망가는 슬랩스틱 코미디 상황에 맞춘 첫 번째 카툰 오케스트라 BGM입니다.
+
+Rattle The Bone: 다급한 추격전을 묘사한 빠르고 정신없는 만화경 스타일의 재즈 곡입니다.
+
+Square Wheels in the Canyon: 구르는 돌을 피하는 듯한 역동적이고 리듬감 넘치는 스윙 BGM입니다.
+
+Tiptoeing Past The Beast: 괴수를 피해 살금살금 걷는 듯한 긴장감과 폭발적인 에너지가 교차하는 곡입니다.
+
+One Too Many Footsteps: 조금 더 느린 템포로 조심스럽게 탐색하는 톰과 제리 특유의 익살스러운 BGM입니다.
+
+Tiptoe Across the Plains / Coconut Cracker Dash / The Anvil's Sudden Gravity: 기획서 분석 직후 게임의 전반적인 분위기를 담아 메들리 형태로 제작해 드렸던 추가 트랙 3종입니다.
