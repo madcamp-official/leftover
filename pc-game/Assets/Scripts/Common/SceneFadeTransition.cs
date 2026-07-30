@@ -78,6 +78,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
         if (showLoadingScreen)
         {
+            GameBgm.PlayLoadingScreen();
             _loadingScreen.Show(sceneName);
             yield return FadeTo(0f, fadeInSeconds);
 
@@ -86,6 +87,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
             {
                 Debug.LogError($"[SceneTransition] 씬을 읽을 수 없습니다: {sceneName}");
                 _loadingScreen.Hide();
+                GameBgm.ResumeActiveScene();
                 _group.blocksRaycasts = false;
                 _isTransitioning = false;
                 yield break;

@@ -13,6 +13,8 @@ public sealed class GameBgm : MonoBehaviour
     private const string MusicVolumeKey = "settings.music.volume";
     private const float DefaultVolume = 0.35f;
     private const float FadeSeconds = 0.3f;
+    private const string LoadingTrack = "loading";
+    private const float LoadingTrackStartSeconds = 81f;
 
     private static readonly IReadOnlyDictionary<string, string> SceneTracks =
         new Dictionary<string, string>
@@ -98,6 +100,17 @@ public sealed class GameBgm : MonoBehaviour
 
     private void Start() => PlayForScene(SceneManager.GetActiveScene().name);
 
+    private void Update()
+    {
+        // 로딩곡은 1:21 이후 구간만 사용한다. AudioSource.loop를 켜면 곡이 끝난 뒤 0초로
+        // 돌아가므로, 로딩곡만 직접 1:21로 되돌려 같은 구간을 반복한다.
+        if (_currentTrack == LoadingTrack && _transition == null &&
+            _source.clip != null && !_source.isPlaying)
+        {
+            PlayCurrentClipFrom(LoadingTrackStartSeconds);
+        }
+    }
+
     private void OnDestroy()
     {
         if (_instance == this) _instance = null;
@@ -106,9 +119,25 @@ public sealed class GameBgm : MonoBehaviour
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => PlayForScene(scene.name);
 
+    public static void PlayLoadingScreen()
+    {
+        if (_instance == null) Bootstrap();
+        _instance.PlayTrack(LoadingTrack);
+    }
+
+    public static void ResumeActiveScene()
+    {
+        if (_instance == null) return;
+        _instance.PlayForScene(SceneManager.GetActiveScene().name);
+    }
+
     private void PlayForScene(string sceneName)
     {
-        string track = ResolveTrack(sceneName);
+        PlayTrack(ResolveTrack(sceneName));
+    }
+
+    private void PlayTrack(string track)
+    {
         if (_currentTrack == track && _source.clip != null && _source.isPlaying)
         {
             ApplyEnabledState();
@@ -162,8 +191,9 @@ public sealed class GameBgm : MonoBehaviour
         }
 
         _source.clip = clip;
+        _source.loop = track != LoadingTrack;
         _source.volume = 0f;
-        _source.Play();
+        PlayCurrentClipFrom(track == LoadingTrack ? LoadingTrackStartSeconds : 0f);
 
         float targetVolume = MusicEnabled ? MusicVolume : 0f;
         elapsed = 0f;
@@ -176,6 +206,15 @@ public sealed class GameBgm : MonoBehaviour
 
         _source.volume = targetVolume;
         _transition = null;
+    }
+
+    private void PlayCurrentClipFrom(float startSeconds)
+    {
+        if (_source.clip == null) return;
+
+        float safeStart = Mathf.Clamp(startSeconds, 0f, Mathf.Max(0f, _source.clip.length - 0.05f));
+        _source.time = safeStart;
+        _source.Play();
     }
 
     private void ApplyEnabledState()
