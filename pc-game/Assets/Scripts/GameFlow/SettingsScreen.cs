@@ -143,6 +143,10 @@ public sealed class SettingsScreen : MonoBehaviour
         _canvasObject = UiBuilder.CreateOverlayCanvas("SettingsCanvas", transform, 32740);
         RectTransform root = _canvasObject.GetComponent<RectTransform>();
 
+        // Hub 시작 화면과 같은 배경 - 화면 전환 시 배경이 바뀌지 않고 이어지는 느낌을 준다.
+        UiBuilder.AddImage(root, "Background", ArtAssets.LoadUi("start_background"),
+            new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(2048f, 1152f));
+
         UiBuilder.AddImage(root, "Panel", ArtAssets.LoadUi("howto_panel_instruction"),
             new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1600f, 1050f));
 
