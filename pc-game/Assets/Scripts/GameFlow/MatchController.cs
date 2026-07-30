@@ -1,4 +1,5 @@
-// 고정 5판 승부 진행 관리자. 씬을 넘나들어야 하므로 DontDestroyOnLoad 싱글턴으로 두고,
+// 선택된 미니게임을 순서대로 진행하는 매치 관리자. 씬을 넘나들어야 하므로
+// DontDestroyOnLoad 싱글턴으로 두고,
 // 각 미니게임 씬은 끝날 때 ReportRoundResult()만 호출하면 된다 - 다음 라운드 로드/최종
 // 결과 집계는 전부 여기서 처리하므로 미니게임 쪽은 "누가 이겼는지"만 알면 된다.
 using System.Collections.Generic;
@@ -39,12 +40,14 @@ public sealed class MatchController : MonoBehaviour
     public int P1Wins { get; private set; }
     public int P2Wins { get; private set; }
     public int ResultsVersion { get; private set; }
+    public IReadOnlyList<string> ActiveRoundScenes => _activeRoundScenes;
 
     // RoundScenes.Count로 초기화해서, 라운드를 추가/제거할 때마다 이 배열 크기를 손으로
     // 맞춰야 하는 실수를 원천 차단한다(과거에 하드코딩 6으로 두었다가 게임을 추가하면서
     // IndexOutOfRange가 날 뻔한 적이 있음 - docs/멀티플레이_분산_아키텍처_설계.md 9장 참고).
     private readonly PlayerId?[] _roundWinners = new PlayerId?[RoundScenes.Count];
     private readonly bool[] _roundReported = new bool[RoundScenes.Count];
+    private readonly List<string> _activeRoundScenes = new List<string>(RoundScenes);
 
     private void Awake()
     {
@@ -69,13 +72,27 @@ public sealed class MatchController : MonoBehaviour
     }
 
     public void StartMatch()
+        => StartMatchInternal(null);
+
+    public bool StartMatch(IReadOnlyList<string> selectedScenes)
+        => StartMatchInternal(selectedScenes);
+
+    private bool StartMatchInternal(IReadOnlyList<string> selectedScenes)
     {
         NetworkSession net = NetworkSession.Instance;
-        if (net != null && net.IsClient) return; // 클라이언트는 호스트의 match_start 이벤트로만 시작한다
+        if (net != null && net.IsClient) return false; // 클라이언트는 호스트 이벤트로만 시작한다
+
+        if (selectedScenes != null && !TryApplyRoundSelection(selectedScenes))
+        {
+            Debug.LogWarning("[Match] 최소 한 개 이상의 미니게임을 선택해야 합니다.");
+            return false;
+        }
 
         ResetLocalMatchState();
-        if (net != null && net.IsHost) net.Send("match_start", new MatchStartPayload());
+        if (net != null && net.IsHost)
+            net.Send("match_start", new MatchStartPayload { scenes = _activeRoundScenes.ToArray() });
         LoadNextRound();
+        return true;
     }
 
     private void ResetLocalMatchState()
@@ -91,7 +108,16 @@ public sealed class MatchController : MonoBehaviour
         ResultsVersion++;
     }
 
-    private void OnNetMatchStart(NetworkEvent evt) => ResetLocalMatchState();
+    private void OnNetMatchStart(NetworkEvent evt)
+    {
+        MatchStartPayload payload = NetworkSession.Read<MatchStartPayload>(evt);
+        if (payload?.scenes == null || !TryApplyRoundSelection(payload.scenes))
+        {
+            Debug.LogWarning("[Match] 호스트의 게임 선택 목록이 비어 있어 7개 전체로 복구합니다.");
+            ApplyAllRounds();
+        }
+        ResetLocalMatchState();
+    }
 
     public void LoadNextRound()
     {
@@ -99,12 +125,17 @@ public sealed class MatchController : MonoBehaviour
         if (net != null && net.IsClient) return; // 클라이언트는 호스트의 load_round 이벤트로만 전환한다
 
         int nextRoundIndex = CurrentRoundIndex + 1;
-        string nextScene = nextRoundIndex >= RoundScenes.Count
+        string nextScene = nextRoundIndex >= _activeRoundScenes.Count
             ? HubSceneName
-            : RoundScenes[nextRoundIndex];
+            : _activeRoundScenes[nextRoundIndex];
 
         if (net != null && net.IsHost)
-            net.Send("load_round", new LoadRoundPayload { roundIndex = nextRoundIndex, sceneName = nextScene });
+            net.Send("load_round", new LoadRoundPayload
+            {
+                roundIndex = nextRoundIndex,
+                sceneName = nextScene,
+                scenes = _activeRoundScenes.ToArray(),
+            });
 
         // 더블클릭이나 중복 코루틴으로 전환 요청이 겹치면 인덱스도 두 번 증가하지 않게 한다.
         if (SceneFadeTransition.TryLoadScene(nextScene))
@@ -114,6 +145,15 @@ public sealed class MatchController : MonoBehaviour
     private void OnNetLoadRound(NetworkEvent evt)
     {
         LoadRoundPayload payload = NetworkSession.Read<LoadRoundPayload>(evt);
+        if (payload == null || string.IsNullOrEmpty(payload.sceneName))
+        {
+            Debug.LogWarning("[Match] 잘못된 load_round 이벤트를 무시합니다.");
+            return;
+        }
+        // 재접속 직후 match_start를 못 받은 클라이언트도 다음 라운드 메시지만으로 호스트의
+        // 선택 목록을 복원할 수 있게 매 load_round에 같은 목록을 싣는다.
+        if (payload.scenes != null && payload.scenes.Length > 0)
+            TryApplyRoundSelection(payload.scenes);
         if (SceneFadeTransition.TryLoadScene(payload.sceneName))
             CurrentRoundIndex = payload.roundIndex;
     }
@@ -144,7 +184,7 @@ public sealed class MatchController : MonoBehaviour
 
     private void ApplyRoundResult(int roundIndex, PlayerId? winner)
     {
-        if (roundIndex < 0 || roundIndex >= RoundScenes.Count) return;
+        if (roundIndex < 0 || roundIndex >= _activeRoundScenes.Count) return;
         if (_roundReported[roundIndex]) return;
 
         _roundReported[roundIndex] = true;
@@ -158,12 +198,12 @@ public sealed class MatchController : MonoBehaviour
     private static PlayerId? DecodeWinner(int value) => value == 0 ? PlayerId.P1 : value == 1 ? PlayerId.P2 : (PlayerId?)null;
 
     public bool HasRoundResult(int roundIndex)
-        => roundIndex >= 0 && roundIndex < _roundReported.Length && _roundReported[roundIndex];
+        => roundIndex >= 0 && roundIndex < _activeRoundScenes.Count && _roundReported[roundIndex];
 
     public PlayerId? RoundWinner(int roundIndex)
-        => roundIndex >= 0 && roundIndex < _roundWinners.Length ? _roundWinners[roundIndex] : null;
+        => roundIndex >= 0 && roundIndex < _activeRoundScenes.Count ? _roundWinners[roundIndex] : null;
 
-    public bool IsMatchComplete => CurrentRoundIndex >= RoundScenes.Count;
+    public bool IsMatchComplete => CurrentRoundIndex >= _activeRoundScenes.Count;
 
     public PlayerId? OverallWinner()
     {
@@ -171,13 +211,39 @@ public sealed class MatchController : MonoBehaviour
         return P1Wins > P2Wins ? PlayerId.P1 : PlayerId.P2;
     }
 
-    [System.Serializable] private class MatchStartPayload { }
+    private bool TryApplyRoundSelection(IEnumerable<string> selectedScenes)
+    {
+        var requested = new HashSet<string>(selectedScenes);
+        var ordered = new List<string>();
+        foreach (string scene in RoundScenes)
+        {
+            if (requested.Contains(scene)) ordered.Add(scene);
+        }
+
+        if (ordered.Count == 0) return false;
+        _activeRoundScenes.Clear();
+        _activeRoundScenes.AddRange(ordered);
+        return true;
+    }
+
+    private void ApplyAllRounds()
+    {
+        _activeRoundScenes.Clear();
+        foreach (string scene in RoundScenes) _activeRoundScenes.Add(scene);
+    }
+
+    [System.Serializable]
+    private class MatchStartPayload
+    {
+        public string[] scenes;
+    }
 
     [System.Serializable]
     private class LoadRoundPayload
     {
         public int roundIndex;
         public string sceneName;
+        public string[] scenes;
     }
 
     [System.Serializable]

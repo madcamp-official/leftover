@@ -159,15 +159,27 @@ public sealed class HowToPlayScreen : MonoBehaviour
         UiBuilder.AddImage(root, "Panel", ArtAssets.LoadUi("howto_panel_instruction"),
             new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1600f, 1050f));
 
-        // 흰 글씨 + 진한 갈색 테두리 - 게임 시작 버튼 등 기존 baked-in 텍스트와 같은 조합
-        // (UiBuilder.AddText의 기본값이 이미 이 조합이라 별도로 색을 지정하지 않는다).
+        // 제목: 흰 글씨 + 두꺼운 고동색(나무 프레임 색) 테두리. 본문: 테두리 없는 고동색 단색
+        // - 프로젝트에 실제로 들어있는 폰트(NeoDunggeunmo) 안에서 낼 수 있는 최대한의 근사치다.
+        // 여기어때 잘난체/쿠키런체 같은 지정 폰트로 바꾸려면 해당 폰트 파일을 프로젝트에
+        // 임포트해야 한다.
         _titleText = UiBuilder.AddText(root, "PageTitle", "", 48, TextAnchor.MiddleCenter);
         UiBuilder.SetRect(_titleText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -140f),
             new Vector2(1300f, 100f));
+        Outline titleOutline = _titleText.GetComponent<Outline>();
+        if (titleOutline != null)
+        {
+            titleOutline.effectColor = new Color(0.42f, 0.26f, 0.15f, 1f);
+            titleOutline.effectDistance = new Vector2(3f, -3f);
+            titleOutline.useGraphicAlpha = false;
+        }
 
         _bodyText = UiBuilder.AddText(root, "PageBody", "", 34, TextAnchor.MiddleCenter, FontStyle.Normal);
         UiBuilder.SetRect(_bodyText.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -30f),
             new Vector2(1300f, 500f));
+        _bodyText.color = new Color(0.32f, 0.19f, 0.1f, 1f);
+        Outline bodyOutline = _bodyText.GetComponent<Outline>();
+        if (bodyOutline != null) bodyOutline.effectColor = new Color(0f, 0f, 0f, 0f);
 
         _pageIndicatorText = UiBuilder.AddText(root, "PageIndicator", "", 28);
         UiBuilder.SetRect(_pageIndicatorText.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 90f),
