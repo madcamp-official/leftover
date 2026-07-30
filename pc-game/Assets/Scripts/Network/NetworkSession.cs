@@ -77,6 +77,9 @@ public sealed class NetworkSession : MonoBehaviour
         LastRole = NetworkRole.Host;
         ConnectionState = NetworkConnectionState.Listening;
         LocalAddressHint = ResolveLocalAddressHint();
+        // 호스트만 인바운드(UDP 9100/9101, TCP 9200)를 받으므로 여기 한 곳에서만 호출하면
+        // 호스트로 시작하는 모든 진입점(MultiplayerConnectScreen의 두 버튼 등)을 다 커버한다.
+        WindowsFirewallHelper.EnsureInboundRulesAsync();
         _channel = new GameEventChannel();
         _channel.OnConnected += HandleChannelConnected;
         _channel.OnDisconnected += HandleChannelDisconnected;
