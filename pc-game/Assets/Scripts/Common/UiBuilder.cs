@@ -155,4 +155,19 @@ public static class UiBuilder
         rt.offsetMin = new Vector2(horizontal, vertical);
         rt.offsetMax = new Vector2(-horizontal, -vertical);
     }
+
+    // 프리팹으로 저장해둔 화면을 다시 불러왔을 때, 오브젝트 이름으로 자식을 찾아 참조를
+    // 복원하는 용도(LoadingScreenController.FindDescendant와 같은 방식). 이름은 유지하되
+    // 에디터에서 위치/스프라이트를 자유롭게 바꿔도 코드 쪽 참조는 안 깨지게 하기 위함.
+    public static Transform FindDescendant(Transform parent, string objectName)
+    {
+        if (parent == null) return null;
+        if (parent.name == objectName) return parent;
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform found = FindDescendant(parent.GetChild(i), objectName);
+            if (found != null) return found;
+        }
+        return null;
+    }
 }

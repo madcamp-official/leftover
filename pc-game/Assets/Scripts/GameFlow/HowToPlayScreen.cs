@@ -1,11 +1,19 @@
 // "게임 방법" 화면 - UI_화면_확장_에셋_계획.md에서 확정한 대로 아이콘/삽화 없이
 // 텍스트 영역만 페이지별로 넘기는 구조. 제목/본문/페이지 번호는 전부 Unity Text로 채우고
 // 이미지에는 굽지 않는다. 미니게임 규칙 요약은 docs/minigames/*.md "한 줄 요약"을 옮겼다.
+//
+// LoadingScreenController와 같은 패턴: Resources/UI/Prefabs/HowToPlayCanvas 프리팹이
+// 있으면 그걸 불러와 쓰고(에디터에서 마우스로 다듬은 결과), 없으면 코드로 기본 레이아웃을
+// 생성한다. 프리팹을 새로 만들거나 갱신하려면 Tools > UGAUGA > Rebuild Hub Screen
+// Prefabs(HubScreenPrefabBuilder.cs)를 실행할 것.
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
 public sealed class HowToPlayScreen : MonoBehaviour
 {
+    private const string CanvasPrefabResourcePath = "UI/Prefabs/HowToPlayCanvas";
+
     private static readonly (string Title, string Body)[] Pages =
     {
         ("1. 돌 던지기",
@@ -36,25 +44,34 @@ public sealed class HowToPlayScreen : MonoBehaviour
             "제한시간이 끝났을 때 더 높이 떠 있는 쪽이 승리합니다."),
     };
 
-    private GameObject _root;
+    private GameObject _canvasObject;
     private Text _titleText;
     private Text _bodyText;
     private Text _pageIndicatorText;
+    private Button _prevButton;
+    private Button _nextButton;
+    private Button _closeButton;
     private int _pageIndex;
+    private Action _onClose;
 
-    public System.Action OnClose;
-
-    public void Init(System.Action onClose) => OnClose = onClose;
+    public void Init(Action onClose) => _onClose = onClose;
 
     public void Show()
     {
-        if (_root == null) Build();
+        if (_canvasObject == null) CreateUi();
         _pageIndex = 0;
         RefreshPage();
-        _root.SetActive(true);
+        _canvasObject.SetActive(true);
     }
 
-    public void Hide() => _root?.SetActive(false);
+    public void Hide() => _canvasObject?.SetActive(false);
+
+    public GameObject CreatePrefabTemplate()
+    {
+        BuildGeneratedUi();
+        _canvasObject.SetActive(true);
+        return _canvasObject;
+    }
 
     private void RefreshPage()
     {
@@ -76,10 +93,57 @@ public sealed class HowToPlayScreen : MonoBehaviour
         RefreshPage();
     }
 
-    private void Build()
+    private void CreateUi()
     {
-        _root = UiBuilder.CreateOverlayCanvas("HowToPlayCanvas", transform, 32740);
-        RectTransform root = _root.GetComponent<RectTransform>();
+        GameObject prefab = Resources.Load<GameObject>(CanvasPrefabResourcePath);
+        if (prefab != null)
+        {
+            _canvasObject = Instantiate(prefab, transform, false);
+            _canvasObject.name = "HowToPlayCanvas";
+            BindUi();
+            return;
+        }
+
+        Debug.LogWarning($"[HowToPlayScreen] {CanvasPrefabResourcePath} 프리팹을 찾지 못해 " +
+            "코드 기본 레이아웃을 사용합니다. Tools > UGAUGA > Rebuild Hub Screen Prefabs로 만들 수 있습니다.");
+        BuildGeneratedUi();
+    }
+
+    private void BindUi()
+    {
+        Transform root = _canvasObject.transform;
+        _titleText = UiBuilder.FindDescendant(root, "PageTitle")?.GetComponent<Text>();
+        _bodyText = UiBuilder.FindDescendant(root, "PageBody")?.GetComponent<Text>();
+        _pageIndicatorText = UiBuilder.FindDescendant(root, "PageIndicator")?.GetComponent<Text>();
+        _prevButton = UiBuilder.FindDescendant(root, "PrevButton")?.GetComponent<Button>();
+        _nextButton = UiBuilder.FindDescendant(root, "NextButton")?.GetComponent<Button>();
+        _closeButton = UiBuilder.FindDescendant(root, "CloseButton")?.GetComponent<Button>();
+
+        if (_titleText == null || _bodyText == null || _pageIndicatorText == null ||
+            _prevButton == null || _nextButton == null || _closeButton == null)
+        {
+            throw new InvalidOperationException(
+                $"{CanvasPrefabResourcePath}의 필수 오브젝트 이름이 바뀌었습니다 - 이름을 유지하거나 " +
+                "Tools > UGAUGA > Rebuild Hub Screen Prefabs로 프리팹을 다시 만드세요.");
+        }
+
+        WireListeners();
+    }
+
+    private void WireListeners()
+    {
+        _prevButton.onClick.RemoveAllListeners();
+        _prevButton.onClick.AddListener(GoPrev);
+        _nextButton.onClick.RemoveAllListeners();
+        _nextButton.onClick.AddListener(GoNext);
+        _closeButton.onClick.RemoveAllListeners();
+        _closeButton.onClick.AddListener(() => { Hide(); _onClose?.Invoke(); });
+    }
+
+    private void BuildGeneratedUi()
+    {
+        _canvasObject = UiBuilder.CreateOverlayCanvas("HowToPlayCanvas", transform, 32740);
+        RectTransform root = _canvasObject.GetComponent<RectTransform>();
 
         UiBuilder.AddImage(root, "Panel", ArtAssets.LoadUi("howto_panel_instruction"),
             new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1600f, 1050f));
@@ -100,16 +164,15 @@ public sealed class HowToPlayScreen : MonoBehaviour
             new Vector2(300f, 60f));
         _pageIndicatorText.color = new Color(0.32f, 0.18f, 0.08f, 1f);
 
-        Button prev = UiBuilder.AddButton(root, "PrevButton", ArtAssets.LoadUi("howto_button_page_prev"),
+        _prevButton = UiBuilder.AddButton(root, "PrevButton", ArtAssets.LoadUi("howto_button_page_prev"),
             new Vector2(0f, 0.5f), new Vector2(100f, 0f), new Vector2(130f, 130f));
-        prev.onClick.AddListener(GoPrev);
 
-        Button next = UiBuilder.AddButton(root, "NextButton", ArtAssets.LoadUi("howto_button_page_next"),
+        _nextButton = UiBuilder.AddButton(root, "NextButton", ArtAssets.LoadUi("howto_button_page_next"),
             new Vector2(1f, 0.5f), new Vector2(-100f, 0f), new Vector2(130f, 130f));
-        next.onClick.AddListener(GoNext);
 
-        Button close = UiBuilder.AddButton(root, "CloseButton", ArtAssets.LoadUi("multiplayer_button_back"),
+        _closeButton = UiBuilder.AddButton(root, "CloseButton", ArtAssets.LoadUi("multiplayer_button_back"),
             new Vector2(0f, 1f), new Vector2(60f, -60f), new Vector2(130f, 130f));
-        close.onClick.AddListener(() => { Hide(); OnClose?.Invoke(); });
+
+        WireListeners();
     }
 }
