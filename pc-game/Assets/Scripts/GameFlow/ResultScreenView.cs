@@ -56,8 +56,9 @@ public sealed class ResultScreenView : MonoBehaviour
         bool isDraw = winner == null;
 
         _banner.sprite = ArtAssets.LoadUi(isDraw ? "result_panel_draw" : "result_panel_victory");
-        // 승리 배너 이미지에 이미 "승리" 글자가 그려져 있으므로, 텍스트는 승자 이름만 덧붙인다.
-        _bannerText.text = isDraw ? "무승부!" : $"{winner}";
+        // 승리/무승부 배너 이미지에 이미 해당 글자가 그려져 있으므로, 텍스트는 승리 쪽엔
+        // 승자 이름만, 무승부 쪽엔 느낌표 없이 "무승부"만 덧붙인다.
+        _bannerText.text = isDraw ? "무승부" : $"{winner}";
 
         _p1ScoreText.text = $"P1\n{match.P1Wins}";
         _p2ScoreText.text = $"P2\n{match.P2Wins}";
