@@ -12,6 +12,7 @@ public static class HubScreenPrefabBuilder
     private const string MultiplayerPrefabPath = "Assets/Resources/UI/Prefabs/MultiplayerConnectCanvas.prefab";
     private const string HowToPlayPrefabPath = "Assets/Resources/UI/Prefabs/HowToPlayCanvas.prefab";
     private const string SettingsPrefabPath = "Assets/Resources/UI/Prefabs/SettingsCanvas.prefab";
+    private const string ResultPrefabPath = "Assets/Resources/UI/Prefabs/ResultCanvas.prefab";
 
     [MenuItem("Tools/UGAUGA/Rebuild Hub Screen Prefabs")]
     public static void RebuildAll()
@@ -22,8 +23,10 @@ public static class HubScreenPrefabBuilder
             (screen) => screen.CreatePrefabTemplate());
         BuildOne<SettingsScreen>(SettingsPrefabPath,
             (screen) => screen.CreatePrefabTemplate());
+        BuildOne<ResultScreenView>(ResultPrefabPath,
+            (screen) => screen.CreatePrefabTemplate());
         AssetDatabase.SaveAssets();
-        Debug.Log("[HubScreenPrefabBuilder] 멀티플레이/게임방법/설정 프리팹 생성 완료.");
+        Debug.Log("[HubScreenPrefabBuilder] 멀티플레이/게임방법/설정/결과 프리팹 생성 완료.");
     }
 
     private static void BuildOne<T>(string path, System.Func<T, GameObject> createTemplate) where T : Component
