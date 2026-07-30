@@ -1,6 +1,5 @@
-// "게임 방법" 화면 - UI_화면_확장_에셋_계획.md에서 확정한 대로 아이콘/삽화 없이
-// 텍스트 영역만 페이지별로 넘기는 구조. 제목/본문/페이지 번호는 전부 Unity Text로 채우고
-// 이미지에는 굽지 않는다. 미니게임 규칙 요약은 docs/minigames/*.md "한 줄 요약"을 옮겼다.
+// "게임 방법" 화면. 1~7페이지는 미니게임 규칙을 텍스트로 설명하고, 8페이지에는
+// character1/character2 정면 대기 이미지와 제작자 정보를 표시한다.
 //
 // LoadingScreenController와 같은 패턴: Resources/UI/Prefabs/HowToPlayCanvas 프리팹이
 // 있으면 그걸 불러와 쓰고(에디터에서 마우스로 다듬은 결과), 없으면 코드로 기본 레이아웃을
@@ -43,6 +42,7 @@ public sealed class HowToPlayScreen : MonoBehaviour
             "절벽에서 뛰어내린 뒤 양손을 동시에 들었다 내리면 날갯짓으로 위로 뜹니다.\n" +
             "가만히 있으면 계속 아래로 떨어지니 꾸준히 날갯짓해서 버텨야 합니다.\n" +
             "제한시간이 끝났을 때 더 높이 떠 있는 쪽이 승리합니다."),
+        ("8. 제작자", ""),
     };
 
     private GameObject _canvasObject;
@@ -52,6 +52,7 @@ public sealed class HowToPlayScreen : MonoBehaviour
     private Button _prevButton;
     private Button _nextButton;
     private Button _closeButton;
+    private GameObject _creatorCreditsRoot;
     private int _pageIndex;
     private Action _onClose;
 
@@ -80,6 +81,10 @@ public sealed class HowToPlayScreen : MonoBehaviour
         _titleText.text = title;
         _bodyText.text = body;
         _pageIndicatorText.text = $"{_pageIndex + 1} / {Pages.Length}";
+
+        bool showCreators = _pageIndex == Pages.Length - 1;
+        _bodyText.gameObject.SetActive(!showCreators);
+        if (_creatorCreditsRoot != null) _creatorCreditsRoot.SetActive(showCreators);
     }
 
     private void GoPrev()
@@ -128,6 +133,7 @@ public sealed class HowToPlayScreen : MonoBehaviour
                 "Tools > UGAUGA > Rebuild Hub Screen Prefabs로 프리팹을 다시 만드세요.");
         }
 
+        EnsureCreatorCreditsUi();
         WireListeners();
     }
 
@@ -176,6 +182,48 @@ public sealed class HowToPlayScreen : MonoBehaviour
         _closeButton = UiBuilder.AddButton(root, "CloseButton", ArtAssets.LoadUi("multiplayer_button_back"),
             new Vector2(0f, 1f), new Vector2(60f, -60f), new Vector2(130f, 130f));
 
+        EnsureCreatorCreditsUi();
         WireListeners();
+    }
+
+    private void EnsureCreatorCreditsUi()
+    {
+        Transform existing = UiBuilder.FindDescendant(_canvasObject.transform, "CreatorCreditsRoot");
+        if (existing != null)
+        {
+            _creatorCreditsRoot = existing.gameObject;
+            return;
+        }
+
+        var creditsGo = new GameObject("CreatorCreditsRoot");
+        creditsGo.transform.SetParent(_canvasObject.transform, false);
+        RectTransform creditsRt = creditsGo.AddComponent<RectTransform>();
+        UiBuilder.SetRect(creditsRt, new Vector2(0.5f, 0.5f), new Vector2(0f, -30f),
+            new Vector2(1150f, 620f));
+
+        AddCreatorRow(creditsRt, "CreatorWoo", PlayerId.P1, "우 - 김도현", 145f);
+        AddCreatorRow(creditsRt, "CreatorGa", PlayerId.P2, "가 - 원건희", -145f);
+
+        _creatorCreditsRoot = creditsGo;
+        _creatorCreditsRoot.SetActive(false);
+    }
+
+    private static void AddCreatorRow(RectTransform parent, string rowName, PlayerId player,
+        string creatorText, float y)
+    {
+        var rowGo = new GameObject(rowName);
+        rowGo.transform.SetParent(parent, false);
+        RectTransform rowRt = rowGo.AddComponent<RectTransform>();
+        UiBuilder.SetRect(rowRt, new Vector2(0.5f, 0.5f), new Vector2(0f, y),
+            new Vector2(900f, 270f));
+
+        UiBuilder.AddImage(rowRt, rowName + "Character",
+            ArtAssets.LoadCharacter(player, "jump_front_1"),
+            new Vector2(0f, 0.5f), new Vector2(15f, 0f), new Vector2(190f, 270f));
+
+        Text label = UiBuilder.AddText(rowRt, rowName + "Label", creatorText, 46,
+            TextAnchor.MiddleLeft);
+        UiBuilder.SetRect(label.rectTransform, new Vector2(0f, 0.5f),
+            new Vector2(250f, 0f), new Vector2(620f, 150f));
     }
 }
