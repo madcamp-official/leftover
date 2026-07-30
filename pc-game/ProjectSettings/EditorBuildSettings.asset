@@ -9,6 +9,9 @@ EditorBuildSettings:
     path: Assets/Scenes/Hub.unity
     guid: 257d168e9009e42eba4ab184429fcc94
   - enabled: 1
+    path: Assets/Scenes/GameSelection.unity
+    guid: f164277936a84de7b32ebfd8d3a11016
+  - enabled: 1
     path: Assets/Scenes/StoneThrow.unity
     guid: 728eec58aa856447b8802a0324be5a8e
   - enabled: 1

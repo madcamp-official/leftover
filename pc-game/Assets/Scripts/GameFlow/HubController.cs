@@ -50,7 +50,10 @@ public class HubController : MonoBehaviour
 
         MatchController match = MatchController.Instance;
         bool matchComplete = match != null && match.IsMatchComplete;
-        ShowScreen(matchComplete ? HubScreen.Result : HubScreen.Start);
+        if (GameSelectionState.ConsumeReturnToMultiplayer())
+            ShowScreen(HubScreen.Multiplayer);
+        else
+            ShowScreen(matchComplete ? HubScreen.Result : HubScreen.Start);
     }
 
     private void BuildSubScreens()
@@ -100,7 +103,8 @@ public class HubController : MonoBehaviour
     {
         SoloBotController.SetEnabled(true);
         VisionServerLauncher.Instance?.EnsureRunning("p1", "127.0.0.1");
-        MatchController.Instance?.StartMatch();
+        // 새 1인 플레이는 직전 2인 매치 선택을 물려받지 않고 항상 7개 전체로 시작한다.
+        MatchController.Instance?.StartMatch(MatchController.RoundScenes);
     }
 
     private void OnRestartClicked() => MatchController.Instance?.StartMatch();

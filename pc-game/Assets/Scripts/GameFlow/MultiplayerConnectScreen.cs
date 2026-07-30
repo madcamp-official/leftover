@@ -8,6 +8,7 @@
 // Tools > UGAUGA > Rebuild Hub Screen Prefabs (HubScreenPrefabBuilder.cs)를 실행할 것.
 using System;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public sealed class MultiplayerConnectScreen : MonoBehaviour
@@ -60,6 +61,11 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
         if (net == null) return;
 
         bool connected = net.ConnectionState == NetworkConnectionState.Connected;
+        if (net.IsClient && _showingHostTab)
+        {
+            _showingHostTab = false;
+            RefreshTabs();
+        }
 
         _hostIpText.text = net.Role == NetworkRole.Host
             ? $"내 IP: {net.LocalAddressHint} (포트 {GameEventChannel.DefaultPort})"
@@ -69,6 +75,10 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
             : "";
         _hostStartButton.gameObject.SetActive(net.Role != NetworkRole.Host);
         _matchStartButton.gameObject.SetActive(net.Role == NetworkRole.Host && connected);
+        _matchStartButton.interactable = GameSelectionState.HasSelection;
+        // 클라이언트만 선택 화면 진입을 막는다. Offline 상태에서 누르면 클릭 처리에서
+        // 자동으로 호스트를 시작한 뒤 선택 Scene으로 이동한다.
+        _tabHostButton.interactable = !net.IsClient;
 
         _joinStatusText.text = net.Role == NetworkRole.Client
             ? (connected ? "호스트에 연결됨 - 호스트가 시작하기를 기다립니다" : "호스트 접속 시도 중...")
@@ -147,7 +157,22 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
     private void WireListeners()
     {
         _tabHostButton.onClick.RemoveAllListeners();
-        _tabHostButton.onClick.AddListener(() => { _showingHostTab = true; RefreshTabs(); });
+        _tabHostButton.onClick.AddListener(() =>
+        {
+            NetworkSession net = NetworkSession.Instance;
+            if (net == null || net.IsClient) return;
+            if (!net.IsHost)
+            {
+                SoloBotController.SetEnabled(false);
+                net.StartHost();
+            }
+            // 멀티플레이_분산_아키텍처_설계.md 2장: P1/P2 vision-server 모두 호스트 PC의 LAN
+            // IP를 겨냥해야 한다 - 호스트 자신도 자기 IP(LocalAddressHint)로 스스로를 겨냥.
+            // EnsureRunning은 멱등이라 이미 켜져 있으면 아무것도 안 한다.
+            VisionServerLauncher.Instance?.EnsureRunning("p1", net.LocalAddressHint);
+            GameSelectionState.BeginNewSelection();
+            SceneManager.LoadScene(GameSelectionState.SceneName);
+        });
         _tabJoinButton.onClick.RemoveAllListeners();
         _tabJoinButton.onClick.AddListener(() => { _showingHostTab = false; RefreshTabs(); });
 
@@ -162,7 +187,11 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
             if (net != null) VisionServerLauncher.Instance?.EnsureRunning("p1", net.LocalAddressHint);
         });
         _matchStartButton.onClick.RemoveAllListeners();
-        _matchStartButton.onClick.AddListener(() => MatchController.Instance?.StartMatch());
+        _matchStartButton.onClick.AddListener(() =>
+        {
+            if (!GameSelectionState.HasSelection) return;
+            MatchController.Instance?.StartMatch(GameSelectionState.SelectedScenes);
+        });
 
         _connectButton.onClick.RemoveAllListeners();
         _connectButton.onClick.AddListener(() =>
@@ -196,14 +225,13 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
         UiBuilder.SetRect(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -100f),
             new Vector2(1200f, 80f));
 
-        _tabHostButton = UiBuilder.AddButton(root, "TabHost", ArtAssets.LoadUi("multiplayer_tab_host"),
+        _tabHostButton = UiBuilder.AddButton(root, "TabHost", ArtAssets.LoadUi("multiplayer_tab_game_select"),
             new Vector2(0.5f, 1f), new Vector2(-260f, -220f), new Vector2(480f, 200f));
         _tabJoinButton = UiBuilder.AddButton(root, "TabJoin", ArtAssets.LoadUi("multiplayer_tab_join"),
             new Vector2(0.5f, 1f), new Vector2(260f, -220f), new Vector2(480f, 200f));
 
         BuildHostPanel(root);
         BuildJoinPanel(root);
-
         _errorText = UiBuilder.AddText(root, "ErrorText", "", 24);
         UiBuilder.SetRect(_errorText.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 90f),
             new Vector2(1300f, 60f));
@@ -266,4 +294,5 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
         UiBuilder.SetRect(_joinStatusText.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, -50f),
             new Vector2(1200f, 60f));
     }
+
 }

@@ -127,9 +127,9 @@ public class StoneOrBananaHud : MonoBehaviour
         _receivePrompt?.gameObject.SetActive(show);
     }
 
-    // 씬 배치상 p1FrontView는 화면 오른쪽(+x), p2FrontView는 왼쪽(-x)에 고정돼 있다. 안내판을
-    // "왼쪽=던지기/오른쪽=받기"로 고정해두면 턴마다 실제 캐릭터 위치와 안 맞아 헷갈리므로,
-    // 이번 턴 던지는/받는 플레이어가 서 있는 쪽으로 매번 다시 배치한다.
+    // 화면상 P1은 왼쪽, P2는 오른쪽에 선다(실측 확인). 안내판을 "왼쪽=던지기/오른쪽=받기"로
+    // 고정해두면 턴마다 실제 캐릭터 위치와 안 맞아 헷갈리므로, 이번 턴 던지는/받는 플레이어가
+    // 서 있는 쪽으로 매번 다시 배치한다.
     private const float PromptSideOffset = 600f;
 
     public void SetTurnRoles(PlayerId thrower, PlayerId receiver)
@@ -144,7 +144,7 @@ public class StoneOrBananaHud : MonoBehaviour
     private static void SetPromptSide(RectTransform prompt, PlayerId player)
     {
         if (prompt == null) return;
-        float x = player == PlayerId.P1 ? PromptSideOffset : -PromptSideOffset;
+        float x = player == PlayerId.P1 ? -PromptSideOffset : PromptSideOffset;
         Vector2 pos = prompt.anchoredPosition;
         prompt.anchoredPosition = new Vector2(x, pos.y);
     }
