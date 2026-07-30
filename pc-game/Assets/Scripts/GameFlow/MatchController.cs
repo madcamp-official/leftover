@@ -64,6 +64,7 @@ public sealed class MatchController : MonoBehaviour
     private void Start()
     {
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureLetterbox();
         NetworkSession net = NetworkSession.Instance;
         if (net == null) return;
         net.Subscribe("match_start", OnNetMatchStart);

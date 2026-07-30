@@ -37,6 +37,7 @@ public class HubController : MonoBehaviour
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
         GameBootstrap.EnsureVisionServerLauncher();
+        GameBootstrap.EnsureLetterbox();
         ArtAssets.PreloadLoading();
         ArtAssets.PreloadScreamDuel();
 
