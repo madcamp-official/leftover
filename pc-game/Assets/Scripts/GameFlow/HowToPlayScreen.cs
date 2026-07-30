@@ -148,21 +148,19 @@ public sealed class HowToPlayScreen : MonoBehaviour
         UiBuilder.AddImage(root, "Panel", ArtAssets.LoadUi("howto_panel_instruction"),
             new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1600f, 1050f));
 
+        // 흰 글씨 + 진한 갈색 테두리 - 게임 시작 버튼 등 기존 baked-in 텍스트와 같은 조합
+        // (UiBuilder.AddText의 기본값이 이미 이 조합이라 별도로 색을 지정하지 않는다).
         _titleText = UiBuilder.AddText(root, "PageTitle", "", 48, TextAnchor.MiddleCenter);
         UiBuilder.SetRect(_titleText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -140f),
             new Vector2(1300f, 100f));
-        _titleText.color = new Color(0.32f, 0.18f, 0.08f, 1f); // 돌판 위에 얹는 텍스트라 어두운 갈색
 
         _bodyText = UiBuilder.AddText(root, "PageBody", "", 34, TextAnchor.MiddleCenter, FontStyle.Normal);
         UiBuilder.SetRect(_bodyText.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0f, -30f),
             new Vector2(1300f, 500f));
-        _bodyText.color = new Color(0.32f, 0.18f, 0.08f, 1f);
-        _bodyText.GetComponent<Outline>().effectColor = new Color(1f, 1f, 1f, 0.35f);
 
         _pageIndicatorText = UiBuilder.AddText(root, "PageIndicator", "", 28);
         UiBuilder.SetRect(_pageIndicatorText.rectTransform, new Vector2(0.5f, 0f), new Vector2(0f, 90f),
             new Vector2(300f, 60f));
-        _pageIndicatorText.color = new Color(0.32f, 0.18f, 0.08f, 1f);
 
         _prevButton = UiBuilder.AddButton(root, "PrevButton", ArtAssets.LoadUi("howto_button_page_prev"),
             new Vector2(0f, 0.5f), new Vector2(100f, 0f), new Vector2(130f, 130f));
