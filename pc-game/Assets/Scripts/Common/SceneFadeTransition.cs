@@ -24,10 +24,27 @@ public sealed class SceneFadeTransition : MonoBehaviour
     [SerializeField, Min(0f)] private float fadeOutSeconds = 0.45f;
     [SerializeField, Min(0f)] private float fadeInSeconds = 0.45f;
     [SerializeField, Min(0f)] private float blackHoldSeconds = 0.08f;
+    [SerializeField, Min(0.1f)] private float countdownStepSeconds = 0.9f;
 
     private CanvasGroup _group;
     private LoadingScreenController _loadingScreen;
     private bool _isTransitioning;
+
+    // --- 라운드 시작 동시 카운트다운 (2인 플레이 전용) ---
+    // 로딩 화면이 닫힌 뒤에도 씬 로딩 자체(에셋 로드 속도, 기기 성능 차이)에서 호스트와
+    // 클라이언트 사이에 실제 시간차가 또 생길 수 있다 - 로딩 화면 단계의 배리어만으로는
+    // "게임 화면에 진입하는 순간"까지 완벽히 맞추기 어렵다는 게 실측으로 확인됐다. 그래서
+    // 매 판정을 정밀하게 동기화하려 하지 않고, 대신 씬이 각자 다 뜬 뒤 서로 "나 준비됐다"를
+    // 주고받고 나서 화면 가운데 큰 카운트다운을 함께 보여주는 방식으로 바꿨다 - 카운트다운
+    // 자체가 몇백ms 어긋나도 5초 안에서는 티가 안 나고, 카운트다운이 도는 동안
+    // Time.timeScale=0으로 얼려서(NetworkReconnectOverlay와 같은 방식 - 미니게임 코드를
+    // 하나도 안 건드리고 Time.deltaTime 기반 로직 전부를 한 번에 멈출 수 있다) 실제 게임
+    // 진행(라운드 타이머, 판정)은 카운트다운이 끝나야 시작된다.
+    private const string RoundReadyEvent = "round_ready";
+    private bool _roundReadySubscribed;
+    private bool _otherRoundReady;
+    private GameObject _countdownRoot;
+    private Text _countdownText;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Bootstrap() => EnsureInstance();
@@ -46,6 +63,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
         DontDestroyOnLoad(gameObject);
         BuildOverlay();
         EnsureLoadingScreen();
+        EnsureCountdownSubscribed();
     }
 
     private IEnumerator Start()
@@ -120,8 +138,100 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
         yield return FadeTo(0f, fadeInSeconds);
         _group.blocksRaycasts = false;
+
+        // Hub는 상대를 기다릴 필요가 없다(결과 화면/시작 화면) - 실제 미니게임 씬에서만
+        // 동시 시작 카운트다운을 돌린다.
+        if (showLoadingScreen)
+            yield return RunSynchronizedCountdown();
+
         _isTransitioning = false;
     }
+
+    // 씬이 각자 다 뜬 뒤 서로 "나 준비됐다"를 주고받고, 둘 다 확인되면 화면 가운데 큰
+    // 카운트다운을 함께 보여준다. 오프라인/솔로는 기다릴 상대가 없으므로 곧장 통과.
+    private IEnumerator RunSynchronizedCountdown()
+    {
+        NetworkSession net = NetworkSession.Instance;
+        if (net == null || !net.IsNetworked) yield break;
+
+        EnsureCountdownSubscribed();
+        EnsureCountdownUi();
+        _otherRoundReady = false;
+        net.Send(RoundReadyEvent, new RoundReadyPayload());
+
+        _countdownRoot.SetActive(true);
+        _countdownText.text = "상대방을 기다리는 중...";
+
+        // 네트워크 문제로 상대 신호가 영영 안 오면(연결이 끊겼다면 NetworkReconnectOverlay가
+        // 따로 처리한다) 여기서 무한정 멈추지 않고 최선을 다해 진행한다.
+        const float waitTimeoutSeconds = 10f;
+        float waited = 0f;
+        while (!_otherRoundReady && waited < waitTimeoutSeconds)
+        {
+            waited += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        // 카운트다운이 도는 동안 실제 게임 진행(라운드 타이머, 물리, 판정)을 전부 멈춘다 -
+        // 미니게임들이 전부 Time.deltaTime 기반이라 코드를 하나도 안 건드려도 여기서 한 번에
+        // 얼릴 수 있다(NetworkReconnectOverlay와 같은 방식).
+        Time.timeScale = 0f;
+        string[] steps = { "3", "2", "1", "시작!" };
+        foreach (string label in steps)
+        {
+            _countdownText.text = label;
+            float t = 0f;
+            while (t < countdownStepSeconds)
+            {
+                t += Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+        Time.timeScale = 1f;
+        _countdownRoot.SetActive(false);
+    }
+
+    private void EnsureCountdownSubscribed()
+    {
+        if (_roundReadySubscribed) return;
+        NetworkSession net = NetworkSession.Instance;
+        if (net == null) return;
+        net.Subscribe(RoundReadyEvent, OnNetRoundReady);
+        _roundReadySubscribed = true;
+    }
+
+    private void OnNetRoundReady(NetworkEvent evt) => _otherRoundReady = true;
+
+    private void EnsureCountdownUi()
+    {
+        if (_countdownRoot != null) return;
+
+        var go = new GameObject("RoundStartCountdown");
+        go.transform.SetParent(transform, false);
+        var rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+
+        var shadeGo = new GameObject("Shade");
+        shadeGo.transform.SetParent(rt, false);
+        var shadeRt = shadeGo.AddComponent<RectTransform>();
+        shadeRt.anchorMin = Vector2.zero;
+        shadeRt.anchorMax = Vector2.one;
+        shadeRt.offsetMin = Vector2.zero;
+        shadeRt.offsetMax = Vector2.zero;
+        var shadeImage = shadeGo.AddComponent<Image>();
+        shadeImage.color = new Color(0f, 0f, 0f, 0.45f);
+        shadeImage.raycastTarget = false;
+
+        _countdownText = HudWidgets.CreateText(rt, "CountdownText", new Vector2(0.5f, 0.5f), 800f, 220);
+
+        _countdownRoot = go;
+        _countdownRoot.SetActive(false);
+    }
+
+    [System.Serializable] private class RoundReadyPayload { }
 
     private IEnumerator HoldBlackFrame()
     {
@@ -186,6 +296,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
             }
         }
         EnsureLoadingScreen();
+        EnsureCountdownSubscribed();
     }
 
     private void EnsureLoadingScreen()
