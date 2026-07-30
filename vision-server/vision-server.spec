@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import sys
 import mediapipe
 
 _MP_DIR = os.path.dirname(mediapipe.__file__)
@@ -8,7 +9,16 @@ _MP_DIR = os.path.dirname(mediapipe.__file__)
 # 안 잡히니 PyInstaller 정적 분석이 못 찾고, 그냥 두면 번들 실행 시
 # "ModuleNotFoundError: No module named 'mediapipe.tasks.c'"로 죽는다(실측). resources.files가
 # 찾는 것과 같은 상대 경로(mediapipe/tasks/c/)에 그대로 넣어줘야 한다.
-_MP_C_DYLIB = os.path.join(_MP_DIR, "tasks", "c", "libmediapipe.dylib")
+# 파일 이름은 OS별로 다르다(mediapipe_c_bindings.py의 load_raw_library와 동일한 분기) -
+# 이 스펙은 macOS에서 검증했고, Windows에서 PyInstaller를 돌리면 이 분기가 자동으로
+# libmediapipe.dll을 골라 넣는다(별도 수정 불필요).
+if sys.platform == "darwin":
+    _MP_C_LIB_NAME = "libmediapipe.dylib"
+elif sys.platform == "win32":
+    _MP_C_LIB_NAME = "libmediapipe.dll"
+else:
+    _MP_C_LIB_NAME = "libmediapipe.so"
+_MP_C_DYLIB = os.path.join(_MP_DIR, "tasks", "c", _MP_C_LIB_NAME)
 
 a = Analysis(
     ['main.py'],
