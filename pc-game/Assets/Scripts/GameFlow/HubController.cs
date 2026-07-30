@@ -36,6 +36,7 @@ public class HubController : MonoBehaviour
         GameBootstrap.EnsureInputSystems();
         GameBootstrap.EnsureMatchController();
         GameBootstrap.EnsureNetwork();
+        GameBootstrap.EnsureVisionServerLauncher();
         ArtAssets.PreloadLoading();
         ArtAssets.PreloadScreamDuel();
 
@@ -94,9 +95,11 @@ public class HubController : MonoBehaviour
     }
 
     // 1인 플레이 - 네트워크 연결 없이 SoloBotController가 P2를 대신하고 바로 매치를 시작한다.
+    // 카메라가 필요한 건 실제 사람인 P1뿐이므로 vision-server는 로컬(127.0.0.1)로 하나만 띄운다.
     private void OnPlay1PClicked()
     {
         SoloBotController.SetEnabled(true);
+        VisionServerLauncher.Instance?.EnsureRunning("p1", "127.0.0.1");
         MatchController.Instance?.StartMatch();
     }
 

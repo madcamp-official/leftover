@@ -155,7 +155,11 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
         _hostStartButton.onClick.AddListener(() =>
         {
             SoloBotController.SetEnabled(false);
-            NetworkSession.Instance?.StartHost();
+            NetworkSession net = NetworkSession.Instance;
+            net?.StartHost();
+            // 멀티플레이_분산_아키텍처_설계.md 2장: P1/P2 vision-server 모두 호스트 PC의 LAN
+            // IP를 겨냥해야 한다 - 호스트 자신도 자기 IP(LocalAddressHint)로 스스로를 겨냥.
+            if (net != null) VisionServerLauncher.Instance?.EnsureRunning("p1", net.LocalAddressHint);
         });
         _matchStartButton.onClick.RemoveAllListeners();
         _matchStartButton.onClick.AddListener(() => MatchController.Instance?.StartMatch());
@@ -166,6 +170,10 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
             SoloBotController.SetEnabled(false);
             string ip = string.IsNullOrWhiteSpace(_ipInputField.text) ? "127.0.0.1" : _ipInputField.text.Trim();
             NetworkSession.Instance?.StartClient(ip);
+            // 접속에 쓴 IP가 곧 호스트 IP다(2장) - TCP 연결 성공 여부와 무관하게 바로 켜서
+            // vision-server의 ~10초 기동 지연을 연결 시도와 병렬로 흡수한다. 재시도로 IP가
+            // 바뀌면 EnsureRunning이 알아서 기존 프로세스를 죽이고 새 IP로 다시 켠다.
+            VisionServerLauncher.Instance?.EnsureRunning("p2", ip);
         });
 
         _backButton.onClick.RemoveAllListeners();
