@@ -24,22 +24,40 @@ public static class DebugFileLogger
         if (_initialized) return;
         _initialized = true;
 
-        _path = Path.Combine(Application.persistentDataPath, FileName);
+        // Application.persistentDataPath는 macOS(~/Library/Application Support/...)와
+        // Windows(AppData\LocalLow\...) 둘 다 기본적으로 숨김/시스템 폴더 취급이라 Finder/
+        // 탐색기로 찾기 어렵다는 실측 피드백이 있었다 - 바탕화면처럼 항상 바로 보이는
+        // 위치에 우선 써보고, 실패하면(권한 등) persistentDataPath로 대체한다.
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+        _path = Path.Combine(string.IsNullOrEmpty(desktop) ? Application.persistentDataPath : desktop, FileName);
         try
         {
-            File.WriteAllText(_path,
-                $"=== 우가우가게임 디버그 로그 시작 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
-                $"커맨드라인 인자: {string.Join(" ", Environment.GetCommandLineArgs())}\n\n");
+            WriteHeader();
         }
-        catch (Exception e)
+        catch (Exception)
         {
-            Debug.LogWarning($"[DebugFileLogger] 로그 파일을 만들지 못했습니다: {e.Message}");
-            _path = null;
-            return;
+            _path = Path.Combine(Application.persistentDataPath, FileName);
+            try
+            {
+                WriteHeader();
+            }
+            catch (Exception e2)
+            {
+                Debug.LogWarning($"[DebugFileLogger] 로그 파일을 만들지 못했습니다: {e2.Message}");
+                _path = null;
+                return;
+            }
         }
 
         Application.logMessageReceived += OnUnityLog;
         Debug.Log($"[DebugFileLogger] 로그 파일 위치: {_path}");
+    }
+
+    private static void WriteHeader()
+    {
+        File.WriteAllText(_path,
+            $"=== 우가우가게임 디버그 로그 시작 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
+            $"커맨드라인 인자: {string.Join(" ", Environment.GetCommandLineArgs())}\n\n");
     }
 
     private static void OnUnityLog(string condition, string stackTrace, LogType type)
