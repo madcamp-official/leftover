@@ -1,17 +1,25 @@
-// 시작 화면 + 최종 결과 화면을 겸하는 Hub 씬 컨트롤러. 시작 화면(배경/로고/버튼 4개)은
+// 시작 화면 + 최종 결과 화면을 겸하는 Hub 씬 컨트롤러. 시작 화면(배경/로고/버튼들)은
 // Assets/Prefabs/StartScreenCanvas.prefab을 Hub 씬에 직접 배치해두고 여기서는 그 참조만
 // 받아서 클릭 이벤트만 연결한다 - 위치/크기/스프라이트는 에디터에서 그 프리팹을 열어 직접
 // 조정하면 된다(디자인 담당이 손으로 만지는 부분, 코드는 손대지 않아도 됨).
-// MatchController가 "시작 전" 상태(CurrentRoundIndex == -1)면 이 시작 화면을, 5판이 다 끝난
-// 상태(IsMatchComplete)면 결과를 보여준다(결과 화면은 전용 아트가 없어 텍스트로만).
+// MatchController가 "시작 전" 상태(CurrentRoundIndex == -1)면 이 시작 화면을, 매치가 다
+// 끝난 상태(IsMatchComplete)면 결과를 보여준다.
+//
+// 멀티플레이 연결/게임 방법/설정 화면은 UI_화면_확장_에셋_계획.md에 따라 전용 프리팹 없이
+// 코드로 조립한다(LoadingScreenController.BuildGeneratedUi()와 같은 패턴, UiBuilder 참고) -
+// Hub 화면은 다른 미니게임 씬들과 달리 "디자인 담당이 손으로 만지는" StartScreenCanvas
+// 하나만 프리팹으로 관리하고, 나머지 화면은 그 위에 얹는 오버레이라 코드 조립이 더 낫다.
 using UnityEngine;
 using UnityEngine.UI;
 
 public class HubController : MonoBehaviour
 {
+    private enum HubScreen { Start, Multiplayer, HowTo, Settings, Result }
+
     [Header("씬에 배치된 시작화면 오브젝트 (Assets/Prefabs/StartScreenCanvas.prefab 인스턴스)")]
     [SerializeField] private GameObject startScreenCanvas;
-    [SerializeField] private Button gameStartButton;
+    [SerializeField] private Button buttonPlay2P;
+    [SerializeField] private Button buttonPlay1P;
     [SerializeField] private Button howToPlayButton;
     [SerializeField] private Button settingsButton;
     [SerializeField] private Button exitButton;
@@ -21,9 +29,15 @@ public class HubController : MonoBehaviour
     [SerializeField] private Text resultText;
     [SerializeField] private Button restartButton;
 
-    private string _toastText = "";
-    private float _toastTimer;
-    private string _joinAddressInput = "127.0.0.1";
+    private MultiplayerConnectScreen _multiplayerScreen;
+    private HowToPlayScreen _howToPlayScreen;
+    private SettingsScreen _settingsScreen;
+
+    private Image _resultBanner;
+    private Text _resultBannerText;
+    private Image _resultCrown;
+    private Text _resultP1ScoreText;
+    private Text _resultP2ScoreText;
 
     private void Start()
     {
@@ -33,48 +47,66 @@ public class HubController : MonoBehaviour
         ArtAssets.PreloadLoading();
         ArtAssets.PreloadScreamDuel();
 
-        gameStartButton?.onClick.AddListener(OnGameStartClicked);
-        howToPlayButton?.onClick.AddListener(OnHowToPlayClicked);
-        settingsButton?.onClick.AddListener(OnSettingsClicked);
+        BuildSubScreens();
+        BuildResultScreenExtras();
+
+        buttonPlay2P?.onClick.AddListener(OnPlay2PClicked);
+        buttonPlay1P?.onClick.AddListener(OnPlay1PClicked);
+        howToPlayButton?.onClick.AddListener(() => ShowScreen(HubScreen.HowTo));
+        settingsButton?.onClick.AddListener(() => ShowScreen(HubScreen.Settings));
         exitButton?.onClick.AddListener(OnExitClicked);
         restartButton?.onClick.AddListener(OnRestartClicked);
 
         MatchController match = MatchController.Instance;
-        bool showStartScreen = match != null && !match.IsMatchComplete && match.CurrentRoundIndex < 0;
-        startScreenCanvas?.SetActive(showStartScreen);
-        bool showResult = match != null && match.IsMatchComplete;
-        resultScreenCanvas?.SetActive(showResult);
-        if (showResult && resultText != null)
-        {
-            PlayerId? winner = match.OverallWinner();
-            resultText.text = winner == null
-                ? $"무승부!  {match.P1Wins} : {match.P2Wins}"
-                : $"{winner} 최종 승리!  {match.P1Wins} : {match.P2Wins}";
-        }
+        bool matchComplete = match != null && match.IsMatchComplete;
+        ShowScreen(matchComplete ? HubScreen.Result : HubScreen.Start);
     }
 
-    private void Update()
+    private void BuildSubScreens()
     {
-        if (_toastTimer > 0f)
-        {
-            _toastTimer -= Time.deltaTime;
-            if (_toastTimer <= 0f) _toastText = "";
-        }
+        var multiplayerGo = new GameObject("MultiplayerConnectScreen");
+        multiplayerGo.transform.SetParent(transform, false);
+        _multiplayerScreen = multiplayerGo.AddComponent<MultiplayerConnectScreen>();
+        _multiplayerScreen.Init(() => ShowScreen(HubScreen.Start));
 
-        // 클라이언트는 자기 판단으로 매치를 시작하지 못한다 - 호스트의 match_start
-        // 이벤트로만 시작한다(MatchController.StartMatch 참고).
-        NetworkSession net = NetworkSession.Instance;
-        if (gameStartButton != null && net != null)
-            gameStartButton.interactable = net.Role != NetworkRole.Client;
+        var howToGo = new GameObject("HowToPlayScreen");
+        howToGo.transform.SetParent(transform, false);
+        _howToPlayScreen = howToGo.AddComponent<HowToPlayScreen>();
+        _howToPlayScreen.Init(() => ShowScreen(HubScreen.Start));
+
+        var settingsGo = new GameObject("SettingsScreen");
+        settingsGo.transform.SetParent(transform, false);
+        _settingsScreen = settingsGo.AddComponent<SettingsScreen>();
+        _settingsScreen.Init(() => ShowScreen(HubScreen.Start));
+        // 설정 화면을 한 번도 연 적 없어도 저장된 효과음 볼륨은 부팅 시점에 적용해야 한다.
+        _settingsScreen.ApplySavedAudioSettings();
     }
 
-    private void OnGameStartClicked() => MatchController.Instance?.StartMatch();
+    private void ShowScreen(HubScreen screen)
+    {
+        startScreenCanvas?.SetActive(screen == HubScreen.Start);
+        resultScreenCanvas?.SetActive(screen == HubScreen.Result);
+        if (screen == HubScreen.Multiplayer) _multiplayerScreen.Show(); else _multiplayerScreen.Hide();
+        if (screen == HubScreen.HowTo) _howToPlayScreen.Show(); else _howToPlayScreen.Hide();
+        if (screen == HubScreen.Settings) _settingsScreen.Show(); else _settingsScreen.Hide();
+        if (screen == HubScreen.Result) RefreshResultScreen(MatchController.Instance);
+    }
+
+    // 2인 플레이 - 상대가 필요하므로 연결 화면(호스트/참가)으로 이동한다.
+    private void OnPlay2PClicked()
+    {
+        SoloBotController.SetEnabled(false);
+        ShowScreen(HubScreen.Multiplayer);
+    }
+
+    // 1인 플레이 - 네트워크 연결 없이 SoloBotController가 P2를 대신하고 바로 매치를 시작한다.
+    private void OnPlay1PClicked()
+    {
+        SoloBotController.SetEnabled(true);
+        MatchController.Instance?.StartMatch();
+    }
 
     private void OnRestartClicked() => MatchController.Instance?.StartMatch();
-
-    private void OnHowToPlayClicked() => ShowToast("게임 방법 - 준비 중입니다!");
-
-    private void OnSettingsClicked() => ShowToast("설정 - 준비 중입니다!");
 
     private void OnExitClicked()
     {
@@ -85,99 +117,65 @@ public class HubController : MonoBehaviour
 #endif
     }
 
-    private void ShowToast(string text)
+    // 결과 화면에 붙는 승리/무승부 배너, 점수판, 왕관, "메인으로" 버튼을 코드로 조립한다.
+    // 기존 resultText/restartButton은 씬에 이미 있는 참조를 그대로 재사용(숨기거나 재스킨).
+    private void BuildResultScreenExtras()
     {
-        _toastText = text;
-        _toastTimer = 2f;
-    }
+        if (resultScreenCanvas == null) return;
+        Transform root = resultScreenCanvas.transform;
 
-    private void OnGUI()
-    {
-        MatchController match = MatchController.Instance;
+        if (resultText != null) resultText.gameObject.SetActive(false);
 
-        if (!string.IsNullOrEmpty(_toastText))
+        _resultBanner = UiBuilder.AddImage(root, "ResultBanner", ArtAssets.LoadUi("result_panel_victory"),
+            new Vector2(0.5f, 0.72f), Vector2.zero, new Vector2(1600f, 380f));
+        _resultBannerText = UiBuilder.AddText(root, "ResultBannerText", "", 64);
+        UiBuilder.SetRect(_resultBannerText.rectTransform, new Vector2(0.5f, 0.72f), new Vector2(-100f, 0f),
+            new Vector2(900f, 200f));
+
+        _resultCrown = UiBuilder.AddImage(root, "ResultCrown", ArtAssets.LoadUi("result_crown_icon"),
+            new Vector2(0.5f, 0.38f), new Vector2(-270f, 260f), new Vector2(180f, 180f));
+
+        UiBuilder.AddImage(root, "ScoreboardPanel", ArtAssets.LoadUi("result_scoreboard_panel"),
+            new Vector2(0.5f, 0.38f), Vector2.zero, new Vector2(1100f, 420f));
+        _resultP1ScoreText = UiBuilder.AddText(root, "P1ScoreText", "", 80);
+        UiBuilder.SetRect(_resultP1ScoreText.rectTransform, new Vector2(0.5f, 0.38f), new Vector2(-270f, 0f),
+            new Vector2(400f, 300f));
+        _resultP2ScoreText = UiBuilder.AddText(root, "P2ScoreText", "", 80);
+        UiBuilder.SetRect(_resultP2ScoreText.rectTransform, new Vector2(0.5f, 0.38f), new Vector2(270f, 0f),
+            new Vector2(400f, 300f));
+
+        if (restartButton != null)
         {
-            var toastStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 26,
-                alignment = TextAnchor.LowerCenter,
-                normal = { textColor = Color.white },
-            };
-            GUI.Label(new Rect(0, Screen.height - 100, Screen.width, 50), _toastText, toastStyle);
+            var image = restartButton.GetComponent<Image>();
+            if (image != null) image.sprite = ArtAssets.LoadUi("result_button_replay");
+            RectTransform rt = restartButton.GetComponent<RectTransform>();
+            if (rt != null) UiBuilder.SetRect(rt, new Vector2(0.5f, 0.08f), new Vector2(-260f, 0f),
+                new Vector2(480f, 190f));
         }
 
-        bool onStartScreen = match != null && !match.IsMatchComplete && match.CurrentRoundIndex < 0;
-        if (onStartScreen) DrawNetworkPanel();
+        Button mainMenu = UiBuilder.AddButton(root, "MainMenuButton", ArtAssets.LoadUi("result_button_main_menu"),
+            new Vector2(0.5f, 0.08f), new Vector2(260f, 0f), new Vector2(480f, 190f));
+        mainMenu.onClick.AddListener(() => ShowScreen(HubScreen.Start));
     }
 
-    // 호스트-클라이언트 역할 선택 패널 (docs/멀티플레이_분산_아키텍처_설계.md 5장).
-    // 전용 UI 프리팹이 아직 없어 임시로 OnGUI로 그린다 - 위 _toastText와 같은 방식.
-    private void DrawNetworkPanel()
+    private void RefreshResultScreen(MatchController match)
     {
-        NetworkSession net = NetworkSession.Instance;
-        if (net == null) return;
+        if (match == null || _resultBanner == null) return;
 
-        var boxStyle = new GUIStyle(GUI.skin.box);
-        var titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold };
-        var labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true };
+        PlayerId? winner = match.OverallWinner();
+        bool isDraw = winner == null;
 
-        GUILayout.BeginArea(new Rect(16, 16, 320, 240), boxStyle);
-        GUILayout.Label("네트워크 모드", titleStyle);
-        GUILayout.Label($"{DescribeRole(net.Role)} / {DescribeState(net.ConnectionState)}", labelStyle);
+        _resultBanner.sprite = ArtAssets.LoadUi(isDraw ? "result_panel_draw" : "result_panel_victory");
+        _resultBannerText.text = isDraw ? "무승부!" : $"{winner} 승리!";
 
-        switch (net.Role)
+        _resultCrown.gameObject.SetActive(!isDraw);
+        if (!isDraw)
         {
-            case NetworkRole.Offline:
-                if (GUILayout.Button("호스트로 시작")) { SoloBotController.SetEnabled(false); net.StartHost(); }
-                GUILayout.Label("접속할 호스트 IP:", labelStyle);
-                _joinAddressInput = GUILayout.TextField(_joinAddressInput);
-                if (GUILayout.Button("접속")) { SoloBotController.SetEnabled(false); net.StartClient(_joinAddressInput); }
-                GUILayout.Space(6);
-                // 혼자하기 - 실제 카메라 없이 P2를 봇이 대신 조작한다(SoloBotController).
-                // 상대방 없이도 매치를 끝까지 진행해볼 수 있는 연습용 모드.
-                bool soloOn = SoloBotController.IsEnabled;
-                string soloLabel = soloOn ? "혼자하기 ON (P2 = 봇)" : "혼자하기 OFF";
-                if (GUILayout.Button(soloLabel)) SoloBotController.SetEnabled(!soloOn);
-                break;
-            case NetworkRole.Host:
-                GUILayout.Label($"내 IP: {net.LocalAddressHint} (포트 {GameEventChannel.DefaultPort})", labelStyle);
-                GUILayout.Label(net.ConnectionState == NetworkConnectionState.Connected
-                    ? "클라이언트 연결됨"
-                    : "클라이언트 접속 대기 중...", labelStyle);
-                if (GUILayout.Button("연결 끊기")) net.Shutdown();
-                break;
-            case NetworkRole.Client:
-                GUILayout.Label(net.ConnectionState == NetworkConnectionState.Connected
-                    ? "호스트에 연결됨 - 호스트가 시작하기를 기다립니다"
-                    : "호스트 접속 시도 중...", labelStyle);
-                if (GUILayout.Button("연결 끊기")) net.Shutdown();
-                break;
+            float side = winner == PlayerId.P1 ? -270f : 270f;
+            _resultCrown.rectTransform.anchoredPosition = new Vector2(side, 260f);
         }
 
-        if (!string.IsNullOrEmpty(net.LastError))
-            GUILayout.Label(net.LastError, labelStyle);
-
-        GUILayout.EndArea();
-    }
-
-    private static string DescribeRole(NetworkRole role)
-    {
-        switch (role)
-        {
-            case NetworkRole.Host: return "호스트";
-            case NetworkRole.Client: return "클라이언트";
-            default: return "오프라인(로컬 단독)";
-        }
-    }
-
-    private static string DescribeState(NetworkConnectionState state)
-    {
-        switch (state)
-        {
-            case NetworkConnectionState.Listening: return "대기 중";
-            case NetworkConnectionState.Connecting: return "접속 중";
-            case NetworkConnectionState.Connected: return "연결됨";
-            default: return "연결 안 됨";
-        }
+        _resultP1ScoreText.text = $"P1\n{match.P1Wins}";
+        _resultP2ScoreText.text = $"P2\n{match.P2Wins}";
     }
 }
