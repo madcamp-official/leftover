@@ -9,6 +9,10 @@ using UnityEngine.UI;
 public sealed class LoadingScreenController : MonoBehaviour
 {
     private const string CanvasPrefabResourcePath = "Loading/LoadingScreenCanvas";
+    // 카메라가 아직 연결되지 않았을 때 CameraPreview RawImage에 거는 어두운 틴트 - 프레임이
+    // 도착하면 Color.white로 되돌려야 한다(Update() 참고). 그러지 않으면 실제 카메라 이미지도
+    // 이 틴트만큼 곱해져 사실상 안 보인다.
+    private static readonly Color PreviewPlaceholderColor = new Color(0.04f, 0.04f, 0.04f, 1f);
 
     private readonly string[] _backgroundNames =
     {
@@ -175,6 +179,7 @@ public sealed class LoadingScreenController : MonoBehaviour
         _message.text = $"{PrettySceneName(nextScene)} 준비 중\n몸 전체가 보이도록 차렷 자세를 유지하세요";
         _previewLabel.text = $"{_localPlayer} CAMERA";
         _preview.texture = null;
+        _preview.color = PreviewPlaceholderColor; // 새 라운드 시작 - 카메라 붙기 전 빈 상자로 되돌림
         _root.SetActive(true);
 
         PoseInputHub.Instance?.BeginCalibration();
@@ -196,7 +201,15 @@ public sealed class LoadingScreenController : MonoBehaviour
 
         CameraPreviewReceiver previewReceiver = CameraPreviewReceiver.Instance;
         Texture texture = previewReceiver != null ? previewReceiver.GetTexture(_localPlayer) : null;
-        if (texture != null) _preview.texture = texture;
+        if (texture != null)
+        {
+            _preview.texture = texture;
+            // RawImage는 텍스처×틴트로 렌더링된다. 카메라가 연결되기 전엔 "빈 상자"처럼
+            // 보이도록 아래 Show()에서 어두운 틴트(0.04)를 걸어두는데, 이걸 흰색으로
+            // 되돌리지 않으면 실제 카메라 프레임이 들어와도 밝기 4%로 곱해져 사실상 안
+            // 보인다(실측 확인된 버그) - 프레임이 처음 도착하는 순간 딱 한 번 되돌린다.
+            if (_preview.color != Color.white) _preview.color = Color.white;
+        }
 
         RefreshStatus(PlayerId.P1, 0);
         RefreshStatus(PlayerId.P2, 1);
@@ -543,7 +556,7 @@ public sealed class LoadingScreenController : MonoBehaviour
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
         var image = go.AddComponent<RawImage>();
-        image.color = new Color(0.04f, 0.04f, 0.04f, 1f);
+        image.color = PreviewPlaceholderColor;
         image.raycastTarget = false;
         image.uvRect = new Rect(0f, 0f, 1f, 1f);
         SetRect(image.rectTransform, anchor, offset, size);
