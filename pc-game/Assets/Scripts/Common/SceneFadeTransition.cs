@@ -42,7 +42,13 @@ public sealed class SceneFadeTransition : MonoBehaviour
     // 진행(라운드 타이머, 판정)은 카운트다운이 끝나야 시작된다.
     private const string RoundReadyEvent = "round_ready";
     private bool _roundReadySubscribed;
-    private bool _otherRoundReady;
+    // 상대가 확인한 가장 최신 라운드 번호 - bool 하나로 "확인됨/안 됨"만 추적했을 때는,
+    // 내가 이번 라운드 대기를 "시작하는 시점"에 그 값을 false로 초기화해야 했는데, 상대가
+    // 나보다 먼저 이 지점에 도달해서 이미 자기 신호를 보내놓은 경우 그 신호가 내 초기화로
+    // 지워져버리는 레이스 컨디션이 있었다(실측으로 확인된, "P2 카운트다운이 계속 늦게
+    // 시작한다"의 원인) - 이번 라운드 번호(MatchController.CurrentRoundIndex)와 비교하는
+    // 방식으로 바꿔서, 상대 신호가 내가 기다리기 시작하기 전에 도착해도 절대 사라지지 않는다.
+    private int _otherReadyRound = -1;
     private GameObject _countdownRoot;
     private Text _countdownText;
 
@@ -158,26 +164,32 @@ public sealed class SceneFadeTransition : MonoBehaviour
 
         EnsureCountdownSubscribed();
         EnsureCountdownUi();
-        _otherRoundReady = false;
-        net.Send(RoundReadyEvent, new RoundReadyPayload());
 
+        int myRound = MatchController.Instance != null ? MatchController.Instance.CurrentRoundIndex : 0;
+        Debug.Log($"[SyncStart:{net.Role}] round={myRound} 대기 시작, timeScale=0으로 얼림");
+
+        // "상대방을 기다리는 중" 문구가 떠 있는 동안에도 이미 로드된 씬의 미니게임 로직
+        // (타이머/판정)이 계속 돌고 있던 버그가 있었다(실측 확인) - 예전엔 이 줄이 대기 루프
+        // "뒤"에 있어서, 대기 시간이 긴 쪽만 그만큼 게임이 먼저 진행돼버렸다. 대기를 시작하는
+        // 바로 이 순간부터 얼려야 대기 시간 자체가 어느 쪽에도 유·불리하게 작용하지 않는다.
+        Time.timeScale = 0f;
         _countdownRoot.SetActive(true);
         _countdownText.text = "상대방을 기다리는 중...";
+        net.Send(RoundReadyEvent, new RoundReadyPayload { round = myRound });
 
         // 네트워크 문제로 상대 신호가 영영 안 오면(연결이 끊겼다면 NetworkReconnectOverlay가
         // 따로 처리한다) 여기서 무한정 멈추지 않고 최선을 다해 진행한다.
         const float waitTimeoutSeconds = 10f;
         float waited = 0f;
-        while (!_otherRoundReady && waited < waitTimeoutSeconds)
+        while (_otherReadyRound < myRound && waited < waitTimeoutSeconds)
         {
             waited += Time.unscaledDeltaTime;
             yield return null;
         }
+        bool timedOut = _otherReadyRound < myRound;
+        Debug.Log($"[SyncStart:{net.Role}] round={myRound} 대기 끝 (waited={waited:F2}s, " +
+            $"{(timedOut ? "타임아웃" : "상대 확인됨")}) - 카운트다운 시작");
 
-        // 카운트다운이 도는 동안 실제 게임 진행(라운드 타이머, 물리, 판정)을 전부 멈춘다 -
-        // 미니게임들이 전부 Time.deltaTime 기반이라 코드를 하나도 안 건드려도 여기서 한 번에
-        // 얼릴 수 있다(NetworkReconnectOverlay와 같은 방식).
-        Time.timeScale = 0f;
         string[] steps = { "3", "2", "1", "시작!" };
         foreach (string label in steps)
         {
@@ -191,6 +203,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
         }
         Time.timeScale = 1f;
         _countdownRoot.SetActive(false);
+        Debug.Log($"[SyncStart:{net.Role}] round={myRound} 카운트다운 끝, timeScale=1로 복원, 게임 시작");
     }
 
     private void EnsureCountdownSubscribed()
@@ -202,7 +215,19 @@ public sealed class SceneFadeTransition : MonoBehaviour
         _roundReadySubscribed = true;
     }
 
-    private void OnNetRoundReady(NetworkEvent evt) => _otherRoundReady = true;
+    // 내가 아직 이번 라운드의 RunSynchronizedCountdown을 시작하기도 전에 상대 신호가 먼저
+    // 도착할 수 있다(상대 쪽 씬 로딩이 더 빨랐을 때) - 그래도 절대 유실되지 않도록, "가장 최신
+    // 라운드 번호"만 갱신할 뿐 여기서는 아무것도 초기화하지 않는다.
+    private void OnNetRoundReady(NetworkEvent evt)
+    {
+        RoundReadyPayload payload = NetworkSession.Read<RoundReadyPayload>(evt);
+        if (payload.round > _otherReadyRound)
+        {
+            _otherReadyRound = payload.round;
+            NetworkSession net = NetworkSession.Instance;
+            Debug.Log($"[SyncStart:{(net != null ? net.Role.ToString() : "?")}] 상대의 round_ready 수신: round={payload.round}");
+        }
+    }
 
     private void EnsureCountdownUi()
     {
@@ -233,7 +258,7 @@ public sealed class SceneFadeTransition : MonoBehaviour
         _countdownRoot.SetActive(false);
     }
 
-    [System.Serializable] private class RoundReadyPayload { }
+    [System.Serializable] private class RoundReadyPayload { public int round; }
 
     private IEnumerator HoldBlackFrame()
     {
