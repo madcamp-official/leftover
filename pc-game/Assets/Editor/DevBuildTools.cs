@@ -16,11 +16,14 @@ public static class DevBuildTools
     // 리포 루트의 .gitignore가 이미 Build/를 무시하므로 그 이름을 그대로 쓴다.
     private const string OutputRoot = "../Build";
 
-    // vision-server/vision-server.spec으로 PyInstaller가 만드는 산출물 - onedir 빌드라
-    // 실행파일 하나가 아니라 폴더 통째로(실행파일 + _internal/) 옮겨야 한다. 이 리포를
-    // 통째로 갖고 있는 개발 머신 기준 상대 경로 - VisionServerLauncher.ResolveBinaryPath()의
-    // 개발용 폴백 경로와 반드시 같은 곳을 가리켜야 한다.
-    private const string VisionServerDistRoot = "../vision-server/dist/vision-server";
+    // vision-server/vision-server.spec으로 PyInstaller가 만드는 산출물 - 이 리포를 통째로
+    // 갖고 있는 개발 머신 기준 상대 경로. VisionServerLauncher.ResolveBinaryPath()의 개발용
+    // 폴백 경로와 반드시 같은 곳을 가리켜야 한다.
+    // macOS는 .app 번들 통째로(카메라/마이크 TCC 권한에 Info.plist가 필요 - 실측 확인,
+    // vision-server.spec의 BUNDLE() 단계 참고), Windows는 onedir 폴더 그대로(TCC 개념이
+    // 없어 번들 불필요).
+    private const string VisionServerAppSourceMac = "../vision-server/dist/vision-server.app";
+    private const string VisionServerDistSourceWindows = "../vision-server/dist/vision-server";
 
     [MenuItem("Tools/UGAUGA/Build Dev Player (macOS)")]
     public static void BuildMac()
@@ -97,12 +100,12 @@ public static class DevBuildTools
     }
 
     // macOS: VisionServerLauncher.ResolveBinaryPath()가 Application.dataPath(=.app/Contents,
-    // 실측 확인 - Contents/Resources/Data가 아니다) 밑 Resources/vision-server/를 찾으므로
-    // 그 자리에 그대로 복사한다.
+    // 실측 확인 - Contents/Resources/Data가 아니다) 밑 Resources/vision-server.app/를
+    // 찾으므로 그 자리에 .app 번들 통째로 복사한다.
     private static void CopyVisionServerIntoMacApp(string appPath)
     {
-        string dest = Path.Combine(appPath, "Contents", "Resources", "vision-server");
-        CopyVisionServerDist(dest);
+        string dest = Path.Combine(appPath, "Contents", "Resources", "vision-server.app");
+        CopyVisionServerDist(VisionServerAppSourceMac, dest, "Contents/MacOS/vision-server");
 #if UNITY_EDITOR_OSX
         // Unity가 빌드 직후 .app에 ad-hoc 서명을 걸어두는데(codesign -dv로 실측 확인,
         // flags=0x2(adhoc)), 서명 이후에 파일(vision-server/)을 더 끼워넣으면 서명이 담고
@@ -125,12 +128,14 @@ public static class DevBuildTools
     {
         string exeDir = Path.GetDirectoryName(Path.GetFullPath(exePath));
         string dest = Path.Combine(exeDir, "vision-server");
-        CopyVisionServerDist(dest);
+        CopyVisionServerDist(VisionServerDistSourceWindows, dest, "vision-server.exe");
     }
 
-    private static void CopyVisionServerDist(string dest)
+    // relativeExePath: dest 밑에서 실제 실행 파일 위치(macOS는 .app 내부로 한 단계 더 들어가야
+    // 함 - Contents/MacOS/vision-server, Windows는 폴더 바로 밑 vision-server.exe).
+    private static void CopyVisionServerDist(string sourceRoot, string dest, string relativeExePath)
     {
-        string src = Path.GetFullPath(VisionServerDistRoot);
+        string src = Path.GetFullPath(sourceRoot);
         if (!Directory.Exists(src))
         {
             Debug.LogWarning(
@@ -144,11 +149,11 @@ public static class DevBuildTools
         if (Directory.Exists(dest)) Directory.Delete(dest, recursive: true);
         CopyDirectoryRecursive(src, dest);
 
-        // PyInstaller onedir 산출물은 실행 권한 비트가 이미 있지만, 이 리포 안에서 다시
-        // 복사하는 과정(Directory copy)에서 마스크가 유지 안 되는 경우가 있어 macOS에서는
-        // 확실히 한 번 더 걸어준다. Windows는 실행 권한 개념이 달라서 해당 없음.
+        // PyInstaller 산출물은 실행 권한 비트가 이미 있지만, 이 리포 안에서 다시 복사하는
+        // 과정(Directory copy)에서 마스크가 유지 안 되는 경우가 있어 macOS에서는 확실히 한
+        // 번 더 걸어준다. Windows는 실행 권한 개념이 달라서 해당 없음.
 #if UNITY_EDITOR_OSX
-        string exePath = Path.Combine(dest, "vision-server");
+        string exePath = Path.Combine(dest, relativeExePath);
         if (File.Exists(exePath)) RunAndWait("/bin/chmod", $"+x \"{exePath}\"", out _);
 #endif
 
