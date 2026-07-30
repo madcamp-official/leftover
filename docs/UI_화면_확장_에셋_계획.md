@@ -196,34 +196,30 @@ brown outline, transparent background, matches the game's prehistoric party-game
 style.
 ```
 
-## 5. 게임 방법 화면 (신규)
+## 5. 게임 방법 화면 (신규, 확정)
 
-미니게임 7개를 한 장씩 넘겨보는 구조 제안 — 큰 설명 패널 하나 + 페이지 이동 화살표 +
-게임별 작은 아이콘 7개.
+**결정됨**: 아이콘/삽화 없이 **텍스트 영역만 페이지별로 넘기는 구조**로 간다. 패널은
+"빈 속지"만 그림으로 만들고, 제목("1. 돌던지기" 등)·본문·페이지 번호("1/7")는 전부 Unity
+`Text` 컴포넌트로 코드에서 채운다(이미지로 굽지 않음) — 그래서 미니게임별 아이콘 7장은
+목록에서 뺐다. 패널·화살표만 있으면 된다.
 
 | 파일 | 크기(px) | 용도 |
 |---|---|---|
-| `screens/howto/panel_instruction.png` | 2600×1800 | 설명 텍스트 + 삽화가 들어갈 큰 패널 |
+| `screens/howto/panel_instruction.png` | 2600×1800 | 제목/본문 텍스트 영역이 들어갈 빈 패널 |
 | `screens/howto/button_page_prev.png` | 500×500 | 이전 페이지 화살표 |
 | `screens/howto/button_page_next.png` | 500×500 | 다음 페이지 화살표 |
-| `screens/howto/icon_stonethrow.png` | 600×600 | 돌던지기 아이콘 |
-| `screens/howto/icon_fruitjump.png` | 600×600 | 과일따기 아이콘 |
-| `screens/howto/icon_coconutcrack.png` | 600×600 | 코코넛깨기 아이콘 |
-| `screens/howto/icon_stoneorbanana.png` | 600×600 | 돌or바나나 아이콘 |
-| `screens/howto/icon_staringcontest.png` | 600×600 | 눈빛싸움 아이콘 |
-| `screens/howto/icon_screamduel.png` | 600×600 | 소리지르기 아이콘 |
-| `screens/howto/icon_featherflight.png` | 600×600 | 깃털날기 아이콘 |
 
-`button_back.png`(4장)을 "닫기"로 재사용.
+`button_back.png`(4장)를 "닫기"로 재사용.
 
 **panel_instruction.png**
 ```
 (패널/버튼 공통 블록, 큰 사이즈)
 
-Large wide stone tablet with a spacious flat tan cracked-stone interior meant to hold
-a title, illustration, and paragraph of text on top later, thick bark-textured wooden
-log border with vine rope ties at all four corners, bone accents top-center and
-bottom-center, leaf sprigs at two corners. No text baked in. Transparent background.
+Large wide stone tablet with a spacious flat tan cracked-stone interior, completely
+empty (no text, no illustration baked in) so a title and paragraph of text can be
+overlaid on top later by the UI system, thick bark-textured wooden log border with
+vine rope ties at all four corners, bone accents top-center and bottom-center, leaf
+sprigs at two corners. Transparent background.
 ```
 
 **button_page_prev.png / button_page_next.png**
@@ -232,29 +228,12 @@ bottom-center, leaf sprigs at two corners. No text baked in. Transparent backgro
 화살표, next는 오른쪽 화살표)
 ```
 
-**아이콘 7종 공통 틀 + 개별 동작(ACTION)**
-```
-A small circular stone medallion icon: a carved bone-white stone ring border with tiny
-cream bone-stud accents at top and bottom, containing a simple bold flat-color
-pictogram of {ACTION}. Thick brown outline, warm saturated colors, centered
-composition, transparent background, same prehistoric party-game art style as the
-rest of the UI.
-```
+## 6. 설정 화면 (신규, 확정)
 
-| 아이콘 | {ACTION} |
-|---|---|
-| icon_stonethrow | a caveman figure raising one arm overhead to throw a small stone |
-| icon_fruitjump | a caveman figure mid-jump reaching up toward a fruit on a tree branch |
-| icon_coconutcrack | a caveman figure bringing both hands together toward the top of the head, next to a coconut |
-| icon_stoneorbanana | a stone and a banana side by side with a small question mark above them |
-| icon_staringcontest | a simple wide-open cartoon eye with bold lashes, unblinking |
-| icon_screamduel | a caveman figure with mouth wide open shouting, small sound-wave lines beside the mouth |
-| icon_featherflight | a caveman figure holding two feathers, arms spread like wings, mid-air over a cliff |
-
-## 6. 설정 화면 (신규)
-
-음악/효과음 on-off, 카메라·마이크 장치 선택 정도로 시작 — 실제 어떤 옵션이 들어갈지는
-구현 시점에 확정.
+**결정됨**: 음악/효과음 on-off + **카메라·마이크 장치 선택 포함**. 장치 선택 드롭다운은
+"카메라"용, "마이크"용 두 개가 화면에 나란히 있어야 하는데, 프레임 이미지는 하나만
+만들어서 두 번 배치하면 된다(라벨 텍스트도 이미지에 굽지 않고 Unity `Text`로 처리). 다만
+드롭다운은 "누르면 펼쳐진다"는 게 한눈에 보여야 하니 화살표 아이콘을 하나 추가한다.
 
 | 파일 | 크기(px) | 용도 |
 |---|---|---|
@@ -263,9 +242,19 @@ rest of the UI.
 | `screens/settings/toggle_off.png` | 400×220 | 토글 스위치 꺼짐 상태 |
 | `screens/settings/slider_track.png` | 1200×160 | 볼륨 슬라이더 트랙 |
 | `screens/settings/slider_handle.png` | 260×260 | 볼륨 슬라이더 손잡이 |
-| `screens/settings/dropdown_frame.png` | 1400×400 | 카메라/마이크 장치 선택 배경 |
+| `screens/settings/dropdown_frame.png` | 1400×400 | 카메라 선택 / 마이크 선택 배경(같은 파일을 두 번 배치) |
+| `screens/settings/dropdown_arrow.png` | 300×300 | 드롭다운 펼침 화살표(프레임 오른쪽 끝에 겹쳐 배치) |
 
 `button_back.png` 재사용.
+
+**dropdown_arrow.png**
+```
+A small cartoon prehistoric UI icon: a bold thick brown downward-pointing triangle
+arrow carved from a tiny flat stone chip, thin darker-brown outline, soft cel-shaded
+painterly rendering, transparent background, matches the game's prehistoric
+party-game UI style. Simple and small enough to sit at the end of a nameplate frame
+as a "tap to expand" affordance.
+```
 
 **panel_main.png** — 4장 `panel_instruction.png`와 같은 프롬프트, 크기만 다름(재사용).
 
@@ -379,18 +368,18 @@ signaling "go back home".
 |---|---|
 | Hub 시작 화면(버튼 교체) | 2 |
 | 멀티플레이 연결 화면 | 8 (공용 뒤로가기 버튼 포함) |
-| 게임 방법 화면 | 9 (아이콘 7 + 페이지 화살표 2, 뒤로가기는 재사용) |
-| 설정 화면 | 5 (패널은 게임방법 패널 재사용) |
+| 게임 방법 화면 | 3 (아이콘 없이 패널 + 페이지 화살표 2, 뒤로가기는 재사용) |
+| 설정 화면 | 6 (패널은 게임방법 패널 재사용) |
 | 최종 결과 화면 | 6 |
-| **합계** | **30장** |
+| **합계** | **25장** |
 
 ## 9. TODO
 
-- [ ] 게임 방법 화면을 "7페이지 넘기기" 대신 "한 화면에 7개 아이콘 그리드 + 선택 시 상세"
-      구조로 바꿀지 결정 — 정해지면 `panel_instruction.png` 비율/레이아웃도 다시 잡아야 함
-- [ ] 설정 화면에 실제로 어떤 옵션이 들어갈지 확정(음악/효과음 볼륨은 거의 확실, 카메라·
-      마이크 장치 선택은 vision-server 번들링 작업(배포_아키텍처_설계.md 1장)과 맞물림 —
-      그 전엔 "장치 선택" UI가 실제로 뭘 제어할지 애매함)
+- [x] 게임 방법 화면 구조 — **"텍스트만 페이지별로 넘기기"로 확정.** 아이콘/삽화 없음.
+- [x] 설정 화면 옵션 — **음악/효과음 on-off + 카메라·마이크 장치 선택 포함으로 확정.**
+      실제로 장치 선택 드롭다운이 무엇을 제어하는지는 vision-server 번들링 작업
+      (`배포_아키텍처_설계.md` 1장)이 끝나야 확정되지만, UI 자체는 지금 만들어도 된다 —
+      값을 어디 저장/전달할지만 나중에 연결하면 됨.
 - [ ] 위 프롬프트로 생성한 결과물의 배경 제거(투명 PNG화), 캔버스 크기 통일은 기존
       워크플로(포토샵 보정 → `image/screens/...`에 반영 → 필요한 것만 `Resources`로
       임포트) 그대로 따를 것
