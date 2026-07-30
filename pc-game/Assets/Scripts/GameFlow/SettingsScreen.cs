@@ -7,10 +7,10 @@
 // 나열/선택)는 Unity의 WebCamTexture.devices / Microphone.devices로 실제 장치를 보여준다 -
 // 나중에 vision-server 실행 인자로 이 값을 넘기기만 하면 된다.
 //
-// 효과음 볼륨은 실제로 GameSfx.Volume에 반영되어 즉시 동작한다. 음악(배경음악) 쪽은 이
-// 프로젝트에 BGM 재생 시스템 자체가 아직 없어서(작업_분담_체크리스트.md "사운드" 항목),
-// 토글/슬라이더는 있지만 PlayerPrefs에 저장만 하고 아무 것도 제어하지 않는다 - BGM
-// 시스템이 생기면 그때 연결한다.
+// 효과음 볼륨은 GameSfx.Volume에, 음악 on/off・볼륨은 GameBgm.MusicEnabled/MusicVolume에
+// 반영되어 즉시 동작한다. 두 시스템 모두 값을 직접 PlayerPrefs에 저장/로드하므로 이 화면은
+// 자체 PlayerPrefs 키를 따로 두지 않고 그 정적 프로퍼티를 그대로 읽고 쓰기만 한다 -
+// 값의 소유자는 항상 GameSfx/GameBgm 쪽이다.
 //
 // LoadingScreenController와 같은 패턴: Resources/UI/Prefabs/SettingsCanvas 프리팹이
 // 있으면 그걸 불러와 쓰고(에디터에서 마우스로 다듬은 결과), 없으면 코드로 기본 레이아웃을
@@ -24,9 +24,7 @@ public sealed class SettingsScreen : MonoBehaviour
 {
     private const string CanvasPrefabResourcePath = "UI/Prefabs/SettingsCanvas";
 
-    private const string MusicOnKey = "settings_music_on";
     private const string SfxOnKey = "settings_sfx_on";
-    private const string MusicVolumeKey = "settings_music_volume";
     private const string SfxVolumeKey = "settings_sfx_volume";
     private const string CameraDeviceKey = "settings_camera_device";
     private const string MicDeviceKey = "settings_mic_device";
@@ -36,7 +34,6 @@ public sealed class SettingsScreen : MonoBehaviour
     private Text _cameraDeviceText;
     private Text _micDeviceText;
 
-    private bool _musicOn;
     private bool _sfxOn;
     private string[] _cameraDevices = Array.Empty<string>();
     private string[] _micDevices = Array.Empty<string>();
@@ -62,11 +59,12 @@ public sealed class SettingsScreen : MonoBehaviour
         return _canvasObject;
     }
 
-    // Hub가 게임 시작 전(부팅 시점)에도 한 번 호출해서 저장된 볼륨을 실제로 적용해둔다 -
-    // 설정 화면을 열어본 적 없어도 이전에 저장한 값이 반영되어야 하므로.
+    // Hub가 게임 시작 전(부팅 시점)에도 한 번 호출해서 저장된 효과음 볼륨을 실제로
+    // 적용해둔다 - 설정 화면을 열어본 적 없어도 이전에 저장한 값이 반영되어야 하므로.
+    // 음악 쪽은 GameBgm이 스스로 PlayerPrefs에서 읽어 부팅 시점에 적용하므로 여기서
+    // 따로 손댈 필요가 없다.
     public void ApplySavedAudioSettings()
     {
-        _musicOn = PlayerPrefs.GetInt(MusicOnKey, 1) == 1;
         _sfxOn = PlayerPrefs.GetInt(SfxOnKey, 1) == 1;
         float sfxVolume = PlayerPrefs.GetFloat(SfxVolumeKey, 1f);
         GameSfx.Volume = _sfxOn ? sfxVolume : 0f;
@@ -92,7 +90,6 @@ public sealed class SettingsScreen : MonoBehaviour
     {
         Transform root = _canvasObject.transform;
         ApplySavedAudioSettings();
-        float musicVolume = PlayerPrefs.GetFloat(MusicVolumeKey, 0.8f);
         float sfxVolume = PlayerPrefs.GetFloat(SfxVolumeKey, 1f);
 
         Transform musicRow = UiBuilder.FindDescendant(root, "Row_음악");
@@ -108,13 +105,9 @@ public sealed class SettingsScreen : MonoBehaviour
                 "Tools > UGAUGA > Rebuild Hub Screen Prefabs로 프리팹을 다시 만드세요.");
         }
 
-        WireAudioRow(musicRow, _musicOn, musicVolume,
-            onToggle: on =>
-            {
-                _musicOn = on;
-                PlayerPrefs.SetInt(MusicOnKey, on ? 1 : 0);
-            },
-            onVolume: v => PlayerPrefs.SetFloat(MusicVolumeKey, v));
+        WireAudioRow(musicRow, GameBgm.MusicEnabled, GameBgm.MusicVolume,
+            onToggle: on => GameBgm.MusicEnabled = on,
+            onVolume: v => GameBgm.MusicVolume = v);
 
         float sfxVolumeNow = sfxVolume;
         WireAudioRow(sfxRow, _sfxOn, sfxVolume,
@@ -153,18 +146,12 @@ public sealed class SettingsScreen : MonoBehaviour
             new Vector2(1200f, 90f));
 
         ApplySavedAudioSettings();
-        float musicVolume = PlayerPrefs.GetFloat(MusicVolumeKey, 0.8f);
         float sfxVolume = PlayerPrefs.GetFloat(SfxVolumeKey, 1f);
 
         Transform musicRow = CreateAudioRowStructure(root, "음악", -260f);
-        WireAudioRow(musicRow, _musicOn, musicVolume,
-            onToggle: on =>
-            {
-                _musicOn = on;
-                PlayerPrefs.SetInt(MusicOnKey, on ? 1 : 0);
-                // BGM 시스템이 아직 없어서 여기서 더 할 일이 없다 - 값만 저장.
-            },
-            onVolume: v => PlayerPrefs.SetFloat(MusicVolumeKey, v));
+        WireAudioRow(musicRow, GameBgm.MusicEnabled, GameBgm.MusicVolume,
+            onToggle: on => GameBgm.MusicEnabled = on,
+            onVolume: v => GameBgm.MusicVolume = v);
 
         Transform sfxRow = CreateAudioRowStructure(root, "효과음", -100f);
         float sfxVolumeNow = sfxVolume;
