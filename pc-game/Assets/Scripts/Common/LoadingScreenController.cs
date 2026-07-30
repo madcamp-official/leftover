@@ -50,16 +50,32 @@ public sealed class LoadingScreenController : MonoBehaviour
     // vision-server는 포즈/프리뷰를 호스트로만 보내므로, 클라이언트의 PoseInputHub는 항상
     // 비어 있다. 그대로 두면 AreBothCalibrated가 영원히 false여서 IsReady가 서지 않고
     // SceneFadeTransition이 로딩 화면에서 무한 대기한다(실제로 클라이언트가 미니게임에
-    // 진입하지 못했던 원인). 그래서 호스트가 캘리브레이션 상태와 카메라 프리뷰를 이벤트로
-    // 중계하고, 클라이언트는 자기 판단 대신 그 값을 그대로 표시/사용한다.
+    // 진입하지 못했던 원인). 그래서 호스트가 캘리브레이션 상태를 이벤트로 중계하고, 카메라
+    // 프리뷰는 CameraPreviewReceiver가 UDP로 직접 중계하며(ForwardRelayFrame 참고), 클라이언트는
+    // 자기 판단 대신 그 값을 그대로 표시/사용한다.
     private const float StatusSendInterval = 0.1f; // 상태는 10Hz면 충분(프리뷰는 도착할 때만 중계)
     private float _lastStatusSentAt;
     private StatusPayload _relayedStatus;
     private bool _subscribed;
-    // ready가 true로 바뀐 프레임에 스로틀 때문에 전송이 밀리면, 호스트는 곧 로딩 화면을 닫고
-    // 더 이상 상태를 보내지 않으므로 클라이언트가 ready=true를 영원히 못 받고 멈춘다.
-    // 그래서 ready 값이 바뀌는 순간에는 스로틀을 무시하고 즉시 보낸다.
+    // 호스트가 로컬 판정으로 "준비됨"을 broadcast하는 값 - 아래 IsReady(실제로 게임을
+    // 시작하는 데 쓰는 값)와는 다르다. 이 값이 true로 바뀐 프레임에 스로틀 때문에 전송이
+    // 밀리면 클라이언트가 영원히 못 받고 멈추므로, 바뀌는 순간에는 스로틀을 무시하고 즉시
+    // 보낸다.
+    private bool _hostLocallyReady;
     private bool _lastSentReady;
+
+    // --- 양방향 시작 배리어 ---
+    // 예전에는 호스트→클라이언트 단방향 중계만 있었다: 호스트는 자기 판정이 끝나는 즉시
+    // IsReady=true가 되어 로딩 화면을 닫고 게임을 시작했고, 클라이언트는 그 판정을 네트워크로
+    // 받은 뒤에야(최소 한 번의 왕복 지연) 따라왔다 - 호스트가 매 라운드 항상 클라이언트보다
+    // 먼저 시작하는 구조적 불공평이 있었다(실측 확인된 원인). 이제 클라이언트는 스스로
+    // 준비됐다고 판단한 첫 순간 호스트에게 확인(ack)을 보내고, 호스트는 자기 판정이 끝나도
+    // 이 ack을 받기 전까지는 IsReady를 true로 올리지 않는다.
+    private bool _clientAcked; // 호스트: 이번 라운드에 클라이언트의 ack을 받았는지
+    private bool _ackSentThisRound; // 클라이언트: 이번 라운드에 ack을 이미 보냈는지
+    // 실측 디버깅용 - 각 상태 전환을 라운드당 한 번만 로그로 남긴다(Update()의 로그 참고).
+    private bool _hostLocallyReadyLogged;
+    private bool _finalReadyLogged;
 
     private void Awake()
     {
@@ -76,6 +92,7 @@ public sealed class LoadingScreenController : MonoBehaviour
         if (net == null) return;
         net.Subscribe("loading_status", OnNetStatus);
         net.Subscribe("loading_preview", OnNetPreview);
+        net.Subscribe("loading_client_ack", OnNetClientAck);
         _subscribed = true;
     }
 
@@ -95,13 +112,23 @@ public sealed class LoadingScreenController : MonoBehaviour
         }
     }
 
+    private void OnNetClientAck(NetworkEvent evt)
+    {
+        _clientAcked = true;
+        Debug.Log($"[LoadingScreen] 호스트: 클라이언트 ack 수신 (t={Time.unscaledTime:F2})");
+    }
+
     // 호스트: 자기가 받은 상태/프리뷰를 클라이언트로 내보낸다.
+    // 프리뷰는 게임 이벤트(하트비트/점수)와 같은 TCP 채널을 쓴다 - 한때 별도 UDP로
+    // 직접 보내봤는데, 15~20KB짜리 JPEG가 IP 단편화되면서 와이파이에서 단편 하나만
+    // 유실돼도 프레임 전체가 통째로 버려져 클라이언트 화면이 거의 새까맣게 나오는 회귀가
+    // 있었다(실측 확인) - TCP는 재전송으로 이 문제가 없으므로 되돌렸다.
     private void BroadcastAsHost(NetworkSession net)
     {
-        if (Time.unscaledTime - _lastStatusSentAt >= StatusSendInterval || IsReady != _lastSentReady)
+        if (Time.unscaledTime - _lastStatusSentAt >= StatusSendInterval || _hostLocallyReady != _lastSentReady)
         {
             _lastStatusSentAt = Time.unscaledTime;
-            _lastSentReady = IsReady;
+            _lastSentReady = _hostLocallyReady;
             PoseInputHub hub = PoseInputHub.Instance;
             PlayerPoseState p1 = hub?.Get(PlayerId.P1);
             PlayerPoseState p2 = hub?.Get(PlayerId.P2);
@@ -116,7 +143,7 @@ public sealed class LoadingScreenController : MonoBehaviour
                 p2Progress = p2 != null ? p2.CalibrationProgress : 0f,
                 p1Preview = preview != null && preview.IsConnected(PlayerId.P1),
                 p2Preview = preview != null && preview.IsConnected(PlayerId.P2),
-                ready = IsReady,
+                ready = _hostLocallyReady,
             });
         }
 
@@ -149,6 +176,9 @@ public sealed class LoadingScreenController : MonoBehaviour
         public string jpegBase64;
     }
 
+    [Serializable]
+    private class ClientAckPayload { }
+
     public void Show(string nextScene)
     {
         RebuildUi();
@@ -160,6 +190,11 @@ public sealed class LoadingScreenController : MonoBehaviour
         // 곧바로 통과해버린다 - 라운드마다 중계 상태를 비운다.
         _relayedStatus = null;
         _lastSentReady = false;
+        _hostLocallyReady = false;
+        _clientAcked = false;
+        _ackSentThisRound = false;
+        _hostLocallyReadyLogged = false;
+        _finalReadyLogged = false;
 
         Sprite[] backgrounds = _backgroundNames.Select(ArtAssets.LoadLoading)
             .Where(x => x != null).ToArray();
@@ -221,6 +256,15 @@ public sealed class LoadingScreenController : MonoBehaviour
             // 클라이언트는 캘리브레이션을 판정하지 않는다 - 호스트가 보낸 ready를 그대로 쓴다.
             // 아직 상태를 못 받았으면 대기(false)로 둔다.
             IsReady = _relayedStatus != null && _relayedStatus.ready && _elapsed >= minimumDisplaySeconds;
+
+            // 내가 준비됐다고 판단한 첫 순간 호스트에게 확인을 보낸다(양방향 시작 배리어) -
+            // 호스트는 이 ack을 받아야만 실제로 게임을 시작한다. 라운드당 한 번만 보낸다.
+            if (IsReady && !_ackSentThisRound)
+            {
+                _ackSentThisRound = true;
+                Debug.Log($"[LoadingScreen] 클라이언트: 내 Show() 이후 {_elapsed:F2}초 만에 준비 완료 → ack 전송");
+                net.Send("loading_client_ack", new ClientAckPayload());
+            }
         }
         else
         {
@@ -228,13 +272,33 @@ public sealed class LoadingScreenController : MonoBehaviour
             bool ready = hub != null
                 && PlayerFullyReady(hub.Get(PlayerId.P1))
                 && PlayerFullyReady(hub.Get(PlayerId.P2));
-            IsReady = ready && _elapsed >= minimumDisplaySeconds;
+            _hostLocallyReady = ready && _elapsed >= minimumDisplaySeconds;
+            if (_hostLocallyReady && !_hostLocallyReadyLogged)
+            {
+                _hostLocallyReadyLogged = true;
+                Debug.Log($"[LoadingScreen] 호스트: 내 Show() 이후 {_elapsed:F2}초 만에 로컬 판정 완료 " +
+                          $"(clientAcked={_clientAcked})");
+            }
+
+            // 오프라인/솔로(상대가 없는 경우)는 확인할 클라이언트가 없으므로 곧장 통과.
+            // 네트워크 호스트일 때만 클라이언트의 ack을 기다린다.
+            bool waitingForClientAck = net != null && net.IsHost && !_clientAcked;
+            IsReady = _hostLocallyReady && !waitingForClientAck;
         }
 
 #if UNITY_EDITOR
         // 한 명만 켜고 씬 흐름을 확인할 때 로딩 화면에 영구히 갇히지 않게 하는 에디터 전용 우회.
         if (Keyboard.current?.enterKey.wasPressedThisFrame == true) IsReady = true;
 #endif
+        // 실측 디버깅용 - 호스트/클라이언트 콘솔의 이 타임스탬프를 나란히 비교하면 동시
+        // 시작이 실제로 어디서 어긋나는지(호스트 판정이 느린지, 네트워크 전달이 느린지,
+        // ack이 늦는지) 바로 알 수 있다.
+        if (IsReady && !_finalReadyLogged)
+        {
+            _finalReadyLogged = true;
+            string role = net != null ? net.Role.ToString() : "Offline";
+            Debug.Log($"[LoadingScreen] IsReady=true, 로딩 화면 닫힘 (내 Show() 이후 {_elapsed:F2}초, role={role})");
+        }
         if (IsReady)
             _message.text = "두 플레이어 준비 완료!";
 
@@ -507,13 +571,15 @@ public sealed class LoadingScreenController : MonoBehaviour
         }
     }
 
+    // 호스트=P1, 클라이언트=P2 (게임 전체의 확립된 관례 - MatchController/미니게임 전부
+    // 이 매핑을 전제한다). 예전에는 Unity 프로세스 자체의 커맨드라인 인자(--player-id)나
+    // PlayerPrefs(local_player_id)를 봤는데, 그 값을 실제로 채워주는 코드가 어디에도 없어서
+    // 이 함수가 항상 P1을 반환했다 - 클라이언트(P2) 로딩 화면에도 "P1 CAMERA"가 뜨고 P1의
+    // 프리뷰 텍스처가 표시되던 원인이었다(실측 확인됨). 오프라인/솔로 모드는 그대로 P1.
     private static PlayerId ResolveLocalPlayer()
     {
-        string[] args = Environment.GetCommandLineArgs();
-        for (int i = 0; i < args.Length - 1; i++)
-            if (args[i] == "--player-id" && args[i + 1].Equals("p2", StringComparison.OrdinalIgnoreCase))
-                return PlayerId.P2;
-        return PlayerPrefs.GetString("local_player_id", "p1") == "p2" ? PlayerId.P2 : PlayerId.P1;
+        NetworkSession net = NetworkSession.Instance;
+        return net != null && net.IsClient ? PlayerId.P2 : PlayerId.P1;
     }
 
     private static string PrettySceneName(string scene)
@@ -568,7 +634,7 @@ public sealed class LoadingScreenController : MonoBehaviour
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
         var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.font = UiBuilder.ArcadeFont; // 게임 전체 텍스트 폰트 통일 - Neo둥근모.
         text.fontSize = fontSize;
         text.fontStyle = FontStyle.Bold;
         text.alignment = TextAnchor.MiddleCenter;

@@ -44,6 +44,12 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
     // 호스트-클라이언트 구조에서 vision-server는 프리뷰를 호스트로만 보낸다(설계 문서 2장).
     // 그래서 호스트가 받은 프레임을 TCP 이벤트 채널로 클라이언트에 중계해야 클라이언트
     // 로딩 화면에도 카메라가 보인다 - 그 중계 대상 프레임을 여기 담아둔다.
+    // (한때 이걸 UDP로 직접 전달해봤다 - 게임 이벤트용 TCP 채널과 분리해 head-of-line
+    // blocking을 피하려는 의도였는데, 노트북 두 대 실측에서 클라이언트 프리뷰가 거의
+    // 새까맣게 나오는 회귀가 발생했다: 15~20KB짜리 JPEG는 IP 단편화가 필수인데 UDP는
+    // 단편 하나만 유실돼도 전체 datagram이 통째로 버려진다 - 와이파이에서 이런 큰
+    // datagram의 유실률이 실측으로 확인된 것보다 훨씬 높았던 것으로 보인다. TCP는 재전송으로
+    // 이 문제 자체가 없으므로 다시 되돌렸다.)
     private readonly Dictionary<string, byte[]> _relayPending = new Dictionary<string, byte[]>();
 
     private void Awake()
@@ -116,14 +122,24 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
 
         foreach (KeyValuePair<string, byte[]> pair in latest)
         {
-            if (!_textures.TryGetValue(pair.Key, out Texture2D texture) || texture == null)
-            {
-                texture = new Texture2D(2, 2, TextureFormat.RGB24, false);
-                texture.name = $"CameraPreview_{pair.Key}";
-                _textures[pair.Key] = texture;
-            }
+            bool hadTexture = _textures.TryGetValue(pair.Key, out Texture2D texture) && texture != null;
+            if (!hadTexture)
+                texture = new Texture2D(2, 2, TextureFormat.RGB24, false) { name = $"CameraPreview_{pair.Key}" };
+
+            // 디코딩에 성공한 뒤에만 _textures에 등록한다 - 실패한 프레임(손상/불완전 JPEG)
+            // 때문에 텅 빈(검은) 텍스처가 GetTexture()로 노출되면, LoadingScreenController가
+            // "카메라 연결됨"으로 착각해 자리 표시용 어두운 틴트를 흰색으로 되돌려버려서
+            // 오히려 완전한 검은 화면처럼 보인다(실측 확인된 버그) - 첫 프레임이 실패해도
+            // 계속 자리 표시자를 보여주다가, 실제로 디코딩에 성공하는 순간에만 노출한다.
             if (ImageConversion.LoadImage(texture, pair.Value, false))
+            {
+                _textures[pair.Key] = texture;
                 _lastSeen[pair.Key] = Time.unscaledTime;
+            }
+            else if (!hadTexture)
+            {
+                Destroy(texture);
+            }
         }
     }
 
@@ -146,7 +162,7 @@ public sealed class CameraPreviewReceiver : MonoBehaviour
         return true;
     }
 
-    // 클라이언트가 호스트로부터 중계받은 프레임을 주입한다 - 이후 디코딩/스테일 판정은
+    // 클라이언트가 호스트로부터 TCP로 중계받은 프레임을 주입한다 - 이후 디코딩/스테일 판정은
     // UDP로 직접 받은 경우와 완전히 같은 경로를 탄다.
     public void ApplyRelayedFrame(string player, byte[] jpeg)
     {
