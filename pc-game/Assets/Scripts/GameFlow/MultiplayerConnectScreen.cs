@@ -86,7 +86,10 @@ public sealed class MultiplayerConnectScreen : MonoBehaviour
 
     private void OnBackClicked()
     {
-        NetworkSession.Instance?.Shutdown();
+        // Shutdown()이 아니라 Disconnect() - 사용자가 직접 나가는 것이므로 재연결 대상
+        // 정보(LastRole/LastHostAddress)도 같이 지워서 NetworkReconnectOverlay가 뒤늦게
+        // 재연결을 시도하지 않게 한다.
+        NetworkSession.Instance?.Disconnect();
         Hide();
         _onBack?.Invoke();
     }

@@ -116,6 +116,9 @@ Unity 구조와 편집 위치는 [pc-game/README.md](pc-game/README.md), Python 
 [vision-server/README.md](vision-server/README.md), 원본 이미지 규칙은
 [image/README.md](image/README.md)를 참고하세요.
 
+팀원이 그대로 복사할 P1/P2 명령은
+[docs/멀티플레이_실행_명령어.md](docs/멀티플레이_실행_명령어.md)에 별도로 정리되어 있습니다.
+
 ## 현재 확인할 사항
 
 - `FeatherFlight`의 호스트/클라이언트 이벤트 동기화와 실제 2대 PC 플레이 검증

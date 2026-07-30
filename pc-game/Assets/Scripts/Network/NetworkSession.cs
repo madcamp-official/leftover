@@ -27,6 +27,19 @@ public sealed class NetworkSession : MonoBehaviour
     public string RemoteAddress { get; private set; } = "";
     public string LastError { get; private set; } = "";
 
+    // Role/RemoteAddress는 Shutdown()에서 Offline/""로 되돌아가므로, 예기치 않게 끊긴 뒤
+    // 재연결을 시도하려면 "직전에 뭐였는지"를 따로 기억해둬야 한다. 사용자가 뒤로가기로
+    // 명시적으로 나갈 때만(Disconnect()) 이 값도 같이 지워서 재연결 시도를 멈춘다 -
+    // NetworkReconnectOverlay가 이 값으로 "예기치 않은 끊김"인지 판단한다.
+    public NetworkRole LastRole { get; private set; } = NetworkRole.Offline;
+    public string LastHostAddress { get; private set; } = "";
+
+    // "한 번이라도 실제로 연결된 적 있음" - NetworkReconnectOverlay가 "재연결"과 "최초 접속
+    // 시도 실패"를 구분하는 데 쓴다. 최초 접속 실패(오타 IP, 호스트가 아직 안 켰음 등)는
+    // MultiplayerConnectScreen 자체 UI(_errorText)가 이미 처리하므로, 그 경우까지 전체
+    // 화면 재연결 오버레이로 덮으면 안 된다 - 한 번이라도 붙었다가 끊긴 경우에만 띄운다.
+    public bool HadSuccessfulConnection { get; private set; }
+
     // 클라이언트에서 "호스트 기준 지금"을 계산할 때 쓰는 보정값:
     // 호스트시각 추정 = Time.realtimeSinceStartupAsDouble(클라 로컬) + ClockOffsetToHost
     public double ClockOffsetToHost { get; private set; }
@@ -56,6 +69,7 @@ public sealed class NetworkSession : MonoBehaviour
     {
         Shutdown();
         Role = NetworkRole.Host;
+        LastRole = NetworkRole.Host;
         ConnectionState = NetworkConnectionState.Listening;
         LocalAddressHint = ResolveLocalAddressHint();
         _channel = new GameEventChannel();
@@ -69,6 +83,8 @@ public sealed class NetworkSession : MonoBehaviour
     {
         Shutdown();
         Role = NetworkRole.Client;
+        LastRole = NetworkRole.Client;
+        LastHostAddress = hostAddress;
         ConnectionState = NetworkConnectionState.Connecting;
         _channel = new GameEventChannel();
         _channel.OnConnected += HandleChannelConnected;
@@ -78,7 +94,10 @@ public sealed class NetworkSession : MonoBehaviour
     }
 
     // 연결을 끊고 오프라인(로컬 단독) 모드로 되돌린다 - 개발/테스트나 네트워크 없이 한 대로
-    // 돌리는 상황을 위해 이 모드는 계속 지원한다(설계 문서 8장).
+    // 돌리는 상황을 위해 이 모드는 계속 지원한다(설계 문서 8장). LastRole/LastHostAddress는
+    // 일부러 안 지운다 - 하트비트 타임아웃처럼 "예기치 않게" 이 메서드가 불렸을 때도
+    // NetworkReconnectOverlay가 재연결을 시도할 수 있어야 하기 때문. 사용자가 직접 나가는
+    // 경우는 Disconnect()를 쓸 것.
     public void Shutdown()
     {
         if (_channel != null)
@@ -94,10 +113,40 @@ public sealed class NetworkSession : MonoBehaviour
         RemoteAddress = "";
     }
 
+    // 사용자가 명시적으로 연결을 끊을 때(뒤로가기 버튼 등) 호출 - Shutdown()과 달리
+    // LastRole/LastHostAddress도 같이 지워서 NetworkReconnectOverlay가 재연결을 시도하지
+    // 않게 한다.
+    public void Disconnect()
+    {
+        Shutdown();
+        LastRole = NetworkRole.Offline;
+        LastHostAddress = "";
+        HadSuccessfulConnection = false;
+    }
+
+    // NetworkReconnectOverlay가 주기적으로 호출. 호스트는 할 일이 없다 -
+    // GameEventChannel.AcceptLoop는 클라이언트가 끊겨도 계속 살아서 다음 accept를
+    // 기다리고 있으므로(AttachClient가 ReadLoop에서 블록되다 끊기면 while로 돌아와
+    // 다시 AcceptTcpClient를 부른다), 클라이언트가 재접속하면 HandleChannelConnected가
+    // 저절로 다시 불린다. 여기서 StartHost()를 또 부르면 이미 잘 대기 중인 리스너를
+    // Shutdown()으로 닫아버렸다가 새로 여는 꼴이라, 하필 클라이언트가 재접속을 시도하는
+    // 순간과 겹치면 그 시도를 놓칠 수 있다. 클라이언트만 능동적으로 재접속해야 한다 -
+    // 클라이언트의 접속 시도는 실패/끊김 후 자동으로 재시도되지 않기 때문.
+    public bool TryReconnect()
+    {
+        if (LastRole == NetworkRole.Client && !string.IsNullOrEmpty(LastHostAddress))
+        {
+            StartClient(LastHostAddress);
+            return true;
+        }
+        return false;
+    }
+
     private void HandleChannelConnected()
     {
         ConnectionState = NetworkConnectionState.Connected;
         RemoteAddress = _channel?.RemoteAddress ?? "";
+        HadSuccessfulConnection = true;
         _lastHeartbeatReceivedAt = Time.unscaledTime;
         LastError = "";
         OnConnected?.Invoke();

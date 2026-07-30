@@ -121,11 +121,13 @@ public sealed class GameBgm : MonoBehaviour
 
     private static string ResolveTrack(string sceneName)
     {
-        // 마지막 라운드 뒤 Hub는 시작 화면이 아니라 최종 결과 화면이므로 엔딩곡을 쓴다.
-        if (sceneName == MatchController.HubSceneName &&
-            MatchController.Instance != null &&
-            MatchController.Instance.IsMatchComplete)
-            return "ending";
+        if (sceneName == MatchController.HubSceneName)
+        {
+            // 마지막 라운드 뒤 Hub는 시작 화면이 아니라 최종 결과 화면이므로 엔딩곡을 쓰고,
+            // 그 전(처음 시작 화면)에는 별도의 시작 화면 곡을 쓴다.
+            bool matchComplete = MatchController.Instance != null && MatchController.Instance.IsMatchComplete;
+            return matchComplete ? "ending" : "start";
+        }
 
         return SceneTracks.TryGetValue(sceneName, out string track) ? track : null;
     }

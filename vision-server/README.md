@@ -4,6 +4,8 @@
 Unity(`pc-game`)에 스트리밍하는 Python 프로세스. 동작 분류는 하지 않는다 — 미니게임마다
 필요한 판정이 달라서 Unity 쪽(`pc-game/Assets/Scripts/Common/`)에서 게임별로 해석한다.
 자세한 포맷은 [../shared/PROTOCOL.md](../shared/PROTOCOL.md) 참고.
+P1/P2 PC별 복사 가능한 명령은
+[../docs/멀티플레이_실행_명령어.md](../docs/멀티플레이_실행_명령어.md) 참고.
 
 ## 환경 설정
 
@@ -60,6 +62,10 @@ python main.py --pc-ip <Unity PC의 LAN IP> --player-id p2
 ```bash
 python run_team_test.py
 ```
+
+팀 테스트 런처는 전체 7게임 매치를 기준으로 마이크도 기본 활성화한다. 카메라만 시험할 때는
+`--no-voice`, 기본 장치가 아닌 마이크를 고를 때는 `--voice-device <번호>`를 사용한다.
+장치 번호는 `python main.py --list-audio-devices`로 확인할 수 있다.
 
 또는 입력 과정 없이 바로 실행:
 

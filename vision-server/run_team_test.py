@@ -24,6 +24,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--player-id", choices=("p1", "p2"), help="이 카메라가 담당할 플레이어")
     parser.add_argument("--camera-index", type=int, default=0, help="사용할 카메라 번호 (기본: 0)")
     parser.add_argument("--port", type=int, default=9100, help="Unity UDP 수신 포트 (기본: 9100)")
+    parser.add_argument(
+        "--no-voice",
+        action="store_true",
+        help="마이크 캡처를 끈다. 전체 매치에서는 ScreamDuel 때문에 기본적으로 켜진다.",
+    )
+    parser.add_argument(
+        "--voice-device",
+        type=int,
+        help="사용할 sounddevice 입력 장치 번호. 생략하면 시스템 기본 마이크.",
+    )
+    parser.add_argument(
+        "--voice-channels",
+        type=int,
+        help="읽을 마이크 배열 채널 수. 생략하면 장치의 모든 입력 채널.",
+    )
     return parser.parse_args()
 
 
@@ -36,10 +51,13 @@ def ask_if_missing(value: str | None, prompt: str, allowed: set[str] | None = No
     return value
 
 
-def check_environment() -> None:
+def check_environment(include_voice: bool = True) -> None:
+    packages = ["cv2", "mediapipe"]
+    if include_voice:
+        packages.extend(["sounddevice", "numpy"])
     missing = [
         package
-        for package in ("cv2", "mediapipe")
+        for package in packages
         if importlib.util.find_spec(package) is None
     ]
     if missing:
@@ -61,7 +79,7 @@ def main() -> int:
         {"p1", "p2"},
     )
 
-    check_environment()
+    check_environment(include_voice=not args.no_voice)
 
     command = [
         sys.executable,
@@ -75,9 +93,16 @@ def main() -> int:
         "--player-id",
         player_id,
     ]
+    if not args.no_voice:
+        command.append("--voice")
+        if args.voice_device is not None:
+            command.extend(["--voice-device", str(args.voice_device)])
+        if args.voice_channels is not None:
+            command.extend(["--voice-channels", str(args.voice_channels)])
 
     print()
     print(f"[시작] {player_id} 카메라 -> {pc_ip}:{args.port}")
+    print("마이크 음량 전송: " + ("꺼짐" if args.no_voice else "켜짐 (--voice)"))
     print("카메라 창에서 관절 점이 보이면 연결 준비 완료입니다. 종료는 q.")
     print()
     return subprocess.run(command, cwd=ROOT, check=False).returncode

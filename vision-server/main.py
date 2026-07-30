@@ -182,22 +182,45 @@ class VoiceLevelMeter:
     클램프한다. sounddevice의 콜백은 별도 오디오 스레드에서 돌기 때문에 카메라/포즈 추론
     루프(메인 스레드)를 전혀 막지 않는다 - 마지막으로 계산된 값을 읽기만 하면 된다."""
 
-    def __init__(self, min_db: float = -60.0, max_db: float = 0.0,
-                 samplerate: int = 16000, blocksize: int = 1024, device=None):
+    def __init__(self, min_db: float = -35.0, max_db: float = 0.0,
+                 samplerate=None, blocksize: int = 0, device=None, channels=None):
         if sd is None or np is None:
             raise RuntimeError(
                 "--voice 옵션을 쓰려면 sounddevice/numpy가 필요합니다.\n"
                 "  -> python -m pip install sounddevice numpy"
             )
+        if max_db <= min_db:
+            raise ValueError("--voice-max-db는 --voice-min-db보다 커야 합니다.")
+
+        # 16 kHz 고정값은 일부 Windows MME/노트북 마이크 드라이버에서 장치 열기 자체가
+        # 실패한다. 선택된 입력 장치가 광고하는 기본 샘플레이트를 사용하면 같은 마이크를
+        # DirectSound/WASAPI로 바꿔도 안전하게 시작할 수 있다.
+        self.device = sd.default.device[0] if device is None else device
+        device_info = sd.query_devices(self.device, "input")
+        self.device_name = device_info["name"]
+        self.samplerate = float(samplerate or device_info["default_samplerate"])
+        # 노트북의 Microphone Array는 2~4채널 중 실제 음성이 특정 채널에만 들어오는 경우가
+        # 있다. 1채널만 요청하면 무음 채널을 집을 수 있으므로 기본값은 장치의 입력 채널을
+        # 전부 열고 콜백에서 전체 RMS를 계산한다.
+        max_channels = int(device_info["max_input_channels"])
+        self.channels = int(channels or max_channels)
+        if self.channels < 1 or self.channels > max_channels:
+            raise ValueError(
+                f"마이크 채널 수는 1~{max_channels} 사이여야 합니다: {self.channels}"
+            )
         self.min_db = min_db
         self.max_db = max_db
         self._level = 0.0
+        self._reported_status = False
         self._stream = sd.InputStream(
-            samplerate=samplerate, blocksize=blocksize, channels=1,
-            dtype="float32", device=device, callback=self._on_audio,
+            samplerate=self.samplerate, blocksize=blocksize, channels=self.channels,
+            dtype="float32", device=self.device, callback=self._on_audio,
         )
 
     def _on_audio(self, indata, frames, time_info, status):
+        if status and not self._reported_status:
+            print(f"[voice] 오디오 입력 경고: {status}")
+            self._reported_status = True
         rms = float(np.sqrt(np.mean(np.square(indata))))
         db = 20.0 * math.log10(rms) if rms > 1e-9 else self.min_db
         normalized = (db - self.min_db) / (self.max_db - self.min_db)
@@ -381,9 +404,27 @@ def main():
         help="마이크 음량(voice.level)도 같이 캡처해서 보낸다 - 소리지르기(ScreamDuel) 전용,"
              " 다른 미니게임에는 필요 없다(기본 꺼짐). 이 PC의 시스템 기본 마이크를 그대로 쓴다."
     )
-    parser.add_argument("--voice-min-db", type=float, default=-60.0, help="이 dB 이하는 voice.level=0으로 클램프")
-    parser.add_argument("--voice-max-db", type=float, default=0.0, help="이 dB 이상은 voice.level=1로 클램프")
+    parser.add_argument(
+        "--voice-device", type=int, default=None,
+        help="사용할 sounddevice 입력 장치 번호. 생략하면 시스템 기본 마이크를 사용한다.",
+    )
+    parser.add_argument(
+        "--voice-channels", type=int, default=None,
+        help="읽을 마이크 채널 수. 생략하면 마이크 배열의 모든 입력 채널을 읽는다.",
+    )
+    parser.add_argument(
+        "--list-audio-devices", action="store_true",
+        help="사용 가능한 마이크 번호를 출력하고 종료한다.",
+    )
+    parser.add_argument("--voice-min-db", type=float, default=-35.0, help="이 dB 이하는 voice.level=0으로 클램프")
+    parser.add_argument("--voice-max-db", type=float, default=0.0, help="이 dB 이상은 voice.level=1(100%%)로 클램프")
     args = parser.parse_args()
+
+    if args.list_audio_devices:
+        if sd is None:
+            raise RuntimeError("sounddevice가 설치되어 있지 않습니다.")
+        print(sd.query_devices())
+        return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     dest = (args.pc_ip, args.port)
@@ -392,9 +433,21 @@ def main():
 
     voice_meter = None
     if args.voice:
-        voice_meter = VoiceLevelMeter(min_db=args.voice_min_db, max_db=args.voice_max_db)
+        voice_meter = VoiceLevelMeter(
+            min_db=args.voice_min_db,
+            max_db=args.voice_max_db,
+            device=args.voice_device,
+            channels=args.voice_channels,
+        )
         voice_meter.start()
-        print(f"[voice] 마이크 캡처 시작 (min={args.voice_min_db}dB, max={args.voice_max_db}dB)")
+        print(
+            f"[voice] 마이크 캡처 시작: #{voice_meter.device} {voice_meter.device_name} "
+            f"({voice_meter.samplerate:.0f}Hz, {voice_meter.channels}ch, "
+            f"min={args.voice_min_db}dB, "
+            f"max={args.voice_max_db}dB)"
+        )
+    else:
+        print("[voice] 마이크 전송 꺼짐 - ScreamDuel을 하려면 --voice를 추가하세요.")
 
     num_people = 1 if args.player_id else 2
     pose_landmarker = load_pose_landmarker(num_people)
@@ -414,6 +467,8 @@ def main():
 
     start_time = time.time()
     last_preview_sent = 0.0
+    voice_display_level = 0.0
+    voice_peak_level = 0.0
     prev_hip_x = {"p1": None, "p2": None}  # 라벨 안정화용 이력 - _assign_player_ids 참고.
     # 과일따기 tierHeightThresholds 실측용 - 플레이어별 점프 높이 캘리브레이션/세션 최고치.
     jump_trackers = {"p1": JumpHeightTracker(), "p2": JumpHeightTracker()}
@@ -462,10 +517,16 @@ def main():
 
             players = build_players_payload(pose_result, face_result, prev_hip_x, fixed_player_id=args.player_id)
             if voice_meter is not None:
+                raw_voice_level = voice_meter.level
+                # 독립 test_scream_mic.py와 같은 빠른 상승/느린 하강 표시. UDP에는 판정 지연이
+                # 생기지 않도록 raw 값을 보내고, 카메라 창의 게이지만 눈에 잘 보이게 완화한다.
+                smoothing = 0.55 if raw_voice_level >= voice_display_level else 0.12
+                voice_display_level += (raw_voice_level - voice_display_level) * smoothing
+                voice_peak_level = max(voice_peak_level, raw_voice_level)
                 # 마이크 하나로 이 프로세스가 담당하는 플레이어(들) 전체에 같은 순간 음량을
                 # 얹는다 - 소리지르기는 턴제라 한 마이크를 공유해도 문제없다(PROTOCOL.md 참고).
                 for player in players:
-                    player["voice"] = {"level": voice_meter.level}
+                    player["voice"] = {"level": raw_voice_level}
             sock.sendto(
                 json.dumps({"t": time.time(), "players": players}).encode("utf-8"),
                 dest,
@@ -498,7 +559,53 @@ def main():
                 if not players:
                     cv2.putText(frame, "NO POSE", (20, 40),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-                cv2.putText(frame, "[q]=quit  [r]=최고높이 초기화", (20, frame.shape[0] - 20),
+                if voice_meter is not None:
+                    meter_left = 20
+                    meter_right = w - 20
+                    meter_top = h - 76
+                    meter_bottom = h - 42
+                    percent = int(round(voice_display_level * 100))
+                    peak_percent = int(round(voice_peak_level * 100))
+                    if percent < 45:
+                        meter_color = (255, 150, 49)
+                    elif percent < 75:
+                        meter_color = (56, 186, 255)
+                    else:
+                        meter_color = (54, 75, 255)
+                    cv2.rectangle(
+                        frame,
+                        (meter_left, meter_top),
+                        (meter_right, meter_bottom),
+                        (65, 55, 45),
+                        -1,
+                    )
+                    fill_right = meter_left + int(
+                        (meter_right - meter_left) * voice_display_level
+                    )
+                    cv2.rectangle(
+                        frame,
+                        (meter_left, meter_top),
+                        (fill_right, meter_bottom),
+                        meter_color,
+                        -1,
+                    )
+                    cv2.rectangle(
+                        frame,
+                        (meter_left, meter_top),
+                        (meter_right, meter_bottom),
+                        (190, 165, 120),
+                        2,
+                    )
+                    cv2.putText(
+                        frame,
+                        f"MIC {percent:3d} / PEAK {peak_percent:3d}",
+                        (meter_left + 10, meter_top + 25),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        (255, 255, 255),
+                        2,
+                    )
+                cv2.putText(frame, "[q]=quit  [r]=reset peak", (20, frame.shape[0] - 16),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
                 cv2.imshow("vision-server", frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -507,6 +614,7 @@ def main():
                 if key == ord("r"):
                     for tracker in jump_trackers.values():
                         tracker.max_height_seen = 0.0
+                    voice_peak_level = 0.0
     finally:
         cap.release()
         cv2.destroyAllWindows()

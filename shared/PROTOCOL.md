@@ -155,8 +155,8 @@ vision-server는 원값만 보내고 판정 임계값을 갖지 않는다.
 
 | 키 | 범위/의미 |
 |---|---|
-| `voice.level` | 0(무음)~1(설계상 최대 음량)로 정규화된 순간 음량. RMS를 dB로 바꾼 뒤
-  `--voice-min-db`(기본 -60dB)~`--voice-max-db`(기본 0dB) 구간을 0~1로 클램프한다
+| `voice.level` | 0(무음)~1(디지털 입력 최대 음량=100%)로 정규화된 순간 음량. RMS를 dB로 바꾼 뒤
+  `--voice-min-db`(기본 -35dB)~`--voice-max-db`(기본 0dB) 구간을 0~1로 클램프한다
   (`vision-server/main.py`의 `VoiceLevelMeter`). 마이크 기종/거리 편차 보정은 아직 없음 —
   아래 "결정 필요"에 미해결로 남긴다. |
 

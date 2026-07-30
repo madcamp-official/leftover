@@ -47,6 +47,8 @@ public class ScreamDuelGame : MonoBehaviour
     private Sprite _p2Idle, _p2Shout, _p2Swollen;
     private float _p1Expression;
     private float _p2Expression;
+    private bool _voiceWarningLogged;
+    private float _voiceMissingSeconds;
 
     private PlayerId _turnOwner;
     private float _requiredLevel;
@@ -168,6 +170,21 @@ public class ScreamDuelGame : MonoBehaviour
         PlayerPoseState state = PoseInputHub.Instance?.Get(_turnOwner);
         // 마이크가 안 잡히면(IsVoiceTracked == false) 그 프레임 음량은 0으로 취급한다.
         float level = (state != null && state.IsVoiceTracked) ? state.VoiceLevel : 0f;
+        if (state == null || !state.IsVoiceTracked)
+        {
+            _voiceMissingSeconds += Time.unscaledDeltaTime;
+            if (!_voiceWarningLogged && _voiceMissingSeconds >= 1f)
+            {
+                _voiceWarningLogged = true;
+                Debug.LogWarning(
+                    $"[ScreamDuel] {_turnOwner} voice 입력이 없습니다. vision-server를 " +
+                    "--voice 옵션으로 실행했는지 확인하세요.");
+            }
+        }
+        else
+        {
+            _voiceMissingSeconds = 0f;
+        }
 
         // 턴 동안의 최댓값만 채점에 쓴다 - 과일따기의 PeakHeight와 같은 방식(중간에 작아져도
         // peakLevel은 줄지 않는다).
